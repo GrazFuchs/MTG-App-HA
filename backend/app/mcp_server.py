@@ -639,6 +639,28 @@ async def analyze_deck_completeness(deck_id: int) -> str:
         return json.dumps({"error": str(e)})
 
 
+# --- Resources ---
+
+@mcp.resource("mtg://collection/stats")
+async def resource_collection_stats() -> str:
+    """Current collection statistics."""
+    from .database import get_db
+    from .services.queries import query_collection_stats
+    db = await get_db()
+    stats = await query_collection_stats(db)
+    return json.dumps(stats, indent=2)
+
+
+@mcp.resource("mtg://decks")
+async def resource_deck_list() -> str:
+    """List of all synced decks."""
+    from .database import get_db
+    from .services.queries import query_all_decks
+    db = await get_db()
+    decks = await query_all_decks(db)
+    return json.dumps(decks, indent=2, default=str)
+
+
 # --- Prompts ---
 
 @mcp.prompt()
