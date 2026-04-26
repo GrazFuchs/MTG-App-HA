@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -65,10 +65,20 @@ const useStyles = makeStyles({
 export default function Decks() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
-  const [bracketFilter, setBracketFilter] = useState('');
+  const bracketFilter = searchParams.get('bracket') ?? '';
+
+  const setBracketFilter = (value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set('bracket', value);
+      else next.delete('bracket');
+      return next;
+    });
+  };
 
   useEffect(() => {
     api.getDecks().then(setDecks).finally(() => setLoading(false));
