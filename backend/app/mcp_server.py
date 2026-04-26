@@ -685,6 +685,22 @@ async def resource_deck_list() -> str:
     return json.dumps(decks, indent=2, default=str)
 
 
+@mcp.resource("mtg://deck/{deck_id}")
+async def resource_deck(deck_id: str) -> str:
+    """Detail data for a single deck."""
+    from .database import get_db
+    from .services.queries import query_deck_detail
+    try:
+        deck_id_int = int(deck_id)
+    except ValueError:
+        return json.dumps({"error": f"Invalid deck_id: {deck_id}"})
+    db = await get_db()
+    detail = await query_deck_detail(db, deck_id_int)
+    if not detail:
+        return json.dumps({"error": f"Deck {deck_id} not found"})
+    return json.dumps(detail, default=str, indent=2)
+
+
 # --- Prompts ---
 
 @mcp.prompt()
