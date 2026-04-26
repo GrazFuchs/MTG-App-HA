@@ -1,5 +1,6 @@
 """Structured JSON logging setup."""
 import logging
+import os
 import sys
 
 from pythonjsonlogger import jsonlogger
@@ -14,10 +15,13 @@ def setup_logging() -> None:
     )
     handler.setFormatter(formatter)
 
+    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    root.setLevel(level)
 
     # Quiet noisy libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)

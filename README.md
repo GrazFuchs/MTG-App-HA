@@ -499,6 +499,15 @@ mypy .
 
 Konfiguration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
+### Umgebungsvariablen (Entwicklung)
+
+| Variable | Default | Beschreibung |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Log-Level (DEBUG, INFO, WARNING, ERROR) |
+| `DATA_DIR` | `/data` | Pfad zum Datenverzeichnis |
+| `OPTIONS_PATH` | `/data/options.json` | Pfad zur HA-Options-Datei |
+| `CORS_ORIGINS` | (leer) | Komma-getrennte CORS-Origins |
+
 ---
 
 ## Changelog
