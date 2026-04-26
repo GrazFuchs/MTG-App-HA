@@ -268,6 +268,57 @@ async def _migration_7(db: aiosqlite.Connection):
     await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_date ON value_snapshots(date)")
 
 
+async def _migration_8(db: aiosqlite.Connection):
+    """Align wishlist schema: card_id FK, target_price_eur, removed_at soft-delete."""
+    cursor = await db.execute("PRAGMA table_info(wishlist)")
+    columns = {row[1] for row in await cursor.fetchall()}
+
+    # Add new columns to existing table
+    if "card_id" not in columns:
+        await db.execute("ALTER TABLE wishlist ADD COLUMN card_id INTEGER REFERENCES cards(id)")
+    if "target_price_eur" not in columns:
+        await db.execute("ALTER TABLE wishlist ADD COLUMN target_price_eur REAL DEFAULT 0")
+    if "removed_at" not in columns:
+        await db.execute("ALTER TABLE wishlist ADD COLUMN removed_at TIMESTAMP")
+
+    # Backfill card_id from card_name (best-effort match)
+    await db.execute("""
+        UPDATE wishlist SET card_id = (
+            SELECT id FROM cards WHERE LOWER(cards.name) = LOWER(wishlist.card_name) LIMIT 1
+        ) WHERE card_id IS NULL
+    """)
+
+    # Backfill target_price_eur from max_price_eur
+    if "max_price_eur" in columns:
+        await db.execute(
+            "UPDATE wishlist SET target_price_eur = max_price_eur WHERE target_price_eur = 0 AND max_price_eur > 0"
+        )
+
+    # Recreate table without legacy columns (card_name, max_price_eur)
+    # SQLite DROP COLUMN cannot drop columns with UNIQUE constraints, so we recreate.
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS wishlist_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER REFERENCES cards(id),
+            target_price_eur REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            removed_at TIMESTAMP
+        )
+    """)
+    await db.execute("""
+        INSERT OR IGNORE INTO wishlist_new (id, card_id, target_price_eur, notes, added_at, removed_at)
+        SELECT id, card_id, target_price_eur, notes, added_at, removed_at FROM wishlist
+    """)
+    await db.execute("DROP TABLE wishlist")
+    await db.execute("ALTER TABLE wishlist_new RENAME TO wishlist")
+
+    # Partial unique index: only one active entry per card
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_wishlist_card_active ON wishlist(card_id) WHERE removed_at IS NULL"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -275,6 +326,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     5: _migration_5,
     6: _migration_6,
     7: _migration_7,
+    8: _migration_8,
 }
 
 

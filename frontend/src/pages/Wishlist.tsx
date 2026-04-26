@@ -49,7 +49,7 @@ export default function Wishlist() {
   });
 
   const addMutation = useMutation({
-    mutationFn: (data: { card_name: string; max_price_eur?: number; notes?: string }) =>
+    mutationFn: (data: { card_name: string; target_price_eur?: number; notes?: string }) =>
       api.addToWishlist(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['wishlist'] });
@@ -68,7 +68,7 @@ export default function Wishlist() {
     if (!cardName.trim()) return;
     addMutation.mutate({
       card_name: cardName.trim(),
-      max_price_eur: maxPrice ? parseFloat(maxPrice) : 0,
+      target_price_eur: maxPrice ? parseFloat(maxPrice) : 0,
       notes: notes.trim(),
     });
   };
@@ -89,7 +89,7 @@ export default function Wishlist() {
           className={styles.input}
         />
         <Input
-          placeholder="Max price (EUR)"
+          placeholder="Target price (EUR)"
           type="number"
           value={maxPrice}
           onChange={(_, d) => setMaxPrice(d.value)}
@@ -125,7 +125,7 @@ export default function Wishlist() {
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>Card</TableHeaderCell>
-                <TableHeaderCell>Max Price</TableHeaderCell>
+                <TableHeaderCell>Target Price</TableHeaderCell>
                 <TableHeaderCell>Current Price</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
                 <TableHeaderCell>Notes</TableHeaderCell>
@@ -135,9 +135,9 @@ export default function Wishlist() {
             <TableBody>
               {items.map(item => (
                 <TableRow key={item.id} className={item.is_deal ? styles.deal : undefined}>
-                  <TableCell>{item.card_name}</TableCell>
+                  <TableCell>{item.card.name}</TableCell>
                   <TableCell>
-                    {item.max_price_eur > 0 ? `€${item.max_price_eur.toFixed(2)}` : '—'}
+                    {item.target_price_eur > 0 ? `€${item.target_price_eur.toFixed(2)}` : '—'}
                   </TableCell>
                   <TableCell>
                     {item.current_price != null ? `€${item.current_price.toFixed(2)}` : '—'}
@@ -145,7 +145,7 @@ export default function Wishlist() {
                   <TableCell>
                     {item.is_deal ? (
                       <Badge appearance="filled" color="success">Deal!</Badge>
-                    ) : item.current_price != null && item.max_price_eur > 0 ? (
+                    ) : item.current_price != null && item.target_price_eur > 0 ? (
                       <Caption1>Above target</Caption1>
                     ) : (
                       <Caption1>No data</Caption1>

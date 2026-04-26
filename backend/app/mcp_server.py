@@ -521,25 +521,32 @@ async def get_wishlist() -> str:
     try:
         db = await get_db()
         cursor = await db.execute(
-            "SELECT id, card_name, max_price_eur, notes, added_at FROM wishlist ORDER BY added_at DESC"
+            """SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
+                      c.name, c.set_name, c.scryfall_id
+               FROM wishlist w
+               LEFT JOIN cards c ON c.id = w.card_id
+               WHERE w.removed_at IS NULL
+               ORDER BY w.added_at DESC"""
         )
         rows = await cursor.fetchall()
         items = []
         for r in rows:
+            card_name = r["name"] or ""
             price_cursor = await db.execute(
                 """SELECT ph.trend FROM cardmarket_products cp
                 JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
                 WHERE LOWER(cp.card_name) = LOWER(?)
                 ORDER BY ph.date DESC LIMIT 1""",
-                (r["card_name"],),
+                (card_name,),
             )
             pr = await price_cursor.fetchone()
             current = pr[0] if pr else None
             items.append({
-                "card_name": r["card_name"],
-                "max_price_eur": r["max_price_eur"],
+                "card_name": card_name,
+                "card_id": r["card_id"],
+                "target_price_eur": r["target_price_eur"],
                 "current_price": current,
-                "is_deal": current is not None and r["max_price_eur"] > 0 and current <= r["max_price_eur"],
+                "is_deal": current is not None and r["target_price_eur"] > 0 and current <= r["target_price_eur"],
                 "notes": r["notes"],
             })
         return json.dumps(items, indent=2)
@@ -548,23 +555,40 @@ async def get_wishlist() -> str:
 
 
 @mcp.tool()
-async def add_to_wishlist(card_name: str, max_price_eur: float = 0.0, notes: str = "") -> str:
+async def add_to_wishlist(card_name: str, target_price_eur: float = 0.0, notes: str = "") -> str:
     """Add a card to the wishlist with optional price alert threshold.
 
     Args:
-        card_name: Exact card name
-        max_price_eur: Maximum price to trigger deal alert (0 = no alert)
+        card_name: Exact card name (resolved to card_id via DB or Scryfall)
+        target_price_eur: Maximum price to trigger deal alert (0 = no alert)
         notes: Optional notes
     """
     from .database import get_db
+    from .services.sync_service import upsert_card
+    from .clients.scryfall import scryfall
     try:
         db = await get_db()
+
+        # Try to find card in local DB first
+        cursor = await db.execute(
+            "SELECT id FROM cards WHERE LOWER(name) = LOWER(?)", (card_name.strip(),)
+        )
+        row = await cursor.fetchone()
+
+        if row:
+            card_id = row["id"]
+        else:
+            # Fetch from Scryfall and upsert
+            card_data = await scryfall.get_card_by_name(card_name.strip(), exact=True)
+            card_id = await upsert_card(db, card_data)
+            await db.commit()
+
         await db.execute(
-            "INSERT INTO wishlist (card_name, max_price_eur, notes) VALUES (?, ?, ?)",
-            (card_name.strip(), max_price_eur, notes.strip()),
+            "INSERT INTO wishlist (card_id, target_price_eur, notes) VALUES (?, ?, ?)",
+            (card_id, target_price_eur, notes.strip()),
         )
         await db.commit()
-        return json.dumps({"ok": True, "card_name": card_name.strip()})
+        return json.dumps({"ok": True, "card_name": card_name.strip(), "card_id": card_id})
     except Exception as e:
         if "UNIQUE" in str(e):
             return json.dumps({"error": f"'{card_name}' is already on the wishlist"})

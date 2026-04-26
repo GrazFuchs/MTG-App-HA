@@ -140,12 +140,18 @@ export interface CollectionStats {
 
 export interface WishlistItem {
   id: number;
-  card_name: string;
-  max_price_eur: number;
+  card_id: number;
+  target_price_eur: number;
   notes: string;
   added_at: string;
   current_price: number | null;
   is_deal: boolean;
+  card: {
+    name: string;
+    set_name: string;
+    image_uri: string;
+    scryfall_id: string;
+  };
 }
 
 export interface ValueSnapshot {
@@ -304,7 +310,7 @@ export const api = {
 
   // Wishlist
   getWishlist: () => request<WishlistItem[]>('/api/wishlist/'),
-  addToWishlist: (data: { card_name: string; max_price_eur?: number; notes?: string }) =>
+  addToWishlist: (data: { card_name: string; target_price_eur?: number; notes?: string }) =>
     request<WishlistItem>('/api/wishlist/', { method: 'POST', body: JSON.stringify(data) }),
   removeFromWishlist: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}`, { method: 'DELETE' }),
