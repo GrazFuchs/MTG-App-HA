@@ -1,0 +1,40 @@
+name: "MTG Collection Manager"
+version: "0.5.0"
+slug: "mtg-collection"
+description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
+arch:
+  - aarch64
+  - amd64
+url: "https://github.com/HerrFuchs/mtg-collection-ha"
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+ingress_entry: /
+init: false
+panel_icon: "mdi:cards-playing-outline"
+panel_title: "MTG Collection"
+map:
+  - type: data
+    read_only: false
+options:
+  archidekt_username: ""
+  archidekt_password: ""
+  archidekt_user_id: 0
+  archidekt_deck_ids: []
+  sync_enabled: true
+  sync_hour: 3
+  mcp_auth_token: ""
+  cardmarket_username: ""
+  flaresolverr_url: ""
+schema:
+  archidekt_username: "str?"
+  archidekt_password: "password?"
+  archidekt_user_id: "int?"
+  archidekt_deck_ids:
+    - "int"
+  sync_enabled: "bool"
+  sync_hour: "int(0,23)"
+  mcp_auth_token: "str?"
+  cardmarket_username: "str?"
+  flaresolverr_url: "str?"

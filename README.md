@@ -415,6 +415,8 @@ Nach dem Neustart erscheint „MTG Collection Manager" als verfügbarer MCP-Serv
 Claude Desktop ↔ stdio ↔ mcp-proxy.mjs ↔ HTTP ↔ HA Ingress ↔ Add-on /mcp
 ```
 
+> **Hinweis:** Port 8099 ist nur intern im HA-Netzwerk erreichbar. Der einzige offizielle Zugangsweg von außen ist über HA Ingress mit dem `mcp-proxy.mjs`.
+
 1. Proxy verbindet sich per WebSocket zur HA-API und authentifiziert sich
 2. Erzeugt eine Ingress-Session (Cookie)
 3. Leitet JSON-RPC-Nachrichten von stdin an den HTTP-Endpoint weiter
