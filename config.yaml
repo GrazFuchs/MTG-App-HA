@@ -33,6 +33,9 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_topic_prefix: "mtg-collection"
+  notify_min_alert_value_eur: 5.0
+  notify_webhook_url: ""
+  notify_via_ha_service: ""
 schema:
   archidekt_username: "str?"
   archidekt_password: "password?"
@@ -50,3 +53,6 @@ schema:
   mqtt_username: "str?"
   mqtt_password: "password?"
   mqtt_topic_prefix: "str?"
+  notify_min_alert_value_eur: "float?"
+  notify_webhook_url: "str?"
+  notify_via_ha_service: "str?"

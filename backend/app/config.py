@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     mqtt_username: str = ""
     mqtt_password: str = ""
     mqtt_topic_prefix: str = "mtg-collection"
+    notify_min_alert_value_eur: float = 5.0
+    notify_webhook_url: str = ""
+    notify_via_ha_service: str = ""
     data_dir: str = "/data"
     db_path: str = "/data/mtg.db"
     ingress_entry: str = "/"

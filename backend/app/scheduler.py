@@ -47,6 +47,18 @@ async def _sync_job():
     except Exception as e:
         logger.error("Scheduled Cardmarket price sync failed: %s", e)
 
+    # Send price spike notifications after price sync
+    try:
+        from .services.cardmarket_prices import get_price_alerts
+        from .services.notifications import send_price_spike_notifications
+        alerts = await get_price_alerts()
+        if alerts:
+            sent = await send_price_spike_notifications(alerts)
+            if sent:
+                logger.info("Sent %d price spike notifications", sent)
+    except Exception as e:
+        logger.error("Price spike notifications failed: %s", e)
+
     # Publish stats to MQTT after all syncs
     try:
         from .services.ha_publisher import publish_stats

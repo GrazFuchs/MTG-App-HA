@@ -41,3 +41,12 @@ configuration:
   mqtt_topic_prefix:
     name: MQTT Topic Prefix
     description: Prefix for MQTT state topics (default mtg-collection)
+  notify_min_alert_value_eur:
+    name: Notification Min Alert Value (EUR)
+    description: Minimum card trend price (EUR) to trigger a notification (default 5.0)
+  notify_webhook_url:
+    name: Notification Webhook URL
+    description: Optional webhook URL to POST price spike alerts to
+  notify_via_ha_service:
+    name: HA Notification Service
+    description: Optional HA notification service (e.g. notify.mobile_app_phone)

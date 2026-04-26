@@ -208,10 +208,24 @@ async def _migration_4(db: aiosqlite.Connection):
             await db.execute(statement)
 
 
+async def _migration_5(db: aiosqlite.Connection):
+    """Add notification_log table for anti-duplicate alert tracking."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_name TEXT NOT NULL,
+            alert_date TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(card_name, alert_date)
+        )
+    """)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
+    5: _migration_5,
 }
 
 
