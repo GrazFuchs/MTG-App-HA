@@ -2,7 +2,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..database import get_db
 from ..config import get_settings
@@ -473,10 +473,21 @@ async def _do_full_sync() -> dict:
                     try:
                         small = await archidekt.get_deck_small(did)
                         remote_updated = small.get("updatedAt", "")
-                        if remote_updated and str(remote_updated) <= str(local["updated_at"]):
-                            logger.info("Deck %d unchanged since last sync, skipping", did)
-                            skipped_decks += 1
-                            continue
+                        if remote_updated:
+                            try:
+                                remote_dt = datetime.fromisoformat(str(remote_updated))
+                                local_dt = datetime.fromisoformat(str(local["updated_at"]))
+                                # Normalize: make both aware (UTC) or both naive
+                                if remote_dt.tzinfo is not None and local_dt.tzinfo is None:
+                                    local_dt = local_dt.replace(tzinfo=timezone.utc)
+                                elif remote_dt.tzinfo is None and local_dt.tzinfo is not None:
+                                    remote_dt = remote_dt.replace(tzinfo=timezone.utc)
+                                if remote_dt <= local_dt:
+                                    logger.info("Deck %d unchanged since last sync, skipping", did)
+                                    skipped_decks += 1
+                                    continue
+                            except (ValueError, TypeError):
+                                logger.debug("Could not parse dates for deck %d, will re-sync", did)
                     except Exception as e:
                         logger.debug("Could not check deck %d for changes, will do full sync: %s", did, e)
 
