@@ -66,6 +66,16 @@ async def _sync_job():
     except Exception as e:
         logger.error("MQTT stats publish failed: %s", e)
 
+    # Record daily value snapshot
+    try:
+        from .database import get_db
+        from .services.queries import record_value_snapshot
+        db = await get_db()
+        await record_value_snapshot(db)
+        logger.info("Value snapshot recorded")
+    except Exception as e:
+        logger.error("Value snapshot recording failed: %s", e)
+
 
 def start_scheduler():
     global _scheduler

@@ -148,6 +148,14 @@ export interface WishlistItem {
   is_deal: boolean;
 }
 
+export interface ValueSnapshot {
+  date: string;
+  total_cards: number;
+  unique_cards: number;
+  value_eur: number;
+  value_usd: number;
+}
+
 export interface CardmarketListing {
   id: number;
   card_name: string;
@@ -225,6 +233,8 @@ export const api = {
 
   // Stats
   getStats: () => request<CollectionStats>('/api/stats/'),
+  getValueHistory: (days?: number) =>
+    request<ValueSnapshot[]>(`/api/stats/value-history${days ? `?days=${days}` : ''}`),
 
   // Cardmarket
   getCardmarketListings: (params?: URLSearchParams) =>

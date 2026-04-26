@@ -1,7 +1,6 @@
 import { Caption1 } from '@fluentui/react-components';
-import { PriceHistoryEntry } from '../api';
 
-export function Sparkline({ data, width = 120, height = 32 }: { data: PriceHistoryEntry[]; width?: number; height?: number }) {
+export function Sparkline({ data, width = 120, height = 32 }: { data: { trend: number }[]; width?: number; height?: number }) {
   if (data.length < 2) return <Caption1>—</Caption1>;
   const values = data.map(d => d.trend);
   const min = Math.min(...values);

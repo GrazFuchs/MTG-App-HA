@@ -14,7 +14,8 @@ import {
   Badge,
   Subtitle2,
 } from '@fluentui/react-components';
-import { api, CollectionStats, PriceAlert } from '../api';
+import { api, CollectionStats, PriceAlert, ValueSnapshot } from '../api';
+import { Sparkline } from '../components/Sparkline';
 
 const PRICE_TIERS = [
   { max: 0.5, label: 'Under €0.50', emoji: '🟤' },
@@ -90,6 +91,10 @@ export default function Dashboard() {
     queryKey: ['priceAlerts'],
     queryFn: () => api.getPriceAlerts(),
   });
+  const { data: valueHistory = [] } = useQuery<ValueSnapshot[]>({
+    queryKey: ['valueHistory'],
+    queryFn: () => api.getValueHistory(90),
+  });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   const loading = statsLoading || alertsLoading;
@@ -134,6 +139,20 @@ export default function Dashboard() {
           <Caption1>Value: €{stats?.cardmarket_total_value?.toFixed(2) ?? '0.00'}</Caption1>
         </Card>
       </div>
+
+      {valueHistory.length >= 2 && (
+        <Card className={styles.card} style={{ marginTop: 16, maxWidth: 400 }}>
+          <CardHeader header={<Body1>Collection Value (EUR) — 90 days</Body1>} />
+          <Sparkline
+            data={valueHistory.map(v => ({ trend: v.value_eur }))}
+            width={360}
+            height={48}
+          />
+          <Caption1>
+            {valueHistory[0].date} — {valueHistory[valueHistory.length - 1].date}
+          </Caption1>
+        </Card>
+      )}
 
       {alerts.length > 0 && (
         <div className={styles.alertsSection}>

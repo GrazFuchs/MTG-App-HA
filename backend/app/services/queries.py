@@ -85,3 +85,22 @@ async def query_deck_detail(db: aiosqlite.Connection, deck_id: int) -> dict[str,
         "bracket": deck["bracket"] if "bracket" in deck.keys() else 0,
         "card_count": len(cards), "cards": cards,
     }
+
+
+async def record_value_snapshot(db: aiosqlite.Connection) -> None:
+    """Record today's collection value snapshot (idempotent per day)."""
+    from datetime import date
+    today = date.today().isoformat()
+    stats = await query_collection_stats(db)
+    await db.execute(
+        """INSERT INTO value_snapshots (date, total_cards, unique_cards, value_eur, value_usd)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(date) DO UPDATE SET
+            total_cards=excluded.total_cards,
+            unique_cards=excluded.unique_cards,
+            value_eur=excluded.value_eur,
+            value_usd=excluded.value_usd""",
+        (today, stats["total_cards"], stats["unique_cards"],
+         stats["total_value_eur"], stats["total_value_usd"]),
+    )
+    await db.commit()

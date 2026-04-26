@@ -253,12 +253,28 @@ async def _migration_6(db: aiosqlite.Connection):
     await db.execute("CREATE INDEX IF NOT EXISTS idx_wishlist_name ON wishlist(card_name)")
 
 
+async def _migration_7(db: aiosqlite.Connection):
+    """Add value_snapshots table for collection value tracking over time."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS value_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL UNIQUE,
+            total_cards INTEGER DEFAULT 0,
+            unique_cards INTEGER DEFAULT 0,
+            value_eur REAL DEFAULT 0,
+            value_usd REAL DEFAULT 0
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_date ON value_snapshots(date)")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
     5: _migration_5,
     6: _migration_6,
+    7: _migration_7,
 }
 
 
