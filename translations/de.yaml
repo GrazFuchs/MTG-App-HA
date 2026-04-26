@@ -1,0 +1,52 @@
+configuration:
+  archidekt_username:
+    name: Archidekt-Benutzername
+    description: Dein Archidekt-Benutzername zum Synchronisieren von Decks
+  archidekt_password:
+    name: Archidekt-Passwort
+    description: Dein Archidekt-Passwort (ermöglicht Zugriff auf private Sammlung & Decks)
+  archidekt_user_id:
+    name: Archidekt-Benutzer-ID
+    description: Deine numerische Archidekt-Benutzer-ID (aus deiner Sammlungs-URL, z.B. 123456)
+  archidekt_deck_ids:
+    name: Archidekt-Deck-IDs
+    description: Liste der Archidekt-Deck-IDs zum Synchronisieren (leer lassen für automatische Erkennung)
+  sync_enabled:
+    name: Automatische Synchronisierung aktivieren
+    description: Tägliche automatische Synchronisierung von Archidekt aktivieren
+  sync_hour:
+    name: Synchronisierungsstunde
+    description: Stunde des Tages (0-23), zu der die tägliche Synchronisierung ausgeführt wird
+  mcp_auth_token:
+    name: MCP-Authentifizierungstoken
+    description: Optionaler Bearer-Token für die MCP-Server-Authentifizierung
+  cardmarket_username:
+    name: Cardmarket-Benutzername
+    description: Dein Cardmarket-Benutzername (z.B. YourUsername) zum Synchronisieren von Angeboten
+  mqtt_enabled:
+    name: MQTT aktivieren
+    description: Sammlungsstatistiken als Home-Assistant-Sensoren über MQTT Discovery veröffentlichen
+  mqtt_host:
+    name: MQTT-Host
+    description: MQTT-Broker-Hostname (z.B. core-mosquitto für das HA Mosquitto Add-on)
+  mqtt_port:
+    name: MQTT-Port
+    description: MQTT-Broker-Port (Standard 1883)
+  mqtt_username:
+    name: MQTT-Benutzername
+    description: MQTT-Broker-Benutzername
+  mqtt_password:
+    name: MQTT-Passwort
+    description: MQTT-Broker-Passwort
+  mqtt_topic_prefix:
+    name: MQTT-Topic-Präfix
+    description: Präfix für MQTT-Status-Topics (Standard mtg-collection)
+  notify_min_alert_value_eur:
+    name: Benachrichtigung Mindestwert (EUR)
+    description: Minimaler Karten-Trendpreis (EUR) um eine Benachrichtigung auszulösen (Standard 5.0)
+  notify_webhook_url:
+    name: Benachrichtigungs-Webhook-URL
+    description: Optionale Webhook-URL für Preis-Spike-Benachrichtigungen
+  notify_via_ha_service:
+    name: HA-Benachrichtigungsdienst
+    description: Optionaler HA-Benachrichtigungsdienst (z.B. notify.mobile_app_phone)

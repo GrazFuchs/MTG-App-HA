@@ -74,6 +74,13 @@ const translations: Record<string, Record<string, string>> = {
 };
 
 function detectLanguage(): string {
+  // Override via LocalStorage has highest priority
+  try {
+    const stored = localStorage.getItem('mtg_lang');
+    if (stored === 'en' || stored === 'de') return stored;
+  } catch {
+    // LocalStorage can throw in private browser modes — ignore
+  }
   // Check HA language attribute
   const ha = document.documentElement.lang || document.body.getAttribute('data-lang');
   if (ha && ha.startsWith('de')) return 'de';
