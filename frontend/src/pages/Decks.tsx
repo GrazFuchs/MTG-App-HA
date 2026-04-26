@@ -13,6 +13,7 @@ import {
   Spinner,
   Badge,
   Divider,
+  Select,
 } from '@fluentui/react-components';
 import { api, DeckSummary } from '../api';
 
@@ -67,14 +68,21 @@ export default function Decks() {
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
+  const [bracketFilter, setBracketFilter] = useState('');
 
   useEffect(() => {
     api.getDecks().then(setDecks).finally(() => setLoading(false));
   }, []);
 
+  const filteredDecks = useMemo(() => {
+    if (!bracketFilter) return decks;
+    const b = parseInt(bracketFilter, 10);
+    return decks.filter(d => d.bracket === b);
+  }, [decks, bracketFilter]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, DeckSummary[]>();
-    for (const d of decks) {
+    for (const d of filteredDecks) {
       const folder = d.folder_name || 'Uncategorized';
       if (!map.has(folder)) map.set(folder, []);
       map.get(folder)!.push(d);
@@ -130,9 +138,28 @@ export default function Decks() {
     </Card>
   );
 
+  const availableBrackets = useMemo(() => {
+    const set = new Set(decks.map(d => d.bracket).filter(b => b > 0));
+    return [...set].sort();
+  }, [decks]);
+
   return (
     <div>
-      <Title2>Decks ({decks.length})</Title2>
+      <Title2>Decks ({filteredDecks.length}{bracketFilter ? ` of ${decks.length}` : ''})</Title2>
+      {availableBrackets.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <Select
+            value={bracketFilter}
+            onChange={(_, d) => setBracketFilter(d.value)}
+            style={{ minWidth: 180 }}
+          >
+            <option value="">All Brackets</option>
+            {availableBrackets.map(b => (
+              <option key={b} value={String(b)}>Bracket {b}</option>
+            ))}
+          </Select>
+        </div>
+      )}
       {grouped.map(([folder, folderDecks]) => {
         const isOpen = openFolders.has(folder);
         return (
