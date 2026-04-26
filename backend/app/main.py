@@ -12,7 +12,7 @@ from .database import init_db, close_db
 from .logging_config import setup_logging
 from .scheduler import start_scheduler, stop_scheduler
 from .version import VERSION
-from .routers import decks, collection, cardmarket, sync, cards, stats
+from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist
 
 setup_logging()
 
@@ -117,6 +117,7 @@ app.include_router(cardmarket.router, prefix="/api/cardmarket", tags=["cardmarke
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(cards.router, prefix="/api/cards", tags=["cards"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
 
 
 @app.get("/healthz", tags=["health"])

@@ -238,11 +238,27 @@ async def _migration_5(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_6(db: aiosqlite.Connection):
+    """Add wishlist table."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS wishlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_name TEXT NOT NULL,
+            max_price_eur REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(card_name)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_wishlist_name ON wishlist(card_name)")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
     5: _migration_5,
+    6: _migration_6,
 }
 
 

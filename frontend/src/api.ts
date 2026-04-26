@@ -138,6 +138,16 @@ export interface CollectionStats {
   cardmarket_total_value: number;
 }
 
+export interface WishlistItem {
+  id: number;
+  card_name: string;
+  max_price_eur: number;
+  notes: string;
+  added_at: string;
+  current_price: number | null;
+  is_deal: boolean;
+}
+
 export interface CardmarketListing {
   id: number;
   card_name: string;
@@ -281,4 +291,11 @@ export const api = {
     request<{ status: string }>('/api/cardmarket/add-listing', { method: 'POST', body: JSON.stringify(data) }),
   clearCardmarketListings: () =>
     request<{ status: string }>('/api/cardmarket/clear-listings', { method: 'DELETE' }),
+
+  // Wishlist
+  getWishlist: () => request<WishlistItem[]>('/api/wishlist/'),
+  addToWishlist: (data: { card_name: string; max_price_eur?: number; notes?: string }) =>
+    request<WishlistItem>('/api/wishlist/', { method: 'POST', body: JSON.stringify(data) }),
+  removeFromWishlist: (id: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}`, { method: 'DELETE' }),
 };

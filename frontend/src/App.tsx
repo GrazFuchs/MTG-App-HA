@@ -13,6 +13,7 @@ import {
   Cart24Regular,
   ArrowSync24Regular,
   CopySelect20Regular,
+  Heart24Regular,
 } from '@fluentui/react-icons';
 import Dashboard from './pages/Dashboard';
 import Decks from './pages/Decks';
@@ -21,6 +22,7 @@ import Collection from './pages/Collection';
 import Cardmarket from './pages/Cardmarket';
 import Settings from './pages/Settings';
 import Duplicates from './pages/Duplicates';
+import Wishlist from './pages/Wishlist';
 
 const useStyles = makeStyles({
   root: {
@@ -57,6 +59,7 @@ const tabs = [
   { value: '/collection', label: 'Collection', icon: <Collections24Regular /> },
   { value: '/duplicates', label: 'Duplicates', icon: <CopySelect20Regular /> },
   { value: '/cardmarket', label: 'Cardmarket', icon: <Cart24Regular /> },
+  { value: '/wishlist', label: 'Wishlist', icon: <Heart24Regular /> },
   { value: '/settings', label: 'Settings', icon: <ArrowSync24Regular /> },
 ];
 
@@ -97,6 +100,7 @@ export default function App() {
           <Route path="/collection" element={<Collection />} />
           <Route path="/duplicates" element={<Duplicates />} />
           <Route path="/cardmarket" element={<Cardmarket />} />
+          <Route path="/wishlist" element={<Wishlist />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>

@@ -514,6 +514,63 @@ async def suggest_what_to_sell(target_amount_eur: float = 50.0, max_suggestions:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+async def get_wishlist() -> str:
+    """Get the current wishlist with deal status."""
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT id, card_name, max_price_eur, notes, added_at FROM wishlist ORDER BY added_at DESC"
+        )
+        rows = await cursor.fetchall()
+        items = []
+        for r in rows:
+            price_cursor = await db.execute(
+                """SELECT ph.trend FROM cardmarket_products cp
+                JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                WHERE LOWER(cp.card_name) = LOWER(?)
+                ORDER BY ph.date DESC LIMIT 1""",
+                (r["card_name"],),
+            )
+            pr = await price_cursor.fetchone()
+            current = pr[0] if pr else None
+            items.append({
+                "card_name": r["card_name"],
+                "max_price_eur": r["max_price_eur"],
+                "current_price": current,
+                "is_deal": current is not None and r["max_price_eur"] > 0 and current <= r["max_price_eur"],
+                "notes": r["notes"],
+            })
+        return json.dumps(items, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def add_to_wishlist(card_name: str, max_price_eur: float = 0.0, notes: str = "") -> str:
+    """Add a card to the wishlist with optional price alert threshold.
+
+    Args:
+        card_name: Exact card name
+        max_price_eur: Maximum price to trigger deal alert (0 = no alert)
+        notes: Optional notes
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        await db.execute(
+            "INSERT INTO wishlist (card_name, max_price_eur, notes) VALUES (?, ?, ?)",
+            (card_name.strip(), max_price_eur, notes.strip()),
+        )
+        await db.commit()
+        return json.dumps({"ok": True, "card_name": card_name.strip()})
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return json.dumps({"error": f"'{card_name}' is already on the wishlist"})
+        return json.dumps({"error": str(e)})
+
+
 # --- Prompts ---
 
 @mcp.prompt()
