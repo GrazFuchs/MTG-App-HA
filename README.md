@@ -450,6 +450,7 @@ cd backend
 pip install -r requirements.txt
 export DATA_DIR=./data
 export OPTIONS_PATH=./data/options.json
+export CORS_ORIGINS=http://localhost:5173  # CORS für Standalone-Dev aktivieren
 python -m uvicorn app.main:app --reload --port 8099
 
 # Frontend (Terminal 2)
