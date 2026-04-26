@@ -41,7 +41,7 @@ Ein Home Assistant Add-on zur Verwaltung deiner Magic: The Gathering Sammlung mi
   - Preisverlauf-Sparklines (30 Tage) beim Hovern über Kartennamen
   - Automatische Preis-Spike-Alerts mit Verkaufsempfehlungen für ungenutzte Kopien
 - **MCP-Server**: Streamable HTTP-Endpoint für AI-Assistenten (Claude, etc.)
-  - 19 Tools inkl. Preisalerts, Preisverlauf, Deck-Nutzung, Preis-Sync, Doubletten, Listings verwalten
+  - 22 Tools, 3 Resources, 2 Prompts inkl. Preisalerts, Preisverlauf, Deck-Nutzung, Preis-Sync, Doubletten, Wishlist, Deck-Vollständigkeit, Verkaufsempfehlungen
 - **Web-UI**: React-Frontend mit Fluent UI
   - Dashboard: Übersichtskarten mit Statistiken + Preis-Spike-Alerts
   - Decks: Einklappbare Ordner, Bracket-Badges, Deck-Previews
@@ -143,7 +143,7 @@ mtg-collection-ha/
 │       ├── database.py      # SQLite-Schema, Init, Connection
 │       ├── scheduler.py     # APScheduler für täglichen Sync
 │       ├── version.py       # VERSION = "0.4.0"
-│       ├── mcp_server.py    # MCP-Server (16 Tools, 2 Prompts)
+│       ├── mcp_server.py    # MCP-Server (22 Tools, 3 Resources, 2 Prompts)
 │       ├── clients/
 │       │   ├── archidekt.py # Archidekt API Client (Auth, Decks, Collection)
 │       │   ├── scryfall.py  # Scryfall API Client (Suche, Preise)
@@ -356,6 +356,18 @@ Der integrierte MCP-Server (Model Context Protocol) ermöglicht es AI-Assistente
 | `get_duplicates` | Doubletten auflisten (Karten mit überschüssigen Kopien) |
 | `add_cardmarket_listing` | Manuelles Cardmarket-Listing erstellen |
 | `clear_cardmarket_listings` | Alle Cardmarket-Listings löschen |
+| `suggest_what_to_sell` | KI-Verkaufsempfehlungen: ungenutzte Karten mit hohem Wert |
+| `get_wishlist` | Aktuelle Wunschliste mit Deal-Status abrufen |
+| `add_to_wishlist` | Karte zur Wunschliste hinzufügen (mit Preis-Alert) |
+| `analyze_deck_completeness` | Deck-Vollständigkeit analysieren (fehlende Karten, Kosten) |
+
+### Verfügbare Resources
+
+| Resource-URI | Beschreibung |
+|---|---|
+| `mtg://collection/stats` | Aktuelle Sammlungs-Statistiken als JSON |
+| `mtg://decks` | Liste aller synchronisierten Decks als JSON |
+| `mtg://deck/{deck_id}` | Details zu einem einzelnen Deck (parametrisiert) |
 
 ### Prompts
 
@@ -413,7 +425,7 @@ Datei: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 #### 3. Claude Desktop neu starten
 
-Nach dem Neustart erscheint „MTG Collection Manager" als verfügbarer MCP-Server mit 11 Tools.
+Nach dem Neustart erscheint „MTG Collection Manager" als verfügbarer MCP-Server mit 22 Tools.
 
 #### Wie der Proxy funktioniert
 
