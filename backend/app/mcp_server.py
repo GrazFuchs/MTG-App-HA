@@ -571,6 +571,74 @@ async def add_to_wishlist(card_name: str, max_price_eur: float = 0.0, notes: str
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+async def analyze_deck_completeness(deck_id: int) -> str:
+    """Analyze how complete a deck is based on your collection.
+
+    Shows which cards you own, which are missing, and estimated cost to complete.
+
+    Args:
+        deck_id: Local deck ID (from list_decks)
+    """
+    from .database import get_db
+    from .services.queries import query_deck_detail
+    try:
+        db = await get_db()
+        detail = await query_deck_detail(db, deck_id)
+        if not detail:
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+
+        owned_cards: list[dict] = []
+        missing_cards: list[dict] = []
+        total_missing_cost = 0.0
+
+        for card in detail["cards"]:
+            # Check if we own this card in collection
+            cursor = await db.execute(
+                """SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0)
+                FROM collection col JOIN cards c ON c.id = col.card_id
+                WHERE LOWER(c.name) = LOWER(?)""",
+                (card["name"],),
+            )
+            row = await cursor.fetchone()
+            owned_qty = row[0] if row else 0
+
+            needed = card["quantity"]
+            if owned_qty >= needed:
+                owned_cards.append({"name": card["name"], "quantity": needed, "owned": owned_qty})
+            else:
+                short = needed - owned_qty
+                price = 0.0
+                try:
+                    price = float(card.get("price_eur") or 0) * short
+                except (ValueError, TypeError):
+                    pass
+                total_missing_cost += price
+                missing_cards.append({
+                    "name": card["name"],
+                    "needed": needed,
+                    "owned": owned_qty,
+                    "short": short,
+                    "est_cost_eur": round(price, 2),
+                })
+
+        total_cards = len(detail["cards"])
+        complete_pct = round(len(owned_cards) / total_cards * 100, 1) if total_cards else 0
+
+        return json.dumps({
+            "deck": detail["name"],
+            "format": detail["format"],
+            "total_unique_cards": total_cards,
+            "owned_count": len(owned_cards),
+            "missing_count": len(missing_cards),
+            "completeness_pct": complete_pct,
+            "estimated_cost_to_complete_eur": round(total_missing_cost, 2),
+            "missing_cards": sorted(missing_cards, key=lambda x: x["est_cost_eur"], reverse=True),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Prompts ---
 
 @mcp.prompt()
