@@ -541,6 +541,33 @@ async def clear_cardmarket_listings() -> str:
     return json.dumps({"status": "cleared", "deleted": count})
 
 
+@mcp.tool()
+async def suggest_what_to_sell(target_amount_eur: float = 50.0, max_suggestions: int = 10) -> str:
+    """Suggest cards to sell based on unused copies and price trends.
+
+    Prioritizes cards with price spikes and copies not used in any deck.
+    Accumulates suggestions until target amount is reached.
+
+    Args:
+        target_amount_eur: Target sell amount in EUR (default 50.0)
+        max_suggestions: Maximum number of card suggestions (default 10)
+    """
+    from .services.sell_advisor import suggest_sells
+    try:
+        suggestions = await suggest_sells(target_amount_eur, max_suggestions)
+        if not suggestions:
+            return json.dumps({"message": "Keine Verkaufsempfehlungen — entweder keine ungenutzten Kopien oder keine Preisdaten vorhanden.", "suggestions": []})
+        total = sum(s["expected_total_eur"] for s in suggestions)
+        return json.dumps({
+            "target_eur": target_amount_eur,
+            "estimated_total_eur": round(total, 2),
+            "target_reached": total >= target_amount_eur,
+            "suggestions": suggestions,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Prompts ---
 
 @mcp.prompt()
