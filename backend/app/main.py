@@ -9,9 +9,12 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .database import init_db, close_db
+from .logging_config import setup_logging
 from .scheduler import start_scheduler, stop_scheduler
 from .version import VERSION
 from .routers import decks, collection, cardmarket, sync, cards, stats
+
+setup_logging()
 
 try:
     from .mcp_server import mount_mcp_server, mcp as mcp_server
