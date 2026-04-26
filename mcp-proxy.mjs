@@ -149,13 +149,14 @@ function mcpRequest(body, extraHeaders = {}) {
  * Main proxy loop: read JSON-RPC from stdin, forward to HTTP, write response to stdout.
  */
 async function main() {
-  // Install ws package if needed
+  // Verify ws package is available
   try {
     await import('ws');
   } catch {
-    log('Installing ws package...');
-    const { execSync } = await import('child_process');
-    execSync('npm install ws', { cwd: new URL('.', import.meta.url).pathname, stdio: 'pipe' });
+    process.stderr.write(
+      '[mcp-proxy] Error: "ws" package not found. Run "npm install" in the repo root first.\n'
+    );
+    process.exit(1);
   }
   
   // Create ingress session
