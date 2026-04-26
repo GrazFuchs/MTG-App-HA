@@ -89,21 +89,10 @@ async def get_card(name: str) -> str:
 async def list_decks() -> str:
     """List all synced decks from Archidekt."""
     from .database import get_db
+    from .services.queries import query_all_decks
     try:
         db = await get_db()
-        cursor = await db.execute(
-            """SELECT d.id, d.archidekt_id, d.name, d.format, d.commander_name,
-            d.last_synced, d.folder_name, d.bracket, COUNT(dc.id) as card_count
-            FROM decks d LEFT JOIN deck_cards dc ON dc.deck_id = d.id
-            GROUP BY d.id ORDER BY d.name"""
-        )
-        rows = await cursor.fetchall()
-        decks = [{
-            "id": r[0], "archidekt_id": r[1], "name": r[2],
-            "format": r[3], "commander": r[4],
-            "last_synced": r[5], "folder": r[6] or "",
-            "bracket": r[7] or 0, "card_count": r[8],
-        } for r in rows]
+        decks = await query_all_decks(db)
         return json.dumps(decks, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
@@ -117,34 +106,13 @@ async def get_deck(deck_id: int) -> str:
         deck_id: Local deck ID (from list_decks)
     """
     from .database import get_db
+    from .services.queries import query_deck_detail
     try:
         db = await get_db()
-        cursor = await db.execute(
-            "SELECT * FROM decks WHERE id=?", (deck_id,)
-        )
-        deck = await cursor.fetchone()
-        if not deck:
+        detail = await query_deck_detail(db, deck_id)
+        if not detail:
             return json.dumps({"error": f"Deck {deck_id} not found"})
-
-        cursor = await db.execute(
-            """SELECT c.name, c.mana_cost, c.type_line, c.cmc,
-            dc.quantity, dc.category, dc.is_commander, c.price_eur, c.price_usd
-            FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-            WHERE dc.deck_id=? ORDER BY dc.category, c.name""",
-            (deck_id,),
-        )
-        cards = [{
-            "name": r[0], "mana_cost": r[1], "type_line": r[2], "cmc": r[3],
-            "quantity": r[4], "category": r[5], "is_commander": bool(r[6]),
-            "price_eur": r[7], "price_usd": r[8],
-        } for r in await cursor.fetchall()]
-
-        return json.dumps({
-            "name": deck["name"], "format": deck["format"],
-            "commander": deck["commander_name"],
-            "bracket": deck["bracket"] if "bracket" in deck.keys() else 0,
-            "card_count": len(cards), "cards": cards,
-        }, indent=2, default=str)
+        return json.dumps(detail, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -222,40 +190,18 @@ async def search_collection(
 async def get_collection_stats() -> str:
     """Get statistics about your collection (total cards, value, etc.)."""
     from .database import get_db
+    from .services.queries import query_collection_stats
     try:
         db = await get_db()
-        cursor = await db.execute(
-            """SELECT
-                COALESCE(SUM(col.quantity + col.foil_quantity), 0) as total,
-                COUNT(DISTINCT col.card_id) as unique_cards,
-                COALESCE(SUM(
-                    CASE WHEN c.price_eur != '' THEN CAST(c.price_eur AS REAL) * col.quantity ELSE 0 END
-                    + CASE WHEN c.price_eur_foil != '' THEN CAST(c.price_eur_foil AS REAL) * col.foil_quantity ELSE 0 END
-                ), 0) as value_eur,
-                COALESCE(SUM(
-                    CASE WHEN c.price_usd != '' THEN CAST(c.price_usd AS REAL) * col.quantity ELSE 0 END
-                    + CASE WHEN c.price_usd_foil != '' THEN CAST(c.price_usd_foil AS REAL) * col.foil_quantity ELSE 0 END
-                ), 0) as value_usd
-            FROM collection col JOIN cards c ON c.id = col.card_id"""
-        )
-        row = await cursor.fetchone()
-
-        cursor2 = await db.execute("SELECT COUNT(*) FROM decks")
-        deck_count = (await cursor2.fetchone())[0]
-
-        cursor3 = await db.execute(
-            "SELECT COUNT(*), COALESCE(SUM(price * quantity), 0) FROM cardmarket_listings"
-        )
-        cm = await cursor3.fetchone()
-
+        stats = await query_collection_stats(db)
         return json.dumps({
-            "total_cards": row[0],
-            "unique_cards": row[1],
-            "total_value_eur": round(row[2], 2),
-            "total_value_usd": round(row[3], 2),
-            "total_decks": deck_count,
-            "cardmarket_listings": cm[0],
-            "cardmarket_value": round(cm[1], 2),
+            "total_cards": stats["total_cards"],
+            "unique_cards": stats["unique_cards"],
+            "total_value_eur": stats["total_value_eur"],
+            "total_value_usd": stats["total_value_usd"],
+            "total_decks": stats["total_decks"],
+            "cardmarket_listings": stats["total_cardmarket_listings"],
+            "cardmarket_value": stats["cardmarket_total_value"],
         }, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})
