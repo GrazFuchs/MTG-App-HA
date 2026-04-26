@@ -168,6 +168,32 @@ export default function DeckView() {
   if (error) return <Body1>Error loading deck: {error}</Body1>;
   if (!deck) return <Body1>Deck not found.</Body1>;
 
+  // Mana curve (non-land, non-sideboard, grouped by CMC 0-7+)
+  const manaCurve = (() => {
+    const cmc: Record<number, number> = {};
+    for (const c of deck.cards) {
+      if (SIDEBOARD_CATEGORIES.has(c.category || '')) continue;
+      if (c.card.type_line.includes('Land')) continue;
+      const bucket = Math.min(Math.floor(c.card.cmc), 7);
+      cmc[bucket] = (cmc[bucket] || 0) + c.quantity;
+    }
+    return Array.from({ length: 8 }, (_, i) => ({ label: i === 7 ? '7+' : String(i), count: cmc[i] || 0 }));
+  })();
+  const curveMax = Math.max(...manaCurve.map(b => b.count), 1);
+
+  // Color pips from mana costs
+  const colorPips = (() => {
+    const pips: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
+    for (const c of deck.cards) {
+      if (SIDEBOARD_CATEGORIES.has(c.category || '')) continue;
+      for (const ch of (c.card.mana_cost || '')) {
+        if (ch in pips) pips[ch] += c.quantity;
+      }
+    }
+    return Object.entries(pips).filter(([, v]) => v > 0).map(([color, count]) => ({ color, count }));
+  })();
+  const pipMax = Math.max(...colorPips.map(p => p.count), 1);
+
   const mainCount = deck.cards
     .filter(e => !SIDEBOARD_CATEGORIES.has(e.category || ''))
     .reduce((s, e) => s + e.quantity, 0);
@@ -254,6 +280,45 @@ export default function DeckView() {
       </div>
 
       <Divider />
+
+      {/* Mana Curve & Color Pips */}
+      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 16, marginBottom: 16 }}>
+        {manaCurve.some(b => b.count > 0) && (
+          <div>
+            <Caption1 style={{ display: 'block', marginBottom: 4 }}>Mana Curve</Caption1>
+            <svg width={manaCurve.length * 28} height={80}>
+              {manaCurve.map((b, i) => {
+                const barH = (b.count / curveMax) * 60;
+                return (
+                  <g key={i}>
+                    <rect x={i * 28 + 4} y={60 - barH} width={20} height={barH} fill={tokens.colorBrandBackground} rx={2} />
+                    <text x={i * 28 + 14} y={75} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{b.label}</text>
+                    {b.count > 0 && <text x={i * 28 + 14} y={57 - barH} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{b.count}</text>}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        )}
+        {colorPips.length > 0 && (
+          <div>
+            <Caption1 style={{ display: 'block', marginBottom: 4 }}>Color Pips</Caption1>
+            <svg width={colorPips.length * 36} height={80}>
+              {colorPips.map((p, i) => {
+                const barH = (p.count / pipMax) * 60;
+                return (
+                  <g key={i}>
+                    <rect x={i * 36 + 4} y={60 - barH} width={28} height={barH} fill={COLOR_MAP[p.color] || '#888'} rx={2}
+                      stroke={tokens.colorNeutralStroke1} strokeWidth={p.color === 'W' ? 1 : 0} />
+                    <text x={i * 36 + 18} y={75} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{p.color}</text>
+                    <text x={i * 36 + 18} y={57 - barH} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{p.count}</text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        )}
+      </div>
 
       {/* Main deck categories */}
       {Array.from(mainCards.entries()).map(([cat, cards]) => (
