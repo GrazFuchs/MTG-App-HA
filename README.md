@@ -489,6 +489,16 @@ scp -r ./* root@homeassistant.local:/addons/mtg-collection/
 - **API**: RESTful, JSON, FastAPI-Router mit Pydantic-Modellen
 - **Fehlerbehandlung**: Exponentieller Backoff bei Rate-Limiting, inkrementelles Speichern bei Sync
 
+### Linting & Type-Checking
+
+```bash
+cd backend
+ruff check .
+mypy .
+```
+
+Konfiguration in `backend/pyproject.toml` (line-length 100, strict mypy).
+
 ---
 
 ## Changelog
