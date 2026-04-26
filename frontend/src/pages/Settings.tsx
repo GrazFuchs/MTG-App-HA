@@ -22,6 +22,7 @@ import {
 } from '@fluentui/react-components';
 import { ArrowSync24Regular, DeleteRegular } from '@fluentui/react-icons';
 import { api, SyncStatus, SyncLogEntry } from '../api';
+import { t } from '../i18n';
 
 const useStyles = makeStyles({
   section: {
@@ -96,7 +97,7 @@ export default function Settings() {
 
   return (
     <div>
-      <Title2>Settings & Sync</Title2>
+      <Title2>{t('settings.title')}</Title2>
 
       {msg && (
         <MessageBar intent="info" style={{ marginTop: 8 }}>
@@ -229,7 +230,7 @@ export default function Settings() {
 
       {/* Backup & Restore */}
       <div className={styles.section}>
-        <Title3>Backup & Restore</Title3>
+        <Title3>{t('settings.backup')}</Title3>
         <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
           <Button
             appearance="primary"
@@ -240,7 +241,7 @@ export default function Settings() {
               a.click();
             }}
           >
-            Download Backup
+            {t('settings.download_backup')}
           </Button>
           <Button
             appearance="secondary"
@@ -265,7 +266,7 @@ export default function Settings() {
               input.click();
             }}
           >
-            Restore from Backup
+            {t('settings.restore_backup')}
           </Button>
         </div>
       </div>

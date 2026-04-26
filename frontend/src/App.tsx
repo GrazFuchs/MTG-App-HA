@@ -23,6 +23,7 @@ import Cardmarket from './pages/Cardmarket';
 import Settings from './pages/Settings';
 import Duplicates from './pages/Duplicates';
 import Wishlist from './pages/Wishlist';
+import { t } from './i18n';
 
 const useStyles = makeStyles({
   root: {
@@ -54,13 +55,13 @@ const useStyles = makeStyles({
 });
 
 const tabs = [
-  { value: '/', label: 'Dashboard', icon: <Home24Regular /> },
-  { value: '/decks', label: 'Decks', icon: <Stack24Regular /> },
-  { value: '/collection', label: 'Collection', icon: <Collections24Regular /> },
-  { value: '/duplicates', label: 'Duplicates', icon: <CopySelect20Regular /> },
-  { value: '/cardmarket', label: 'Cardmarket', icon: <Cart24Regular /> },
-  { value: '/wishlist', label: 'Wishlist', icon: <Heart24Regular /> },
-  { value: '/settings', label: 'Settings', icon: <ArrowSync24Regular /> },
+  { value: '/', label: t('nav.dashboard'), icon: <Home24Regular /> },
+  { value: '/decks', label: t('nav.decks'), icon: <Stack24Regular /> },
+  { value: '/collection', label: t('nav.collection'), icon: <Collections24Regular /> },
+  { value: '/duplicates', label: t('nav.duplicates'), icon: <CopySelect20Regular /> },
+  { value: '/cardmarket', label: t('nav.cardmarket'), icon: <Cart24Regular /> },
+  { value: '/wishlist', label: t('nav.wishlist'), icon: <Heart24Regular /> },
+  { value: '/settings', label: t('nav.settings'), icon: <ArrowSync24Regular /> },
 ];
 
 export default function App() {

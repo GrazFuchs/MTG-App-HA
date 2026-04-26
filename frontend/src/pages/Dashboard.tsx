@@ -16,6 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { api, CollectionStats, PriceAlert, ValueSnapshot } from '../api';
 import { Sparkline } from '../components/Sparkline';
+import { t } from '../i18n';
 
 const PRICE_TIERS = [
   { max: 0.5, label: 'Under €0.50', emoji: '🟤' },
@@ -110,31 +111,31 @@ export default function Dashboard() {
 
   return (
     <div>
-      <Title2>Dashboard</Title2>
+      <Title2>{t('dashboard.title')}</Title2>
 
       <div className={styles.grid}>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Total Cards</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.total_cards')}</Body1>} />
           <div className={styles.value}>{stats?.total_cards ?? 0}</div>
         </Card>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Unique Cards</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.unique_cards')}</Body1>} />
           <div className={styles.value}>{stats?.unique_cards ?? 0}</div>
         </Card>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Collection Value (EUR)</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.value_eur')}</Body1>} />
           <div className={styles.value}>€{stats?.total_value_eur?.toFixed(2) ?? '0.00'}</div>
         </Card>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Collection Value (USD)</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.value_usd')}</Body1>} />
           <div className={styles.value}>${stats?.total_value_usd?.toFixed(2) ?? '0.00'}</div>
         </Card>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Decks</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.decks')}</Body1>} />
           <div className={styles.value}>{stats?.total_decks ?? 0}</div>
         </Card>
         <Card className={styles.card}>
-          <CardHeader header={<Body1>Cardmarket Listings</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.cardmarket_listings')}</Body1>} />
           <div className={styles.value}>{stats?.total_cardmarket_listings ?? 0}</div>
           <Caption1>Value: €{stats?.cardmarket_total_value?.toFixed(2) ?? '0.00'}</Caption1>
         </Card>
@@ -142,7 +143,7 @@ export default function Dashboard() {
 
       {valueHistory.length >= 2 && (
         <Card className={styles.card} style={{ marginTop: 16, maxWidth: 400 }}>
-          <CardHeader header={<Body1>Collection Value (EUR) — 90 days</Body1>} />
+          <CardHeader header={<Body1>{t('dashboard.value_history')}</Body1>} />
           <Sparkline
             data={valueHistory.map(v => ({ trend: v.value_eur }))}
             width={360}
