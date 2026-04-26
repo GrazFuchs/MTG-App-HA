@@ -95,6 +95,11 @@ const useStyles = makeStyles({
     minWidth: '180px',
     textAlign: 'center' as const,
   },
+  hideOnMobile: {
+    '@media (max-width: 640px)': {
+      display: 'none',
+    },
+  },
 });
 
 function scryfallUrl(card: { set_code: string; collector_number: string; name: string }) {
@@ -258,10 +263,10 @@ export default function Collection() {
               <TableRow>
                 <TableHeaderCell>Name</TableHeaderCell>
                 <TableHeaderCell>Copies</TableHeaderCell>
-                <TableHeaderCell>In Decks</TableHeaderCell>
-                <TableHeaderCell>Finish</TableHeaderCell>
-                <TableHeaderCell>Edition</TableHeaderCell>
-                <TableHeaderCell>Language</TableHeaderCell>
+                <TableHeaderCell className={styles.hideOnMobile}>In Decks</TableHeaderCell>
+                <TableHeaderCell className={styles.hideOnMobile}>Finish</TableHeaderCell>
+                <TableHeaderCell className={styles.hideOnMobile}>Edition</TableHeaderCell>
+                <TableHeaderCell className={styles.hideOnMobile}>Language</TableHeaderCell>
                 <TableHeaderCell>Price (EUR)</TableHeaderCell>
               </TableRow>
             </TableHeader>
@@ -286,12 +291,12 @@ export default function Collection() {
                         </CardHoverPreview>
                       </TableCell>
                       <TableCell>{getCopies(entry)}</TableCell>
-                      <TableCell className={styles.deckUsage}>
+                      <TableCell className={`${styles.deckUsage} ${styles.hideOnMobile}`}>
                         {group.inDecks > 0 ? group.inDecks : '—'}
                       </TableCell>
-                      <TableCell>{getFinish(entry)}</TableCell>
-                      <TableCell>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
-                      <TableCell>{entry.language || '—'}</TableCell>
+                      <TableCell className={styles.hideOnMobile}>{getFinish(entry)}</TableCell>
+                      <TableCell className={styles.hideOnMobile}>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
+                      <TableCell className={styles.hideOnMobile}>{entry.language || '—'}</TableCell>
                       <TableCell>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</TableCell>
                     </TableRow>
                   );
@@ -310,12 +315,12 @@ export default function Collection() {
                         <Caption1 style={{ marginLeft: 8 }}>({group.entries.length} printings)</Caption1>
                       </TableCell>
                       <TableCell className={styles.groupRow}>{group.totalCopies}</TableCell>
-                      <TableCell className={`${styles.groupRow} ${styles.deckUsage}`}>
+                      <TableCell className={`${styles.groupRow} ${styles.deckUsage} ${styles.hideOnMobile}`}>
                         {group.inDecks > 0 ? group.inDecks : '—'}
                       </TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell />
+                      <TableCell className={styles.hideOnMobile} />
+                      <TableCell className={styles.hideOnMobile} />
+                      <TableCell className={styles.hideOnMobile} />
                       <TableCell />
                     </TableRow>
                     {isOpen && group.entries.map(entry => (
@@ -333,12 +338,12 @@ export default function Collection() {
                           </CardHoverPreview>
                         </TableCell>
                         <TableCell>{getCopies(entry)}</TableCell>
-                        <TableCell className={styles.deckUsage}>
+                        <TableCell className={`${styles.deckUsage} ${styles.hideOnMobile}`}>
                           {group.inDecks > 0 ? group.inDecks : '—'}
                         </TableCell>
-                        <TableCell>{getFinish(entry)}</TableCell>
-                        <TableCell>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
-                        <TableCell>{entry.language || '—'}</TableCell>
+                        <TableCell className={styles.hideOnMobile}>{getFinish(entry)}</TableCell>
+                        <TableCell className={styles.hideOnMobile}>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
+                        <TableCell className={styles.hideOnMobile}>{entry.language || '—'}</TableCell>
                         <TableCell>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</TableCell>
                       </TableRow>
                     ))}
