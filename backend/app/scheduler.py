@@ -99,3 +99,7 @@ def stop_scheduler():
         _scheduler.shutdown(wait=False)
         _scheduler = None
         logger.info("Scheduler stopped")
+
+
+def is_scheduler_running() -> bool:
+    return _scheduler is not None and _scheduler.running

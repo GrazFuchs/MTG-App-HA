@@ -124,9 +124,28 @@ app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
 @app.get("/healthz", tags=["health"])
 async def healthz():
     from .database import get_db
-    db = await get_db()
-    await db.execute("SELECT 1")
-    return {"status": "ok"}
+    from .version import VERSION
+    from .scheduler import is_scheduler_running
+
+    db_ok = False
+    try:
+        db = await get_db()
+        await db.execute("SELECT 1")
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    body = {
+        "status": "ok" if db_ok else "degraded",
+        "version": VERSION,
+        "db": db_ok,
+        "scheduler_running": is_scheduler_running(),
+    }
+
+    if not db_ok:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content=body, status_code=503)
+    return body
 
 # Mount MCP server
 if _mcp_available:
