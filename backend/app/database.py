@@ -1,13 +1,18 @@
 """SQLite database initialization and access."""
+import asyncio
+from contextlib import asynccontextmanager
 import logging
 import aiosqlite
 from pathlib import Path
-from typing import Callable, Awaitable
+from typing import AsyncIterator, Callable, Awaitable
 from .config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_db: aiosqlite.Connection | None = None
+_pool: asyncio.Queue[aiosqlite.Connection] | None = None
+_pool_connections: list[aiosqlite.Connection] = []
+_primary: aiosqlite.Connection | None = None
+_POOL_SIZE = 2  # extra connections beyond the primary
 
 COLLECTION_COLUMN_MIGRATIONS = {
     "archidekt_tags": "ALTER TABLE collection ADD COLUMN archidekt_tags TEXT DEFAULT ''",
@@ -171,10 +176,22 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 
 
 async def get_db() -> aiosqlite.Connection:
-    global _db
-    if _db is None:
+    """Get the primary shared connection (backwards-compatible)."""
+    if _primary is None:
         raise RuntimeError("Database not initialized")
-    return _db
+    return _primary
+
+
+@asynccontextmanager
+async def borrow_db() -> AsyncIterator[aiosqlite.Connection]:
+    """Borrow a connection from the pool for concurrent work."""
+    if _pool is None:
+        raise RuntimeError("Database not initialized")
+    conn = await _pool.get()
+    try:
+        yield conn
+    finally:
+        await _pool.put(conn)
 
 
 # --- Migrations ---
@@ -253,21 +270,43 @@ async def _run_migrations(db: aiosqlite.Connection):
         logger.debug("Schema at version %d, no migrations needed", current_version)
 
 
+async def _create_connection() -> aiosqlite.Connection:
+    """Create a single configured SQLite connection."""
+    settings = get_settings()
+    conn = await aiosqlite.connect(settings.db_path)
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA journal_mode=WAL")
+    await conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
 async def init_db():
-    global _db
+    global _pool, _pool_connections, _primary
     settings = get_settings()
     Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
-    _db = await aiosqlite.connect(settings.db_path)
-    _db.row_factory = aiosqlite.Row
-    await _db.execute("PRAGMA journal_mode=WAL")
-    await _db.execute("PRAGMA foreign_keys=ON")
-    await _db.executescript(SCHEMA_SQL)
-    await _run_migrations(_db)
-    await _db.commit()
+
+    # Create primary connection and run schema + migrations
+    _primary = await _create_connection()
+    await _primary.executescript(SCHEMA_SQL)
+    await _run_migrations(_primary)
+    await _primary.commit()
+
+    # Build pool of extra connections for concurrent reads
+    _pool = asyncio.Queue(maxsize=_POOL_SIZE)
+    _pool_connections = []
+    for _ in range(_POOL_SIZE):
+        conn = await _create_connection()
+        _pool_connections.append(conn)
+        await _pool.put(conn)
+    logger.info("Database pool initialized: 1 primary + %d pool connections", _POOL_SIZE)
 
 
 async def close_db():
-    global _db
-    if _db:
-        await _db.close()
-        _db = None
+    global _pool, _pool_connections, _primary
+    if _primary:
+        await _primary.close()
+        _primary = None
+    for conn in _pool_connections:
+        await conn.close()
+    _pool_connections = []
+    _pool = None
