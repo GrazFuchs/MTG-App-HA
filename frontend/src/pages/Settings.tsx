@@ -226,6 +226,49 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {/* Backup & Restore */}
+      <div className={styles.section}>
+        <Title3>Backup & Restore</Title3>
+        <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+          <Button
+            appearance="primary"
+            onClick={() => {
+              const a = document.createElement('a');
+              const base = window.location.pathname.match(/^(\/api\/hassio_ingress\/[^/]+)/)?.[1] || '';
+              a.href = `${base}/api/backup/backup`;
+              a.click();
+            }}
+          >
+            Download Backup
+          </Button>
+          <Button
+            appearance="secondary"
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.db';
+              input.onchange = async () => {
+                const file = input.files?.[0];
+                if (!file) return;
+                const form = new FormData();
+                form.append('file', file);
+                const base = window.location.pathname.match(/^(\/api\/hassio_ingress\/[^/]+)/)?.[1] || '';
+                const resp = await fetch(`${base}/api/backup/restore`, { method: 'POST', body: form });
+                const data = await resp.json();
+                if (data.status === 'restored') {
+                  setMsg(`Database restored (${data.size_bytes} bytes). Restart the add-on to apply.`);
+                } else {
+                  setMsg(`Restore failed: ${data.error || 'Unknown error'}`);
+                }
+              };
+              input.click();
+            }}
+          >
+            Restore from Backup
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
