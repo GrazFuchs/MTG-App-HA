@@ -33,87 +33,59 @@ async def upsert_card(db, card_data: dict) -> int:
 
     legalities = card_data.get("legalities", "{}")
 
-    # Try update first
-    await db.execute(
-        """UPDATE cards SET
-            oracle_id=?, name=?, mana_cost=?, cmc=?, type_line=?, oracle_text=?,
-            colors=?, color_identity=?, set_code=?, set_name=?, collector_number=?,
-            rarity=?, image_uri=?, image_art_crop=?, power=?, toughness=?, loyalty=?,
-            keywords=?, legalities=?, edhrec_rank=?, price_usd=?, price_eur=?,
-            price_usd_foil=?, price_eur_foil=?, updated_at=CURRENT_TIMESTAMP
-        WHERE scryfall_id=?""",
-        (
-            card_data.get("oracle_id", ""),
-            card_data.get("name", ""),
-            card_data.get("mana_cost", ""),
-            card_data.get("cmc", 0),
-            card_data.get("type_line", ""),
-            card_data.get("oracle_text", ""),
-            colors, color_identity,
-            card_data.get("set_code", ""),
-            card_data.get("set_name", ""),
-            card_data.get("collector_number", ""),
-            card_data.get("rarity", ""),
-            card_data.get("image_uri", ""),
-            card_data.get("image_art_crop", ""),
-            card_data.get("power", ""),
-            card_data.get("toughness", ""),
-            card_data.get("loyalty", ""),
-            keywords,
-            legalities,
-            card_data.get("edhrec_rank"),
-            card_data.get("price_usd", ""),
-            card_data.get("price_eur", ""),
-            card_data.get("price_usd_foil", ""),
-            card_data.get("price_eur_foil", ""),
-            card_data["scryfall_id"],
-        ),
+    params = (
+        card_data["scryfall_id"],
+        card_data.get("oracle_id", ""),
+        card_data.get("name", ""),
+        card_data.get("mana_cost", ""),
+        card_data.get("cmc", 0),
+        card_data.get("type_line", ""),
+        card_data.get("oracle_text", ""),
+        colors, color_identity,
+        card_data.get("set_code", ""),
+        card_data.get("set_name", ""),
+        card_data.get("collector_number", ""),
+        card_data.get("rarity", ""),
+        card_data.get("image_uri", ""),
+        card_data.get("image_art_crop", ""),
+        card_data.get("power", ""),
+        card_data.get("toughness", ""),
+        card_data.get("loyalty", ""),
+        keywords,
+        legalities,
+        card_data.get("edhrec_rank"),
+        card_data.get("price_usd", ""),
+        card_data.get("price_eur", ""),
+        card_data.get("price_usd_foil", ""),
+        card_data.get("price_eur_foil", ""),
     )
 
-    # Check if it was updated
-    cursor = await db.execute(
-        "SELECT id FROM cards WHERE scryfall_id=?", (card_data["scryfall_id"],)
-    )
-    row = await cursor.fetchone()
-    if row:
-        return row[0]
-
-    # Insert new
     cursor = await db.execute(
         """INSERT INTO cards (
             scryfall_id, oracle_id, name, mana_cost, cmc, type_line, oracle_text,
             colors, color_identity, set_code, set_name, collector_number,
             rarity, image_uri, image_art_crop, power, toughness, loyalty,
-            keywords, legalities, edhrec_rank, price_usd, price_eur, price_usd_foil, price_eur_foil
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            card_data["scryfall_id"],
-            card_data.get("oracle_id", ""),
-            card_data.get("name", ""),
-            card_data.get("mana_cost", ""),
-            card_data.get("cmc", 0),
-            card_data.get("type_line", ""),
-            card_data.get("oracle_text", ""),
-            colors, color_identity,
-            card_data.get("set_code", ""),
-            card_data.get("set_name", ""),
-            card_data.get("collector_number", ""),
-            card_data.get("rarity", ""),
-            card_data.get("image_uri", ""),
-            card_data.get("image_art_crop", ""),
-            card_data.get("power", ""),
-            card_data.get("toughness", ""),
-            card_data.get("loyalty", ""),
-            keywords,
-            legalities,
-            card_data.get("edhrec_rank"),
-            card_data.get("price_usd", ""),
-            card_data.get("price_eur", ""),
-            card_data.get("price_usd_foil", ""),
-            card_data.get("price_eur_foil", ""),
-        ),
+            keywords, legalities, edhrec_rank, price_usd, price_eur,
+            price_usd_foil, price_eur_foil
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(scryfall_id) DO UPDATE SET
+            oracle_id=excluded.oracle_id, name=excluded.name,
+            mana_cost=excluded.mana_cost, cmc=excluded.cmc,
+            type_line=excluded.type_line, oracle_text=excluded.oracle_text,
+            colors=excluded.colors, color_identity=excluded.color_identity,
+            set_code=excluded.set_code, set_name=excluded.set_name,
+            collector_number=excluded.collector_number, rarity=excluded.rarity,
+            image_uri=excluded.image_uri, image_art_crop=excluded.image_art_crop,
+            power=excluded.power, toughness=excluded.toughness, loyalty=excluded.loyalty,
+            keywords=excluded.keywords, legalities=excluded.legalities,
+            edhrec_rank=excluded.edhrec_rank, price_usd=excluded.price_usd,
+            price_eur=excluded.price_eur, price_usd_foil=excluded.price_usd_foil,
+            price_eur_foil=excluded.price_eur_foil, updated_at=CURRENT_TIMESTAMP
+        RETURNING id""",
+        params,
     )
-    return cursor.lastrowid
+    row = await cursor.fetchone()
+    return row[0]
 
 
 async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) -> dict:
