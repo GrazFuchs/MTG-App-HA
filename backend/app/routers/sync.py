@@ -81,6 +81,12 @@ async def _run_resync():
             await sync_cardmarket_stock()
     except Exception:
         logger.exception("Background cardmarket sync (after resync) crashed")
+    # Publish updated stats to MQTT
+    try:
+        from ..services.ha_publisher import publish_stats
+        await publish_stats()
+    except Exception:
+        logger.exception("MQTT stats publish after resync failed")
 
 
 async def _run_sync():
@@ -96,6 +102,12 @@ async def _run_sync():
             await sync_cardmarket_stock()
     except Exception:
         logger.exception("Background cardmarket sync crashed")
+    # Publish updated stats to MQTT
+    try:
+        from ..services.ha_publisher import publish_stats
+        await publish_stats()
+    except Exception:
+        logger.exception("MQTT stats publish after sync failed")
 
 
 @router.get("/history", response_model=list[SyncLogEntry])

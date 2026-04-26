@@ -27,6 +27,12 @@ options:
   mcp_auth_token: ""
   cardmarket_username: ""
   flaresolverr_url: ""
+  mqtt_enabled: false
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_topic_prefix: "mtg-collection"
 schema:
   archidekt_username: "str?"
   archidekt_password: "password?"
@@ -38,3 +44,9 @@ schema:
   mcp_auth_token: "str?"
   cardmarket_username: "str?"
   flaresolverr_url: "str?"
+  mqtt_enabled: "bool"
+  mqtt_host: "str?"
+  mqtt_port: "int(1,65535)?"
+  mqtt_username: "str?"
+  mqtt_password: "password?"
+  mqtt_topic_prefix: "str?"

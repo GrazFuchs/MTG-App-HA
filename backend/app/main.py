@@ -44,6 +44,12 @@ async def lifespan(app: FastAPI):
         from .services.cardmarket_import import sync_cardmarket_stock
         asyncio.create_task(_startup_cardmarket_sync())
 
+    # Publish MQTT discovery configs at startup
+    if settings.mqtt_enabled:
+        import asyncio
+        from .services.ha_publisher import publish_discovery, publish_stats
+        asyncio.create_task(_startup_mqtt_publish())
+
     # Start MCP session manager (required for streamable HTTP transport)
     if _mcp_available and mcp_server is not None:
         async with mcp_server.session_manager.run():
@@ -67,6 +73,19 @@ async def _startup_cardmarket_sync():
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Startup Cardmarket sync failed: %s", e)
+
+
+async def _startup_mqtt_publish():
+    """Publish MQTT discovery configs and initial stats after startup."""
+    import asyncio
+    await asyncio.sleep(10)  # Wait for DB to be populated
+    try:
+        from .services.ha_publisher import publish_discovery, publish_stats
+        await publish_discovery()
+        await publish_stats()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Startup MQTT publish failed: %s", e)
 
 
 app = FastAPI(

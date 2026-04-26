@@ -1,0 +1,43 @@
+configuration:
+  archidekt_username:
+    name: Archidekt Username
+    description: Your Archidekt username for syncing decks
+  archidekt_password:
+    name: Archidekt Password
+    description: Your Archidekt password (enables private collection & deck access)
+  archidekt_user_id:
+    name: Archidekt User ID
+    description: Your Archidekt numeric user ID (from your collection URL, e.g. 123456)
+  archidekt_deck_ids:
+    name: Archidekt Deck IDs
+    description: List of Archidekt deck IDs to sync (leave empty to auto-discover)
+  sync_enabled:
+    name: Enable Auto Sync
+    description: Enable daily automatic sync from Archidekt
+  sync_hour:
+    name: Sync Hour
+    description: Hour of day (0-23) to run the daily sync
+  mcp_auth_token:
+    name: MCP Auth Token
+    description: Optional Bearer token for MCP server authentication
+  cardmarket_username:
+    name: Cardmarket Username
+    description: Your Cardmarket username (e.g. YourUsername) to sync offer listings
+  mqtt_enabled:
+    name: Enable MQTT
+    description: Publish collection stats as Home Assistant sensors via MQTT Discovery
+  mqtt_host:
+    name: MQTT Host
+    description: MQTT broker hostname (e.g. core-mosquitto for HA Mosquitto add-on)
+  mqtt_port:
+    name: MQTT Port
+    description: MQTT broker port (default 1883)
+  mqtt_username:
+    name: MQTT Username
+    description: MQTT broker username
+  mqtt_password:
+    name: MQTT Password
+    description: MQTT broker password
+  mqtt_topic_prefix:
+    name: MQTT Topic Prefix
+    description: Prefix for MQTT state topics (default mtg-collection)

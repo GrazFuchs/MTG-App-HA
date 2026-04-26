@@ -96,6 +96,12 @@ Alle Optionen werden über die Home Assistant Add-on-Konfiguration (UI) gesetzt 
 | `sync_hour` | int (0–23) | `3` | Uhrzeit für den täglichen Sync |
 | `mcp_auth_token` | string | `""` | Optionaler Bearer-Token für MCP-Server-Authentifizierung |
 | `cardmarket_username` | string | `""` | Cardmarket-Benutzername für Profil-Scraping |
+| `mqtt_enabled` | bool | `false` | MQTT-Sensor-Publishing aktivieren (HA Auto-Discovery) |
+| `mqtt_host` | string | `""` | MQTT-Broker Hostname (z.B. `core-mosquitto` für HA Add-on) |
+| `mqtt_port` | int | `1883` | MQTT-Broker Port |
+| `mqtt_username` | string | `""` | MQTT-Benutzername |
+| `mqtt_password` | password | `""` | MQTT-Passwort |
+| `mqtt_topic_prefix` | string | `"mtg-collection"` | Prefix für MQTT State-Topics |
 
 ### Minimale Konfiguration
 
