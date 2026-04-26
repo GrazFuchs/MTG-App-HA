@@ -118,6 +118,14 @@ app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 app.include_router(cards.router, prefix="/api/cards", tags=["cards"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 
+
+@app.get("/healthz", tags=["health"])
+async def healthz():
+    from .database import get_db
+    db = await get_db()
+    await db.execute("SELECT 1")
+    return {"status": "ok"}
+
 # Mount MCP server
 if _mcp_available:
     try:
