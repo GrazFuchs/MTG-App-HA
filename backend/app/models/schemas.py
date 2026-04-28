@@ -1,0 +1,201 @@
+"""Pydantic models for API request/response and external data."""
+from __future__ import annotations
+from datetime import datetime
+from pydantic import BaseModel, Field, field_validator
+
+
+# --- Card Models ---
+
+class CardBase(BaseModel):
+    scryfall_id: str
+    oracle_id: str | None = None
+    name: str
+    mana_cost: str = ""
+    cmc: float = 0
+    type_line: str = ""
+    oracle_text: str = ""
+    colors: list[str] = []
+    color_identity: list[str] = []
+    set_code: str = ""
+    set_name: str = ""
+    collector_number: str = ""
+    rarity: str = ""
+    image_uri: str = ""
+    image_art_crop: str = ""
+    power: str = ""
+    toughness: str = ""
+    loyalty: str = ""
+    keywords: list[str] = []
+    edhrec_rank: int | None = None
+    price_usd: str = ""
+    price_eur: str = ""
+    price_usd_foil: str = ""
+    price_eur_foil: str = ""
+
+    @field_validator('mana_cost', 'type_line', 'oracle_text',
+                     'set_code', 'set_name', 'collector_number', 'rarity',
+                     'image_uri', 'image_art_crop', 'power', 'toughness', 'loyalty',
+                     'price_usd', 'price_eur', 'price_usd_foil', 'price_eur_foil',
+                     mode='before')
+    @classmethod
+    def coerce_none_to_empty(cls, v):
+        return v if v is not None else ""
+
+
+class CardResponse(CardBase):
+    id: int
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# --- Deck Models ---
+
+class DeckSummary(BaseModel):
+    id: int
+    archidekt_id: int | None = None
+    name: str
+    format: str = ""
+    commander_name: str = ""
+    featured_image: str = ""
+    card_count: int = 0
+    folder_name: str = ""
+    bracket: int = 0
+    last_synced: datetime | None = None
+
+
+class DeckCardEntry(BaseModel):
+    card: CardResponse
+    quantity: int = 1
+    category: str = ""
+    is_commander: bool = False
+    is_companion: bool = False
+    modifier: str = "Normal"
+
+
+class DeckDetail(BaseModel):
+    id: int
+    archidekt_id: int | None = None
+    name: str
+    format: str = ""
+    description: str = ""
+    featured_image: str = ""
+    commander_name: str = ""
+    owner_username: str = ""
+    bracket: int = 0
+    view_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    last_synced: datetime | None = None
+    cards: list[DeckCardEntry] = []
+
+
+# --- Collection Models ---
+
+class CollectionEntry(BaseModel):
+    id: int
+    card: CardResponse
+    quantity: int = 1
+    foil_quantity: int = 0
+    condition: str = "NM"
+    language: str = "en"
+    archidekt_tags: str = ""
+    notes: str = ""
+    added_at: datetime | None = None
+    in_decks: int = 0
+
+
+class CollectionAddRequest(BaseModel):
+    scryfall_id: str
+    quantity: int = 1
+    foil_quantity: int = 0
+    condition: str = "NM"
+    language: str = "en"
+    notes: str = ""
+
+
+# --- Cardmarket Models ---
+
+class CardmarketListing(BaseModel):
+    id: int
+    card_name: str
+    set_name: str = ""
+    set_code: str = ""
+    quantity: int = 1
+    price: float = 0
+    condition: str = ""
+    language: str = ""
+    is_foil: bool = False
+    card_id: int | None = None
+    imported_at: datetime | None = None
+    article_id: str = ""
+    expansion_code: str = ""
+    rarity: str = ""
+    condition_full: str = ""
+    reverse_holo: bool = False
+    comments: str = ""
+    product_url: str = ""
+    source: str = "import"
+
+
+class CardmarketImportResult(BaseModel):
+    total_rows: int
+    imported: int
+    errors: int
+    error_details: list[str] = []
+
+
+# --- Sync Models ---
+
+class SyncLogEntry(BaseModel):
+    id: int
+    source: str
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    items_synced: int = 0
+    error: str = ""
+
+
+class SyncStatus(BaseModel):
+    last_sync: SyncLogEntry | None = None
+    sync_enabled: bool = True
+    next_sync_hour: int = 3
+    archidekt_username: str = ""
+    archidekt_authenticated: bool = False
+    cardmarket_configured: bool = False
+    flaresolverr_configured: bool = False
+    flaresolverr_available: bool = False
+    synced_decks: int = 0
+
+
+# --- Stats Models ---
+
+class CollectionStats(BaseModel):
+    total_cards: int = 0
+    unique_cards: int = 0
+    total_value_eur: float = 0
+    total_value_usd: float = 0
+    total_decks: int = 0
+    total_cardmarket_listings: int = 0
+    cardmarket_total_value: float = 0
+
+
+# --- EDHREC Models ---
+
+class EDHRECRecommendation(BaseModel):
+    name: str
+    sanitized: str = ""
+    url: str = ""
+    inclusion: int = 0
+    num_decks: int = 0
+    synergy: float = 0
+    image_uri: str = ""
+
+
+class EDHRECCombo(BaseModel):
+    cards: list[str] = []
+    color_identity: list[str] = []
+    result: str = ""
+    link: str = ""

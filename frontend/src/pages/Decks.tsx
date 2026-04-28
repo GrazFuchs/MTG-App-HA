@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   makeStyles,
   tokens,
@@ -26,9 +26,7 @@ const useStyles = makeStyles({
   },
   card: {
     cursor: 'pointer',
-    '&:hover': {
-      boxShadow: tokens.shadow8,
-    },
+    '&:hover': { boxShadow: tokens.shadow8 },
   },
   img: {
     width: '100%',
@@ -41,9 +39,7 @@ const useStyles = makeStyles({
     marginTop: '4px',
     flexWrap: 'wrap',
   },
-  folderSection: {
-    marginTop: '24px',
-  },
+  folderSection: { marginTop: '24px' },
   folderHeader: {
     display: 'flex',
     alignItems: 'center',
@@ -57,31 +53,22 @@ const useStyles = makeStyles({
     transition: 'transform 0.2s ease',
     fontSize: '12px',
   },
-  chevronOpen: {
-    transform: 'rotate(90deg)',
-  },
+  chevronOpen: { transform: 'rotate(90deg)' },
 });
 
 export default function Decks() {
   const styles = useStyles();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
-  const bracketFilter = searchParams.get('bracket') ?? '';
-
-  const setBracketFilter = (value: string) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      if (value) next.set('bracket', value);
-      else next.delete('bracket');
-      return next;
-    });
-  };
+  const [openFolders, setOpenFolders] = useState<Set<string> | null>(null);
+  const [bracketFilter, setBracketFilter] = useState('');
 
   useEffect(() => {
-    api.getDecks().then(setDecks).finally(() => setLoading(false));
+    api.getDecks().then(d => {
+      setDecks(d);
+      setOpenFolders(new Set(d.map(dk => dk.folder_name || 'Uncategorized')));
+    }).finally(() => setLoading(false));
   }, []);
 
   const filteredDecks = useMemo(() => {
@@ -97,22 +84,26 @@ export default function Decks() {
       if (!map.has(folder)) map.set(folder, []);
       map.get(folder)!.push(d);
     }
-    const sorted = [...map.entries()].sort(([a], [b]) => {
+    return [...map.entries()].sort(([a], [b]) => {
       if (a === 'Uncategorized') return 1;
       if (b === 'Uncategorized') return -1;
       return a.localeCompare(b);
     });
-    return sorted;
-  }, [decks]);
+  }, [filteredDecks]);
 
   const toggleFolder = (folder: string) => {
     setOpenFolders(prev => {
-      const next = new Set(prev);
+      const next = new Set(prev ?? []);
       if (next.has(folder)) next.delete(folder);
       else next.add(folder);
       return next;
     });
   };
+
+  const availableBrackets = useMemo(() => {
+    const set = new Set(decks.map(d => d.bracket).filter(b => b > 0));
+    return [...set].sort();
+  }, [decks]);
 
   if (loading) return <Spinner label="Loading decks..." />;
 
@@ -127,32 +118,6 @@ export default function Decks() {
     );
   }
 
-  const renderDeckCard = (d: DeckSummary) => (
-    <Card key={d.id} className={styles.card} onClick={() => navigate(`/decks/${d.id}`)}>
-      {d.featured_image && (
-        <CardPreview>
-          <img src={d.featured_image} alt={d.name} className={styles.img} />
-        </CardPreview>
-      )}
-      <CardHeader
-        header={<Body1><strong>{d.name}</strong></Body1>}
-        description={
-          <div className={styles.meta}>
-            <Badge appearance="outline">{d.format || 'Unknown'}</Badge>
-            {d.bracket > 0 && <Badge appearance="outline" color="informative">Bracket {d.bracket}</Badge>}
-            <Caption1>{d.card_count} cards</Caption1>
-            {d.commander_name && <Caption1>⚔ {d.commander_name}</Caption1>}
-          </div>
-        }
-      />
-    </Card>
-  );
-
-  const availableBrackets = useMemo(() => {
-    const set = new Set(decks.map(d => d.bracket).filter(b => b > 0));
-    return [...set].sort();
-  }, [decks]);
-
   return (
     <div>
       <Title2>Decks ({filteredDecks.length}{bracketFilter ? ` of ${decks.length}` : ''})</Title2>
@@ -165,13 +130,13 @@ export default function Decks() {
           >
             <option value="">All Brackets</option>
             {availableBrackets.map(b => (
-              <option key={b} value={String(b)}>Bracket {b}</option>
+              <option key={b} value={String(b)}>Bracket {String(b)}</option>
             ))}
           </Select>
         </div>
       )}
       {grouped.map(([folder, folderDecks]) => {
-        const isOpen = openFolders.has(folder);
+        const isOpen = openFolders?.has(folder) ?? true;
         return (
           <div key={folder} className={styles.folderSection}>
             <div className={styles.folderHeader} onClick={() => toggleFolder(folder)}>
@@ -181,7 +146,26 @@ export default function Decks() {
             <Divider />
             {isOpen && (
               <div className={styles.grid}>
-                {folderDecks.map(renderDeckCard)}
+                {folderDecks.map(d => (
+                  <Card key={d.id} className={styles.card} onClick={() => navigate(`/decks/${d.id}`)}>
+                    {d.featured_image && (
+                      <CardPreview>
+                        <img src={d.featured_image} alt={d.name} className={styles.img} />
+                      </CardPreview>
+                    )}
+                    <CardHeader
+                      header={<Body1><strong>{d.name}</strong></Body1>}
+                      description={
+                        <div className={styles.meta}>
+                          <Badge appearance="outline">{d.format || 'Unknown'}</Badge>
+                          {d.bracket > 0 && <Badge appearance="outline" color="informative">Bracket {String(d.bracket)}</Badge>}
+                          <Caption1>{String(d.card_count)} cards</Caption1>
+                          {d.commander_name && <Caption1>{'\u2694'} {d.commander_name}</Caption1>}
+                        </div>
+                      }
+                    />
+                  </Card>
+                ))}
               </div>
             )}
           </div>
