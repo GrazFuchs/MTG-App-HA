@@ -5,3 +5,32 @@ __pycache__/
 *.pyc
 .DS_Store
 *.egg-info/
+
+# Database files
+data/
+*.db
+*.db-shm
+*.db-wal
+*.db.pre-restore-*
+
+# Configuration
+options.json
+.env
+.env.local
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# Internal files
+.internal/
