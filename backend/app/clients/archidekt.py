@@ -63,7 +63,7 @@ class ArchidektClient:
                     self._cookies["jwt"] = self._token
                     logger.info("Archidekt login successful for %s", username)
                     return True
-            logger.warning("Archidekt login failed: %s", resp.text[:200])
+            logger.warning("Archidekt login failed: status=%s", resp.status_code)
             return False
 
     @property
