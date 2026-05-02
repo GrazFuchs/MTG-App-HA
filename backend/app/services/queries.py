@@ -44,6 +44,18 @@ async def get_unique_card_count(db: aiosqlite.Connection) -> int:
     return (await cursor.fetchone())[0]
 
 
+async def get_total_cards(db: aiosqlite.Connection) -> int:
+    """Return the total physical card count (SUM of quantity + foil_quantity).
+
+    This is the "Total Cards" shown on the Dashboard — it counts every physical
+    copy, so owning 4x Lightning Bolt contributes 4 here.
+    """
+    cursor = await db.execute(
+        "SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0) FROM collection col JOIN cards c ON c.id = col.card_id"
+    )
+    return (await cursor.fetchone())[0]
+
+
 async def query_collection_stats(db: aiosqlite.Connection) -> dict[str, Any]:
     """Get collection statistics.
 
@@ -52,10 +64,11 @@ async def query_collection_stats(db: aiosqlite.Connection) -> dict[str, Any]:
         unique_cards: COUNT(DISTINCT card_id)         — distinct Scryfall cards
         See module-level canonical definitions for the distinction.
     """
+    total_cards = await get_total_cards(db)
+    unique_cards = await get_unique_card_count(db)
+
     cursor = await db.execute(
         """SELECT
-            COALESCE(SUM(col.quantity + col.foil_quantity), 0),
-            COUNT(DISTINCT col.card_id),
             COALESCE(SUM(
                 CASE WHEN c.price_eur != '' THEN CAST(c.price_eur AS REAL) * col.quantity ELSE 0 END
                 + CASE WHEN c.price_eur_foil != '' THEN CAST(c.price_eur_foil AS REAL) * col.foil_quantity ELSE 0 END
@@ -77,10 +90,10 @@ async def query_collection_stats(db: aiosqlite.Connection) -> dict[str, Any]:
     cm = await cursor3.fetchone()
 
     return {
-        "total_cards": row[0],
-        "unique_cards": row[1],
-        "total_value_eur": round(row[2], 2),
-        "total_value_usd": round(row[3], 2),
+        "total_cards": total_cards,
+        "unique_cards": unique_cards,
+        "total_value_eur": round(row[0], 2),
+        "total_value_usd": round(row[1], 2),
         "total_decks": deck_count,
         "total_cardmarket_listings": cm[0],
         "cardmarket_total_value": round(cm[1], 2),
