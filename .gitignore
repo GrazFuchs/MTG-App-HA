@@ -34,3 +34,4 @@ options.json
 
 # Internal files
 .internal/
+mtg-collection/frontend/dist/
