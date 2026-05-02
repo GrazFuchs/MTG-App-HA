@@ -56,15 +56,24 @@ Ein Home Assistant Add-on zur Verwaltung deiner Magic: The Gathering Sammlung mi
 
 ## Installation
 
-### Als Home Assistant Add-on
+### Als Home Assistant Add-on (empfohlen)
 
-1. Repository als lokales Add-on einrichten:
-   ```
-   /addons/mtg-collection/
-   ```
-2. In Home Assistant: **Einstellungen → Add-ons → Add-on Store → Lokale Add-ons** → „MTG Collection Manager" installieren
-3. Add-on konfigurieren (siehe [Konfiguration](#konfiguration))
-4. Add-on starten — erscheint als Panel „MTG Collection" in der Sidebar
+1. In Home Assistant: **Einstellungen → Add-ons → Add-on Store → ⋮ (oben rechts) → Repositories**
+2. URL eintragen: `https://github.com/HerrFuchs/mtg-collection-ha` → **Hinzufügen**
+3. Im Add-on Store erscheint jetzt „MTG Collection Manager" — installieren
+4. Add-on konfigurieren (siehe [Konfiguration](#konfiguration))
+5. Add-on starten — erscheint als Panel „MTG Collection" in der Sidebar
+
+### Migration von lokaler Installation
+
+Wer das Add-on bisher manuell per SCP nach `/addons/mtg-collection/` kopiert hat:
+
+1. **Datenbank sichern**: In HA-Terminal: `cp /data/mtg.db /backup/mtg.db.$(date +%Y%m%d)`
+2. Altes Add-on in HA deinstallieren (Einstellungen → Add-ons → MTG Collection Manager → Deinstallieren)
+3. Den alten lokalen Add-on-Ordner löschen: `rm -rf /addons/mtg-collection`
+4. Repository wie oben beschrieben hinzufügen und Add-on neu installieren
+5. **Datenbank wiederherstellen**: `cp /backup/mtg.db.YYYYMMDD /data/mtg.db`
+6. Add-on starten — alle Daten sind wiederhergestellt
 
 ### Manuell (Entwicklung)
 
@@ -128,14 +137,19 @@ cardmarket_username: "DeinCardmarketName"
 ### Projektstruktur
 
 ```
-mtg-collection-ha/
-├── config.yaml              # HA Add-on Metadaten
-├── build.yaml               # HA Build-Konfiguration (Base Images)
-├── Dockerfile               # Multi-Stage Build (Node → Python)
-├── run.sh                   # Entrypoint: Ingress-Erkennung → Uvicorn
-├── CHANGELOG.md             # Versionsverlauf
-├── mcp-proxy.mjs            # Lokaler stdio→HTTP MCP-Proxy für Claude Desktop
-├── backend/
+mtg-collection-ha/                     # GitHub Repository Root
+├── repository.yaml          # HA Custom Repository Manifest
+├── README.md                # Dokumentation
+├── LICENSE                  # MIT Lizenz
+├── SECURITY.md              # Security Policy
+└── mtg-collection/          # Add-on (Slug = Ordnername)
+    ├── config.yaml          # HA Add-on Metadaten
+    ├── build.yaml           # HA Build-Konfiguration (Base Images)
+    ├── Dockerfile           # Multi-Stage Build (Node → Python)
+    ├── run.sh               # Entrypoint: Ingress-Erkennung → Uvicorn
+    ├── CHANGELOG.md         # Versionsverlauf
+    ├── mcp-proxy.mjs        # Lokaler stdio→HTTP MCP-Proxy für Claude Desktop
+    ├── backend/
 │   ├── requirements.txt     # Python-Abhängigkeiten
 │   └── app/
 │       ├── main.py          # FastAPI App, Lifespan, Router-Mounting
@@ -161,27 +175,27 @@ mtg-collection-ha/
 │           ├── sync_service.py      # Archidekt→DB Sync-Logik
 │           ├── cardmarket_import.py # Cardmarket CSV Import
 │           └── cardmarket_prices.py # Cardmarket Preisdaten-Sync & Alerts
-├── frontend/
-│   ├── package.json         # React 18, Fluent UI, React Router, Vite
-│   ├── vite.config.ts       # Vite Build-Config
-│   ├── tsconfig.json        # TypeScript-Konfiguration
-│   ├── index.html           # SPA Entry Point
-│   └── src/
-│       ├── main.tsx         # React Root, FluentProvider, BrowserRouter
-│       ├── App.tsx          # Tab-Navigation, Routes
-│       ├── api.ts           # API Client (fetch-basiert, Ingress-aware)
-│       ├── pages/
-│       │   ├── Dashboard.tsx   # Übersicht: Stats, Sync-Status
-│       │   ├── Decks.tsx       # Deck-Grid mit Vorschaubildern
-│       │   ├── DeckView.tsx    # Deck-Detail nach Kategorie
-│       │   ├── Collection.tsx  # Kartensammlung mit Suche
-│       │   ├── Cardmarket.tsx  # Cardmarket Listings, CSV Import
-│       │   └── Settings.tsx    # Sync-Konfiguration, History
-│       └── components/
-│           ├── ManaSymbol.tsx      # {W}{U}{B} → Scryfall SVG Icons
-│           └── CardHoverPreview.tsx# Karten-Hover zeigt Scryfall-Bild
-└── translations/
-    └── en.yaml              # Englische UI-Texte für HA Config
+    ├── frontend/
+    │   ├── package.json         # React 18, Fluent UI, React Router, Vite
+    │   ├── vite.config.ts       # Vite Build-Config
+    │   ├── tsconfig.json        # TypeScript-Konfiguration
+    │   ├── index.html           # SPA Entry Point
+    │   └── src/
+    │       ├── main.tsx         # React Root, FluentProvider, BrowserRouter
+    │       ├── App.tsx          # Tab-Navigation, Routes
+    │       ├── api.ts           # API Client (fetch-basiert, Ingress-aware)
+    │       ├── pages/
+    │       │   ├── Dashboard.tsx   # Übersicht: Stats, Sync-Status
+    │       │   ├── Decks.tsx       # Deck-Grid mit Vorschaubildern
+    │       │   ├── DeckView.tsx    # Deck-Detail nach Kategorie
+    │       │   ├── Collection.tsx  # Kartensammlung mit Suche
+    │       │   ├── Cardmarket.tsx  # Cardmarket Listings, CSV Import
+    │       │   └── Settings.tsx    # Sync-Konfiguration, History
+    │       └── components/
+    │           ├── ManaSymbol.tsx      # {W}{U}{B} → Scryfall SVG Icons
+    │           └── CardHoverPreview.tsx# Karten-Hover zeigt Scryfall-Bild
+    └── translations/
+        └── en.yaml              # Englische UI-Texte für HA Config
 ```
 
 ### Backend
@@ -387,7 +401,7 @@ Der MCP-Server läuft hinter HA Ingress und erfordert einen lokalen stdio→HTTP
 #### 1. Proxy testen
 
 ```bash
-cd /pfad/zu/mtg-collection-ha
+cd /pfad/zu/mtg-collection-ha/mtg-collection
 npm install  # installiert ws-Paket
 
 echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}' | \
@@ -410,7 +424,7 @@ Datei: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
     "mtg-collection": {
       "command": "node",
       "args": [
-        "/pfad/zu/mtg-collection-ha/mcp-proxy.mjs",
+        "/pfad/zu/mtg-collection-ha/mtg-collection/mcp-proxy.mjs",
         "http://<HA_IP>:8123",
         "<LONG_LIVED_TOKEN>",
         "/api/hassio_ingress/<INGRESS_TOKEN>/mcp",
@@ -480,15 +494,9 @@ npm run dev  # Startet Vite Dev Server mit Proxy auf localhost:8099
 ### Docker Build
 
 ```bash
+cd mtg-collection
 docker build -t mtg-collection .
 docker run -p 8099:8099 -v $(pwd)/data:/data mtg-collection
-```
-
-### Auf Home Assistant deployen
-
-```bash
-scp -r ./* root@homeassistant.local:/addons/mtg-collection/
-# Dann in HA: Add-on neu bauen (Rebuild)
 ```
 
 ### Projekt-Konventionen
