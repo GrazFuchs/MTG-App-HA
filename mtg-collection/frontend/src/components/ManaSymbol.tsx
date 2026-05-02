@@ -12,6 +12,29 @@ function symbolUrl(sym: string): string {
   return `${SYMBOL_BASE}/${cleaned}.svg`;
 }
 
+/** Render a single mana symbol by its letter (e.g. "W", "U", "2") */
+export function ManaSymbol({ symbol, size = 16 }: { symbol: string; size?: number }) {
+  return (
+    <img
+      src={symbolUrl(symbol)}
+      alt={`{${symbol}}`}
+      title={`{${symbol}}`}
+      width={size}
+      height={size}
+      style={{ display: 'inline-block', verticalAlign: 'middle' }}
+      onError={e => {
+        // Fallback to a text badge if the SVG fails to load
+        const el = e.currentTarget;
+        el.style.display = 'none';
+        const span = document.createElement('span');
+        span.textContent = `{${symbol}}`;
+        span.style.cssText = 'font-size:11px;font-family:monospace;opacity:0.7';
+        el.parentElement?.insertBefore(span, el.nextSibling);
+      }}
+    />
+  );
+}
+
 /** Parse "{2}{W}{U}" → ["2", "W", "U"] */
 function parseManaCost(cost: string): string[] {
   const matches = cost.match(/\{([^}]+)\}/g);

@@ -14,7 +14,7 @@ import {
   Button,
 } from '@fluentui/react-components';
 import { api, DeckDetail, DeckCardEntry } from '../api';
-import { ManaCost } from '../components/ManaSymbol';
+import { ManaCost, ManaSymbol } from '../components/ManaSymbol';
 import { CardHoverPreview } from '../components/CardHoverPreview';
 
 const COLOR_MAP: Record<string, string> = {
@@ -56,18 +56,6 @@ const useStyles = makeStyles({
     flexWrap: 'wrap',
     alignItems: 'center',
     marginTop: '8px',
-  },
-  colorDots: {
-    display: 'inline-flex',
-    gap: '3px',
-    alignItems: 'center',
-  },
-  colorDot: {
-    width: '14px',
-    height: '14px',
-    borderRadius: '50%',
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    display: 'inline-block',
   },
   categorySection: {
     marginTop: '20px',
@@ -250,10 +238,12 @@ export default function DeckView() {
           <div className={styles.meta}>
             <Badge appearance="outline">{deck.format || 'Unknown'}</Badge>
             {deck.bracket > 0 && <Badge appearance="outline" color="informative">Bracket {deck.bracket}</Badge>}
-            {colorIdentity.length > 0 && (
-              <span className={styles.colorDots}>
+            {commander?.card.mana_cost ? (
+              <ManaCost cost={commander.card.mana_cost} size={18} />
+            ) : colorIdentity.length > 0 && (
+              <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
                 {colorIdentity.map(c => (
-                  <span key={c} className={styles.colorDot} style={{ backgroundColor: COLOR_MAP[c] || '#888' }} title={c} />
+                  <ManaSymbol key={c} symbol={c} size={18} />
                 ))}
               </span>
             )}
@@ -286,7 +276,7 @@ export default function DeckView() {
         {manaCurve.some(b => b.count > 0) && (
           <div>
             <Caption1 style={{ display: 'block', marginBottom: 4 }}>Mana Curve</Caption1>
-            <svg width={manaCurve.length * 28} height={80}>
+            <svg width={manaCurve.length * 28} height={80} overflow="visible">
               {manaCurve.map((b, i) => {
                 const barH = (b.count / curveMax) * 60;
                 return (
@@ -303,7 +293,7 @@ export default function DeckView() {
         {colorPips.length > 0 && (
           <div>
             <Caption1 style={{ display: 'block', marginBottom: 4 }}>Color Pips</Caption1>
-            <svg width={colorPips.length * 36} height={80}>
+            <svg width={colorPips.length * 36} height={80} overflow="visible">
               {colorPips.map((p, i) => {
                 const barH = (p.count / pipMax) * 60;
                 return (
