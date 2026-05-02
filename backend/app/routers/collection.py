@@ -239,6 +239,7 @@ async def list_duplicates(
             SELECT c.name
             FROM collection col JOIN cards c ON c.id = col.card_id
             WHERE {where}
+            AND c.type_line NOT LIKE '%Basic Land%'
             GROUP BY c.name
             HAVING SUM(col.quantity + col.foil_quantity) >
                 COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)
@@ -256,6 +257,7 @@ async def list_duplicates(
             c.id as card_id, c.collector_number
         FROM collection col JOIN cards c ON c.id = col.card_id
         WHERE {where}
+        AND c.type_line NOT LIKE '%Basic Land%'
         GROUP BY c.name
         HAVING (total_qty + total_foil) > in_decks AND (total_qty + total_foil) > 1
         ORDER BY (CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) *
