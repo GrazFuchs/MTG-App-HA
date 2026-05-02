@@ -36,7 +36,7 @@ Ein Home Assistant Add-on zur Verwaltung deiner Magic: The Gathering Sammlung mi
   - Robuster Sync: Stale-Entry-Bereinigung nur bei vollständigem Sync
 - **Scryfall-Integration**: Kartensuche, Preise (USD/EUR), Autocomplete, direkte Scryfall-Links
 - **EDHREC-Integration**: Commander-Empfehlungen und Combo-Vorschläge
-- **Cardmarket**: Profil-Scraping oder CSV-Import, Preisdaten-Sync, Preis-Spike-Erkennung
+- **Cardmarket**: CSV-Import für Listings, Preisdaten-Sync, Preis-Spike-Erkennung
   - Täglicher Preis-Sync über Cardmarket JSON-Feeds (nur eigene Karten)
   - Preisverlauf-Sparklines (30 Tage) beim Hovern über Kartennamen
   - Automatische Preis-Spike-Alerts mit Verkaufsempfehlungen für ungenutzte Kopien
@@ -95,7 +95,7 @@ Alle Optionen werden über die Home Assistant Add-on-Konfiguration (UI) gesetzt 
 | `sync_enabled` | bool | `true` | Tägliche automatische Synchronisierung aktivieren |
 | `sync_hour` | int (0–23) | `3` | Uhrzeit für den täglichen Sync |
 | `mcp_auth_token` | string | `""` | Optionaler Bearer-Token für MCP-Server-Authentifizierung |
-| `cardmarket_username` | string | `""` | Cardmarket-Benutzername für Profil-Scraping |
+| `cardmarket_username` | string | `""` | Cardmarket-Benutzername (für UI-Anzeige) |
 | `mqtt_enabled` | bool | `false` | MQTT-Sensor-Publishing aktivieren (HA Auto-Discovery) |
 | `mqtt_host` | string | `""` | MQTT-Broker Hostname (z.B. `core-mosquitto` für HA Add-on) |
 | `mqtt_port` | int | `1883` | MQTT-Broker Port |
@@ -147,8 +147,7 @@ mtg-collection-ha/
 │       ├── clients/
 │       │   ├── archidekt.py # Archidekt API Client (Auth, Decks, Collection)
 │       │   ├── scryfall.py  # Scryfall API Client (Suche, Preise)
-│       │   ├── edhrec.py    # EDHREC JSON Client (Recommendations, Combos)
-│       │   └── cardmarket.py# Cardmarket Web Scraper
+│       │   └── edhrec.py    # EDHREC JSON Client (Recommendations, Combos)
 │       ├── models/
 │       │   └── schemas.py   # Pydantic-Modelle (Request/Response)
 │       ├── routers/
@@ -160,7 +159,7 @@ mtg-collection-ha/
 │       │   └── stats.py     # /api/stats/ (Sammlung-Statistiken)
 │       └── services/
 │           ├── sync_service.py      # Archidekt→DB Sync-Logik
-│           ├── cardmarket_import.py # Cardmarket CSV/Scrape Import
+│           ├── cardmarket_import.py # Cardmarket CSV Import
 │           └── cardmarket_prices.py # Cardmarket Preisdaten-Sync & Alerts
 ├── frontend/
 │   ├── package.json         # React 18, Fluent UI, React Router, Vite
@@ -193,7 +192,7 @@ Der Backend-Server wird über `run.sh` gestartet, das die Supervisor-API abfragt
 
 #### Lifecycle (Lifespan)
 
-1. **Startup**: Datenbank initialisieren → Cardmarket-Scraper konfigurieren → Scheduler starten → MCP-Session-Manager starten → (optional) Cardmarket-Sync im Hintergrund
+1. **Startup**: Datenbank initialisieren → Scheduler starten → MCP-Session-Manager starten
 2. **Laufzeit**: API-Requests, geplante Syncs, MCP-Anfragen
 3. **Shutdown**: Scheduler stoppen → Datenbank schließen
 
@@ -300,7 +299,6 @@ Basis-URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 | `GET` | `/api/cardmarket/listings` | Listings auflisten (Filter: `search`, Paginierung) |
 | `GET` | `/api/cardmarket/stats` | Statistiken (Anzahl, Gesamtwert) |
 | `POST` | `/api/cardmarket/import` | CSV-Datei hochladen und importieren |
-| `POST` | `/api/cardmarket/sync` | Profil-Scraping starten |
 | `GET` | `/api/cardmarket/export` | Listings als CSV exportieren |
 | `GET` | `/api/cardmarket/price-history/{id}` | Preisverlauf für ein Cardmarket-Produkt |
 | `GET` | `/api/cardmarket/price-alerts` | Preis-Spike-Alerts für ungenutzte Karten |
@@ -450,7 +448,7 @@ Claude Desktop ↔ stdio ↔ mcp-proxy.mjs ↔ HTTP ↔ HA Ingress ↔ Add-on /m
 | [Archidekt](https://archidekt.com) | Deck-Sync, Collection-Sync | Optional: Username/Password (JWT) |
 | [Scryfall](https://scryfall.com/docs/api) | Kartensuche, Preise, Bilder | Keine (öffentliche API, 100ms Rate-Limit) |
 | [EDHREC](https://edhrec.com) | Commander-Empfehlungen, Combos | Keine (inoffizielle JSON-Endpoints, 24h Cache) |
-| [Cardmarket](https://cardmarket.com) | Angebotslistungen | Keine (öffentliches Profil-Scraping oder CSV) |
+| [Cardmarket](https://cardmarket.com) | Angebotslistungen, Preisdaten | CSV-Import + offizielle JSON-Preisfeeds |
 
 ---
 
@@ -495,7 +493,7 @@ scp -r ./* root@homeassistant.local:/addons/mtg-collection/
 
 ### Projekt-Konventionen
 
-- **Backend**: Singleton-Pattern für API-Clients (`archidekt`, `scryfall`, `edhrec`, `cardmarket_scraper`)
+- **Backend**: Singleton-Pattern für API-Clients (`archidekt`, `scryfall`, `edhrec`)
 - **Frontend**: Fluent UI v9 Komponenten, funktionale React-Komponenten mit Hooks
 - **Datenbank**: Alle Schema-Migrationen in `database.py` SCHEMA_SQL
 - **API**: RESTful, JSON, FastAPI-Router mit Pydantic-Modellen
@@ -588,8 +586,7 @@ Konfiguration in `backend/pyproject.toml` (line-length 100, strict mypy).
 #### Hinzugefügt
 - Archidekt-Authentifizierung (Login für private Decks & Collection)
 - Collection-Sync direkt über Archidekt Collection API
-- Cardmarket-Profil-Scraping als Alternative zum CSV-Import
-- Automatischer Cardmarket-Sync bei Start und globalem Sync
+- Cardmarket CSV-Import und Preisdaten-Sync
 - MCP-Server mit 11 Tools und 2 Prompts (Streamable HTTP)
 - Card-Hover-Preview mit Scryfall-Bildern
 - Mana-Symbol-Rendering via Scryfall SVG API

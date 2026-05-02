@@ -5,7 +5,6 @@ from ..database import get_db
 from ..models.schemas import SyncLogEntry, SyncStatus
 from ..config import get_settings
 from ..services.sync_service import run_full_sync, run_full_resync, is_sync_running
-from ..clients.flaresolverr import flaresolverr
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,13 +31,6 @@ async def get_sync_status():
     cursor2 = await db.execute("SELECT COUNT(*) FROM decks")
     deck_count = (await cursor2.fetchone())[0]
 
-    flaresolverr_available = False
-    if flaresolverr.is_configured:
-        try:
-            flaresolverr_available = await flaresolverr.is_available()
-        except Exception:
-            logger.exception("FlareSolverr availability check failed")
-
     return SyncStatus(
         last_sync=last_sync,
         sync_enabled=settings.sync_enabled,
@@ -46,8 +38,6 @@ async def get_sync_status():
         archidekt_username=settings.archidekt_username,
         archidekt_authenticated=bool(settings.archidekt_password),
         cardmarket_configured=bool(settings.cardmarket_username),
-        flaresolverr_configured=flaresolverr.is_configured,
-        flaresolverr_available=flaresolverr_available,
         synced_decks=deck_count,
     )
 
@@ -73,14 +63,6 @@ async def _run_resync():
         await run_full_resync()
     except Exception:
         logger.exception("Background resync crashed")
-    # Also sync Cardmarket
-    try:
-        from ..services.cardmarket_import import sync_cardmarket_stock
-        from ..config import get_settings
-        if get_settings().cardmarket_username:
-            await sync_cardmarket_stock()
-    except Exception:
-        logger.exception("Background cardmarket sync (after resync) crashed")
     # Publish updated stats to MQTT
     try:
         from ..services.ha_publisher import publish_stats
@@ -94,14 +76,6 @@ async def _run_sync():
         await run_full_sync()
     except Exception:
         logger.exception("Background sync crashed")
-    # Also sync Cardmarket
-    try:
-        from ..services.cardmarket_import import sync_cardmarket_stock
-        from ..config import get_settings
-        if get_settings().cardmarket_username:
-            await sync_cardmarket_stock()
-    except Exception:
-        logger.exception("Background cardmarket sync crashed")
     # Publish updated stats to MQTT
     try:
         from ..services.ha_publisher import publish_stats

@@ -29,23 +29,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     await init_db()
 
-    # Configure Cardmarket scraper
-    from .clients.cardmarket import cardmarket_scraper
-    if settings.cardmarket_username:
-        cardmarket_scraper.username = settings.cardmarket_username
-
-    # Configure FlareSolverr client
-    from .clients.flaresolverr import flaresolverr
-    if settings.flaresolverr_url:
-        flaresolverr.base_url = settings.flaresolverr_url
-
     start_scheduler()
-
-    # Run Cardmarket scrape at startup (background)
-    if settings.cardmarket_username:
-        import asyncio
-        from .services.cardmarket_import import sync_cardmarket_stock
-        asyncio.create_task(_startup_cardmarket_sync())
 
     # Publish MQTT discovery configs at startup
     if settings.mqtt_enabled:
@@ -62,20 +46,6 @@ async def lifespan(app: FastAPI):
 
     stop_scheduler()
     await close_db()
-
-
-async def _startup_cardmarket_sync():
-    """Run Cardmarket sync shortly after startup."""
-    import asyncio
-    await asyncio.sleep(5)  # Wait for app to be fully ready
-    try:
-        from .services.cardmarket_import import sync_cardmarket_stock
-        result = await sync_cardmarket_stock()
-        import logging
-        logging.getLogger(__name__).info("Startup Cardmarket sync: %s", result)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error("Startup Cardmarket sync failed: %s", e)
 
 
 async def _startup_mqtt_publish():

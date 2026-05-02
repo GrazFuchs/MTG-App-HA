@@ -221,8 +221,6 @@ export interface SyncStatus {
   archidekt_username: string;
   archidekt_authenticated: boolean;
   cardmarket_configured: boolean;
-  flaresolverr_configured: boolean;
-  flaresolverr_available: boolean;
 }
 
 // API calls
@@ -253,7 +251,6 @@ export const api = {
     if (!res.ok) throw new Error(`Import failed: ${res.status}`);
     return res.json();
   },
-  syncCardmarket: () => request<{ total_rows: number; imported: number; errors: number }>('/api/cardmarket/sync', { method: 'POST' }),
   exportCardmarketCSV: async () => {
     const res = await fetch(`${BASE}/api/cardmarket/export`);
     if (!res.ok) throw new Error(`Export failed: ${res.status}`);

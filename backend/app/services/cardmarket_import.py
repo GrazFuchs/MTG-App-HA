@@ -1,4 +1,4 @@
-"""Cardmarket import service (CSV and web scraping)."""
+"""Cardmarket import service (CSV import only)."""
 import csv
 import io
 import logging
@@ -6,7 +6,6 @@ import re
 from typing import Any
 
 from ..database import get_db
-from ..clients.cardmarket import cardmarket_scraper
 
 logger = logging.getLogger(__name__)
 
@@ -156,90 +155,6 @@ async def import_cardmarket_csv(file_content: str | bytes) -> dict[str, Any]:
 
     return {
         "total_rows": total,
-        "imported": imported,
-        "errors": len(error_details),
-        "error_details": error_details[:50],
-    }
-
-
-async def sync_cardmarket_stock() -> dict[str, Any]:
-    """Scrape the user's Cardmarket profile and import offer listings."""
-    if not cardmarket_scraper.is_configured:
-        return {"total_rows": 0, "imported": 0, "errors": 1,
-                "error_details": ["Cardmarket username not configured in add-on settings."]}
-
-    db = await get_db()
-
-    try:
-        articles = await cardmarket_scraper.scrape_offers()
-    except Exception as e:
-        logger.error("Cardmarket scraping failed: %s", e)
-        return {"total_rows": 0, "imported": 0, "errors": 1,
-                "error_details": [f"Scraping failed: {e}"]}
-
-    if not articles:
-        return {"total_rows": 0, "imported": 0, "errors": 0,
-                "error_details": ["No listings found (page may be blocked by Cloudflare). Try CSV import."]}
-
-    # Clear previous imported entries (preserve manual ones)
-    await db.execute("DELETE FROM cardmarket_listings WHERE source = 'import' OR source IS NULL")
-
-    imported = 0
-    error_details: list[str] = []
-
-    for art in articles:
-        try:
-            card_name = art.get("card_name", "").strip()
-            if not card_name:
-                continue
-
-            set_name = art.get("set_name", "")
-            set_code = art.get("set_code", "")
-            price = art.get("price", 0)
-            condition = art.get("condition", "")
-            language = art.get("language", "en")
-            is_foil = art.get("is_foil", False)
-            quantity = art.get("quantity", 1)
-
-            # Try to link to existing card in DB
-            card_id = None
-            try:
-                cursor = await db.execute(
-                    "SELECT id FROM cards WHERE name=? LIMIT 1",
-                    (card_name,),
-                )
-                card_row = await cursor.fetchone()
-                if card_row:
-                    card_id = card_row[0]
-            except Exception:
-                pass
-
-            await db.execute(
-                """INSERT INTO cardmarket_listings
-                (card_name, set_name, set_code, quantity, price, condition,
-                 language, is_foil, card_id)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
-                (card_name, set_name, set_code, quantity, price, condition,
-                 language, is_foil, card_id),
-            )
-            imported += 1
-
-        except Exception as e:
-            error_details.append(f"Article '{art.get('card_name', '?')}': {e}")
-
-    await db.commit()
-    logger.info("Cardmarket scrape: %d/%d imported, %d errors", imported, len(articles), len(error_details))
-
-    return {
-        "total_rows": len(articles),
-        "imported": imported,
-        "errors": len(error_details),
-        "error_details": error_details[:50],
-    }
-    logger.info("Cardmarket API sync: %d/%d imported, %d errors", imported, len(articles), len(error_details))
-
-    return {
-        "total_rows": len(articles),
         "imported": imported,
         "errors": len(error_details),
         "error_details": error_details[:50],

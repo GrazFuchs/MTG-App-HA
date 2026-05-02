@@ -3,9 +3,55 @@ from typing import Any
 
 import aiosqlite
 
+# ---------------------------------------------------------------------------
+# Canonical definitions (used everywhere — keep these in sync with the UI labels)
+#
+#   "Total Cards"         = SUM(quantity + foil_quantity) across all collection entries
+#                           → how many physical cards you own in total
+#   "Unique Cards"        = COUNT(DISTINCT card_id) where quantity+foil_quantity > 0
+#                           → how many distinct Scryfall cards you own (NM + LP of the
+#                             same Scryfall card still counts as 1)
+#   "Collection Entries"  = COUNT(*) FROM collection
+#                           → number of rows in the collection table; can exceed
+#                             Unique Cards when the same Scryfall card is stored in
+#                             multiple conditions/languages as separate rows
+# ---------------------------------------------------------------------------
+
+
+async def get_total_collection_entries(db: aiosqlite.Connection) -> int:
+    """Return the number of collection rows that have a matching card.
+
+    This equals the row-count shown in the Collection page's pagination total.
+    It may be HIGHER than get_unique_card_count() when the same Scryfall card
+    appears as multiple entries (e.g. different languages or conditions).
+    """
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM collection col JOIN cards c ON c.id = col.card_id"
+    )
+    return (await cursor.fetchone())[0]
+
+
+async def get_unique_card_count(db: aiosqlite.Connection) -> int:
+    """Return the number of distinct Scryfall cards owned.
+
+    Two collection entries for the same Scryfall card_id (e.g. NM + LP copies
+    stored separately) count as ONE unique card here.
+    This is the number shown as "Unique Cards" on the Dashboard.
+    """
+    cursor = await db.execute(
+        "SELECT COUNT(DISTINCT col.card_id) FROM collection col JOIN cards c ON c.id = col.card_id"
+    )
+    return (await cursor.fetchone())[0]
+
 
 async def query_collection_stats(db: aiosqlite.Connection) -> dict[str, Any]:
-    """Get collection statistics."""
+    """Get collection statistics.
+
+    Returns:
+        total_cards:  SUM(quantity + foil_quantity)  — physical card count
+        unique_cards: COUNT(DISTINCT card_id)         — distinct Scryfall cards
+        See module-level canonical definitions for the distinction.
+    """
     cursor = await db.execute(
         """SELECT
             COALESCE(SUM(col.quantity + col.foil_quantity), 0),

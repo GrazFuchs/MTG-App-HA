@@ -13,7 +13,6 @@ _scheduler: AsyncIOScheduler | None = None
 async def _sync_job():
     """Run the sync as a scheduled job."""
     from .services.sync_service import run_full_sync
-    from .services.cardmarket_import import sync_cardmarket_stock
     from .services.cardmarket_prices import sync_cardmarket_prices
     settings = get_settings()
 
@@ -29,15 +28,6 @@ async def _sync_job():
             logger.info("Scheduled Archidekt sync completed: %s", result)
         except Exception as e:
             logger.error("Scheduled Archidekt sync failed: %s", e)
-
-    # Cardmarket sync
-    if settings.cardmarket_username:
-        logger.info("Starting scheduled Cardmarket sync...")
-        try:
-            result = await sync_cardmarket_stock()
-            logger.info("Scheduled Cardmarket sync completed: %s", result)
-        except Exception as e:
-            logger.error("Scheduled Cardmarket sync failed: %s", e)
 
     # Cardmarket price data sync (daily)
     logger.info("Starting scheduled Cardmarket price sync...")

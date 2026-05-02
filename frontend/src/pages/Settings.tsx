@@ -124,22 +124,6 @@ export default function Settings() {
         </Body1>
         <br />
         <Body1>
-          FlareSolverr:{' '}
-          {!status?.flaresolverr_configured ? (
-            <Badge appearance="filled" color="warning">Not configured</Badge>
-          ) : status?.flaresolverr_available ? (
-            <Badge appearance="filled" color="success">Available</Badge>
-          ) : (
-            <Badge appearance="filled" color="danger">Configured but unreachable</Badge>
-          )}
-          {!status?.flaresolverr_configured && status?.cardmarket_configured && (
-            <Caption1 style={{ marginLeft: 8 }}>
-              Install FlareSolverr add-on to bypass Cloudflare for Cardmarket scraping
-            </Caption1>
-          )}
-        </Body1>
-        <br />
-        <Body1>
           Auto-sync:{' '}
           <Badge appearance="filled" color={status?.sync_enabled ? 'success' : 'warning'}>
             {status?.sync_enabled ? 'Enabled' : 'Disabled'}

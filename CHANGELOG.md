@@ -1,3 +1,15 @@
+## 0.5.1
+
+### Removed
+- Cardmarket Profil-Scraping komplett entfernt (FlareSolverr-basiert, unzuverlässig wegen Cloudflare)
+- FlareSolverr-Integration und -Konfiguration (`flaresolverr_url`)
+- „Sync from Profile"-Button in Cardmarket-UI
+- Abhängigkeit: selectolax
+
+### Changed
+- Cardmarket-Listings nur noch über CSV-Import oder manuelle Eingabe
+- Preisdaten-Sync über offizielle Cardmarket JSON-Feeds bleibt unverändert
+
 ## 0.5.0
 
 ### Added
@@ -30,15 +42,13 @@
 ### Added
 - Archidekt-Authentifizierung (Login mit Username/Passwort für private Decks & Collection)
 - Collection-Sync direkt über Archidekt Collection API
-- Cardmarket-Profil-Scraping als Alternative zum CSV-Import
-- Automatischer Cardmarket-Sync bei App-Start und bei globalem Sync
+- Cardmarket CSV-Import für Listings
 - Neue Konfigurationsfelder: `archidekt_password`, `archidekt_user_id`, `cardmarket_username`
 - Settings-Seite zeigt Authentifizierungsstatus für Archidekt und Cardmarket
 
 ### Changed
 - Collection wird nun direkt aus Archidekt ausgelesen (nicht mehr aus Deck-Karten aufgebaut)
 - Deck-Sync fügt Karten nicht mehr automatisch zur Collection hinzu
-- Cardmarket: Profil-Scraping ersetzt OAuth-API (API nicht zugänglich)
 
 ### Fixed
 - API-Base-URL wird korrekt aus Ingress-Pfad extrahiert (behebt „Deck not found" bei Navigation)

@@ -165,8 +165,6 @@ class SyncStatus(BaseModel):
     archidekt_username: str = ""
     archidekt_authenticated: bool = False
     cardmarket_configured: bool = False
-    flaresolverr_configured: bool = False
-    flaresolverr_available: bool = False
     synced_decks: int = 0
 
 

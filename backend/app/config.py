@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     sync_hour: int = 3
     mcp_auth_token: str = ""
     cardmarket_username: str = ""
-    flaresolverr_url: str = ""
     mqtt_enabled: bool = False
     mqtt_host: str = ""
     mqtt_port: int = 1883

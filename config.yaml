@@ -1,5 +1,5 @@
 name: "MTG Collection Manager"
-version: "0.5.0"
+version: "0.5.1"
 slug: "mtg-collection"
 description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
 arch:
@@ -26,7 +26,6 @@ options:
   sync_hour: 3
   mcp_auth_token: ""
   cardmarket_username: ""
-  flaresolverr_url: ""
   mqtt_enabled: false
   mqtt_host: ""
   mqtt_port: 1883
@@ -46,7 +45,6 @@ schema:
   sync_hour: "int(0,23)"
   mcp_auth_token: "str?"
   cardmarket_username: "str?"
-  flaresolverr_url: "str?"
   mqtt_enabled: "bool"
   mqtt_host: "str?"
   mqtt_port: "int(1,65535)?"

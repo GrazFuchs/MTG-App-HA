@@ -477,7 +477,7 @@ async def add_cardmarket_listing(card_name: str, quantity: int = 1, price: float
 
 @mcp.tool()
 async def clear_cardmarket_listings() -> str:
-    """Delete all Cardmarket listings (both imported and manually created)."""
+    """Delete all Cardmarket listings (both CSV-imported and manually created)."""
     from .database import get_db
     db = await get_db()
     cursor = await db.execute("SELECT COUNT(*) FROM cardmarket_listings")

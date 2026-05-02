@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.schemas import CardmarketListing, CardmarketImportResult
-from ..services.cardmarket_import import import_cardmarket_csv, sync_cardmarket_stock
+from ..services.cardmarket_import import import_cardmarket_csv
 from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
 
 router = APIRouter()
@@ -90,13 +90,6 @@ async def cardmarket_stats():
 async def upload_cardmarket_csv(file: UploadFile = File(...)):
     content = await file.read()
     result = await import_cardmarket_csv(content)
-    return CardmarketImportResult(**result)
-
-
-@router.post("/sync", response_model=CardmarketImportResult)
-async def sync_cardmarket_api():
-    """Sync Cardmarket listings by scraping the user's public profile page."""
-    result = await sync_cardmarket_stock()
     return CardmarketImportResult(**result)
 
 

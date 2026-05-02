@@ -24,7 +24,7 @@ import {
   Divider,
   Subtitle2,
 } from '@fluentui/react-components';
-import { ArrowUpload24Regular, Search24Regular, ArrowSync24Regular, ArrowDownload24Regular, ChartMultiple24Regular } from '@fluentui/react-icons';
+import { ArrowUpload24Regular, Search24Regular, ArrowDownload24Regular, ChartMultiple24Regular } from '@fluentui/react-icons';
 import { api, CardmarketListing, PriceAlert, PriceHistoryEntry } from '../api';
 import { Sparkline } from '../components/Sparkline';
 
@@ -190,7 +190,6 @@ export default function Cardmarket() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [importing, setImporting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
@@ -253,26 +252,7 @@ export default function Cardmarket() {
         >
           {importing ? 'Importing...' : 'Import CSV'}
         </Button>
-        <Button
-          icon={<ArrowSync24Regular />}
-          appearance="secondary"
-          onClick={async () => {
-            setSyncing(true);
-            setMsg(null);
-            try {
-              const result = await api.syncCardmarket();
-              setMsg({ type: 'success', text: `API Sync: ${result.imported} of ${result.total_rows} articles imported` });
-              load(search);
-            } catch (e: any) {
-              setMsg({ type: 'error', text: e.message });
-            } finally {
-              setSyncing(false);
-            }
-          }}
-          disabled={syncing}
-        >
-          {syncing ? 'Syncing...' : 'Sync from Profile'}
-        </Button>
+
         <Button
           icon={<ArrowDownload24Regular />}
           appearance="secondary"
