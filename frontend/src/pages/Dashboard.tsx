@@ -181,7 +181,15 @@ export default function Dashboard() {
                     <Card key={i} className={styles.alertCard}>
                       <div className={styles.alertRow}>
                         <div>
-                          <Body2><strong>{a.card_name}</strong> — {a.expansion}</Body2>
+                          <Body2>
+                          <strong>{a.card_name}</strong>
+                          {a.set_code && (
+                            <Badge appearance="outline" size="small" style={{ marginLeft: 6, verticalAlign: 'middle' }}>
+                              {a.set_code.toUpperCase()}
+                            </Badge>
+                          )}
+                          {' — '}{a.set_name || a.expansion}
+                        </Body2>
                           <Caption1 style={{ display: 'block' }}>{a.suggestion}</Caption1>
                         </div>
                         <div style={{ textAlign: 'right' }}>

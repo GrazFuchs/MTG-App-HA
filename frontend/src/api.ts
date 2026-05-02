@@ -118,6 +118,8 @@ export interface PriceHistoryEntry {
 export interface PriceAlert {
   card_name: string;
   expansion: string;
+  set_name: string;
+  set_code: string;
   cm_product_id: number;
   trend: number;
   avg30: number;
