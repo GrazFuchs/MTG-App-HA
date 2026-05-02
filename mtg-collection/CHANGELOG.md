@@ -1,3 +1,17 @@
+## 0.6.0
+
+### Changed
+- **Repository-Struktur**: Add-on-Files in `mtg-collection/`-Unterordner verschoben — erforderlich für Home Assistant Custom Repository
+- Installation jetzt über HA Add-on Store: Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories → `https://github.com/HerrFuchs/mtg-collection-ha`
+
+### Migration
+Wer das Add-on bisher manuell per SCP installiert hat:
+1. DB sichern: `cp /data/mtg.db /backup/mtg.db.$(date +%Y%m%d)`
+2. Altes Add-on in HA deinstallieren
+3. Lokalen Add-on-Ordner löschen: `rm -rf /addons/mtg-collection`
+4. Repository-URL in HA hinzufügen und Add-on neu installieren
+5. DB wiederherstellen: `cp /backup/mtg.db.YYYYMMDD /data/mtg.db`
+
 ## 0.5.1
 
 ### Removed
