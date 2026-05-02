@@ -2,6 +2,7 @@
  * Render MTG mana symbols using Scryfall's SVG API.
  * Converts mana cost strings like "{2}{W}{U}" into inline SVG images.
  */
+import { useState } from 'react';
 
 const SYMBOL_BASE = 'https://svgs.scryfall.io/card-symbols';
 
@@ -14,6 +15,14 @@ function symbolUrl(sym: string): string {
 
 /** Render a single mana symbol by its letter (e.g. "W", "U", "2") */
 export function ManaSymbol({ symbol, size = 16 }: { symbol: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span style={{ fontSize: 11, fontFamily: 'monospace', opacity: 0.7, verticalAlign: 'middle' }}>
+        {`{${symbol}}`}
+      </span>
+    );
+  }
   return (
     <img
       src={symbolUrl(symbol)}
@@ -22,15 +31,7 @@ export function ManaSymbol({ symbol, size = 16 }: { symbol: string; size?: numbe
       width={size}
       height={size}
       style={{ display: 'inline-block', verticalAlign: 'middle' }}
-      onError={e => {
-        // Fallback to a text badge if the SVG fails to load
-        const el = e.currentTarget;
-        el.style.display = 'none';
-        const span = document.createElement('span');
-        span.textContent = `{${symbol}}`;
-        span.style.cssText = 'font-size:11px;font-family:monospace;opacity:0.7';
-        el.parentElement?.insertBefore(span, el.nextSibling);
-      }}
+      onError={() => setFailed(true)}
     />
   );
 }

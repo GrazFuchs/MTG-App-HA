@@ -272,42 +272,53 @@ export default function DeckView() {
       <Divider />
 
       {/* Mana Curve & Color Pips */}
+      {/* TOP_PAD reserves vertical space above bars so count labels are never clipped */}
       <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginTop: 16, marginBottom: 16 }}>
-        {manaCurve.some(b => b.count > 0) && (
-          <div>
-            <Caption1 style={{ display: 'block', marginBottom: 4 }}>Mana Curve</Caption1>
-            <svg width={manaCurve.length * 28} height={80} overflow="visible">
-              {manaCurve.map((b, i) => {
-                const barH = (b.count / curveMax) * 60;
-                return (
-                  <g key={i}>
-                    <rect x={i * 28 + 4} y={60 - barH} width={20} height={barH} fill={tokens.colorBrandBackground} rx={2} />
-                    <text x={i * 28 + 14} y={75} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{b.label}</text>
-                    {b.count > 0 && <text x={i * 28 + 14} y={57 - barH} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{b.count}</text>}
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        )}
-        {colorPips.length > 0 && (
-          <div>
-            <Caption1 style={{ display: 'block', marginBottom: 4 }}>Color Pips</Caption1>
-            <svg width={colorPips.length * 36} height={80} overflow="visible">
-              {colorPips.map((p, i) => {
-                const barH = (p.count / pipMax) * 60;
-                return (
-                  <g key={i}>
-                    <rect x={i * 36 + 4} y={60 - barH} width={28} height={barH} fill={COLOR_MAP[p.color] || '#888'} rx={2}
-                      stroke={tokens.colorNeutralStroke1} strokeWidth={p.color === 'W' ? 1 : 0} />
-                    <text x={i * 36 + 18} y={75} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{p.color}</text>
-                    <text x={i * 36 + 18} y={57 - barH} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{p.count}</text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        )}
+        {manaCurve.some(b => b.count > 0) && (() => {
+          const TOP_PAD = 14;
+          const BAR_H = 60;
+          const LABEL_Y = TOP_PAD + BAR_H + 15;
+          return (
+            <div>
+              <Caption1 style={{ display: 'block', marginBottom: 4 }}>Mana Curve</Caption1>
+              <svg width={manaCurve.length * 28} height={TOP_PAD + BAR_H + 20}>
+                {manaCurve.map((b, i) => {
+                  const barH = (b.count / curveMax) * BAR_H;
+                  return (
+                    <g key={i}>
+                      <rect x={i * 28 + 4} y={TOP_PAD + BAR_H - barH} width={20} height={barH} fill={tokens.colorBrandBackground} rx={2} />
+                      <text x={i * 28 + 14} y={LABEL_Y} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{b.label}</text>
+                      {b.count > 0 && <text x={i * 28 + 14} y={TOP_PAD + BAR_H - barH - 3} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{b.count}</text>}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          );
+        })()}
+        {colorPips.length > 0 && (() => {
+          const TOP_PAD = 14;
+          const BAR_H = 60;
+          const LABEL_Y = TOP_PAD + BAR_H + 15;
+          return (
+            <div>
+              <Caption1 style={{ display: 'block', marginBottom: 4 }}>Color Pips</Caption1>
+              <svg width={colorPips.length * 36} height={TOP_PAD + BAR_H + 20}>
+                {colorPips.map((p, i) => {
+                  const barH = (p.count / pipMax) * BAR_H;
+                  return (
+                    <g key={i}>
+                      <rect x={i * 36 + 4} y={TOP_PAD + BAR_H - barH} width={28} height={barH} fill={COLOR_MAP[p.color] || '#888'} rx={2}
+                        stroke={tokens.colorNeutralStroke1} strokeWidth={p.color === 'W' ? 1 : 0} />
+                      <text x={i * 36 + 18} y={LABEL_Y} textAnchor="middle" fontSize={10} fill={tokens.colorNeutralForeground3}>{p.color}</text>
+                      <text x={i * 36 + 18} y={TOP_PAD + BAR_H - barH - 3} textAnchor="middle" fontSize={9} fill={tokens.colorNeutralForeground2}>{p.count}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Main deck categories */}
