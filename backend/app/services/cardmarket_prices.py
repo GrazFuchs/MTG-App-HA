@@ -179,44 +179,76 @@ async def get_price_alerts() -> list[dict[str, Any]]:
 
     A spike is defined as: current trend > avg30 * 1.3 (30% increase).
     Only flags cards with copies not used in any deck.
+
+    Grouped per Cardmarket product (i.e. per edition/set), so a spike in a
+    Revised dual land is NOT conflated with a cheaper reprint of the same name.
+    Basic Lands (type_line LIKE '%Basic Land%') are excluded.
     """
     db = await get_db()
 
-    # Get latest price entries with spike detection
+    # Get latest price entries with spike detection.
+    # LEFT JOIN to cards gives us type_line (for Basic Land filter) and
+    # set_code/set_name (for display) when the product was linked during sync.
+    # Dual filter: type_line check (linked cards) + explicit name list (unlinked).
+    BASIC_LAND_NAMES = (
+        'plains', 'island', 'swamp', 'mountain', 'forest', 'wastes',
+        'snow-covered plains', 'snow-covered island', 'snow-covered swamp',
+        'snow-covered mountain', 'snow-covered forest', 'snow-covered wastes',
+    )
+    placeholders = ",".join("?" * len(BASIC_LAND_NAMES))
     cursor = await db.execute(
-        """SELECT
-            cp.cm_product_id, cp.card_name, cp.expansion_name,
+        f"""SELECT
+            cp.cm_product_id, cp.card_name, cp.expansion_name, cp.card_id,
             ph.trend, ph.avg30, ph.low, ph.avg, ph.date,
-            CASE WHEN ph.avg30 > 0 THEN (ph.trend - ph.avg30) / ph.avg30 * 100 ELSE 0 END as spike_pct
+            CASE WHEN ph.avg30 > 0 THEN (ph.trend - ph.avg30) / ph.avg30 * 100 ELSE 0 END as spike_pct,
+            c.set_code, c.set_name
         FROM cardmarket_products cp
         JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+        LEFT JOIN cards c ON c.id = cp.card_id
         WHERE ph.date = (SELECT MAX(date) FROM cardmarket_price_history)
         AND ph.avg30 > 0 AND ph.trend > ph.avg30 * 1.3
-        ORDER BY spike_pct DESC"""
+        AND (c.type_line IS NULL OR c.type_line NOT LIKE '%Basic Land%')
+        AND LOWER(cp.card_name) NOT IN ({placeholders})
+        ORDER BY spike_pct DESC""",
+        BASIC_LAND_NAMES,
     )
     spiking = await cursor.fetchall()
 
     alerts = []
     for r in spiking:
         card_name = r["card_name"]
+        card_id = r["card_id"]  # may be None if matching failed during sync
 
-        # Count total owned copies
-        owned_cursor = await db.execute(
-            """SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0) as total_owned
-            FROM collection col JOIN cards c ON c.id = col.card_id
-            WHERE LOWER(c.name) = LOWER(?)""",
-            (card_name,),
-        )
+        # Count total owned copies — use exact card_id (per-edition) when available,
+        # fall back to name-match across all editions.
+        if card_id:
+            owned_cursor = await db.execute(
+                "SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0) FROM collection col WHERE col.card_id = ?",
+                (card_id,),
+            )
+        else:
+            owned_cursor = await db.execute(
+                """SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0)
+                FROM collection col JOIN cards c ON c.id = col.card_id
+                WHERE LOWER(c.name) = LOWER(?)""",
+                (card_name,),
+            )
         owned_row = await owned_cursor.fetchone()
         total_owned = owned_row[0] if owned_row else 0
 
-        # Count copies in decks
-        deck_cursor = await db.execute(
-            """SELECT COALESCE(SUM(dc.quantity), 0) as in_decks
-            FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-            WHERE LOWER(c.name) = LOWER(?)""",
-            (card_name,),
-        )
+        # Count copies in decks — same precision logic.
+        if card_id:
+            deck_cursor = await db.execute(
+                "SELECT COALESCE(SUM(dc.quantity), 0) FROM deck_cards dc WHERE dc.card_id = ?",
+                (card_id,),
+            )
+        else:
+            deck_cursor = await db.execute(
+                """SELECT COALESCE(SUM(dc.quantity), 0)
+                FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
+                WHERE LOWER(c.name) = LOWER(?)""",
+                (card_name,),
+            )
         deck_row = await deck_cursor.fetchone()
         in_decks = deck_row[0] if deck_row else 0
 
@@ -225,9 +257,12 @@ async def get_price_alerts() -> list[dict[str, Any]]:
             continue
 
         spike_pct = r["spike_pct"]
+        expansion = r["set_name"] or r["expansion_name"] or ""
         alerts.append({
             "card_name": card_name,
             "expansion": r["expansion_name"],
+            "set_name": expansion,
+            "set_code": r["set_code"] or "",
             "cm_product_id": r["cm_product_id"],
             "trend": round(r["trend"], 2),
             "avg30": round(r["avg30"], 2),
