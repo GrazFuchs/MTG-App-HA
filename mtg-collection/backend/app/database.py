@@ -319,6 +319,44 @@ async def _migration_8(db: aiosqlite.Connection):
     )
 
 
+async def _migration_9(db: aiosqlite.Connection):
+    """Wishlist: add set_code, is_foil, quantity, priority, status, deck_id, tags, acquired_at."""
+    cursor = await db.execute("PRAGMA table_info(wishlist)")
+    columns = {row[1] for row in await cursor.fetchall()}
+
+    additions = {
+        "set_code": "ALTER TABLE wishlist ADD COLUMN set_code TEXT DEFAULT NULL",
+        "is_foil": "ALTER TABLE wishlist ADD COLUMN is_foil INTEGER DEFAULT 0",
+        "quantity": "ALTER TABLE wishlist ADD COLUMN quantity INTEGER DEFAULT 1",
+        "priority": "ALTER TABLE wishlist ADD COLUMN priority INTEGER DEFAULT 3",
+        "status": "ALTER TABLE wishlist ADD COLUMN status TEXT DEFAULT 'wanted'",
+        "deck_id": "ALTER TABLE wishlist ADD COLUMN deck_id INTEGER REFERENCES decks(id) ON DELETE SET NULL",
+        "tags": "ALTER TABLE wishlist ADD COLUMN tags TEXT DEFAULT ''",
+        "acquired_at": "ALTER TABLE wishlist ADD COLUMN acquired_at TIMESTAMP DEFAULT NULL",
+    }
+    for col, stmt in additions.items():
+        if col not in columns:
+            await db.execute(stmt)
+
+    # Replace UNIQUE index: from (card_id) to (card_id, set_code, is_foil) for active 'wanted' entries
+    await db.execute("DROP INDEX IF EXISTS idx_wishlist_card_active")
+    await db.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_wishlist_card_set_foil_active
+        ON wishlist(card_id, COALESCE(set_code, ''), is_foil)
+        WHERE removed_at IS NULL AND status = 'wanted'
+    """)
+
+    # Performance indexes
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_wishlist_status
+        ON wishlist(status) WHERE removed_at IS NULL
+    """)
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_wishlist_deck
+        ON wishlist(deck_id) WHERE deck_id IS NOT NULL AND removed_at IS NULL
+    """)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -327,6 +365,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     6: _migration_6,
     7: _migration_7,
     8: _migration_8,
+    9: _migration_9,
 }
 
 
