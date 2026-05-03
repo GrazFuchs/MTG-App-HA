@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -66,6 +67,82 @@ class ScryfallClient:
     async def close(self):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+
+    async def get_card_printings(self, card_name: str) -> list[dict[str, Any]]:
+        """Get all printings of a card across all sets.
+
+        Uses Scryfall search: q=!"<name>"&unique=prints
+        Returns sorted by release date desc. Cached 24h.
+        """
+        cache_key = f"printings:{card_name.lower()}"
+        now = time.time()
+        if cache_key in _printings_cache:
+            entry = _printings_cache[cache_key]
+            if now - entry["ts"] < _PRINTINGS_CACHE_TTL:
+                return entry["data"]
+
+        results: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            try:
+                data = await self._get(
+                    "/cards/search",
+                    params={"q": f'!"{card_name}"', "unique": "prints", "page": page},
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    break
+                raise
+            results.extend(data.get("data", []))
+            if not data.get("has_more"):
+                break
+            page += 1
+
+        # Sort by released_at descending
+        results.sort(key=lambda c: c.get("released_at", ""), reverse=True)
+
+        # Parse into lightweight dicts
+        printings = []
+        for card in results:
+            image_uris = card.get("image_uris", {})
+            if not image_uris and "card_faces" in card:
+                faces = card["card_faces"]
+                if faces:
+                    image_uris = faces[0].get("image_uris", {})
+            prices = card.get("prices", {})
+            price_eur = None
+            if prices.get("eur"):
+                try:
+                    price_eur = float(prices["eur"])
+                except (ValueError, TypeError):
+                    pass
+            price_eur_foil = None
+            if prices.get("eur_foil"):
+                try:
+                    price_eur_foil = float(prices["eur_foil"])
+                except (ValueError, TypeError):
+                    pass
+            printings.append({
+                "scryfall_id": card["id"],
+                "set_code": card.get("set", ""),
+                "set_name": card.get("set_name", ""),
+                "collector_number": card.get("collector_number", ""),
+                "rarity": card.get("rarity", ""),
+                "released_at": card.get("released_at", ""),
+                "image_uri": image_uris.get("normal"),
+                "price_eur": price_eur,
+                "price_eur_foil": price_eur_foil,
+                "is_foil_available": card.get("foil", False),
+                "is_nonfoil_available": card.get("nonfoil", False),
+            })
+
+        _printings_cache[cache_key] = {"ts": now, "data": printings}
+        return printings
+
+
+# In-memory printings cache (24h TTL)
+_printings_cache: dict[str, dict] = {}
+_PRINTINGS_CACHE_TTL = 86400  # 24 hours
 
 
 def parse_scryfall_card(data: dict[str, Any]) -> dict[str, Any]:

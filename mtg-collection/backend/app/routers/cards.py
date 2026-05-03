@@ -1,9 +1,19 @@
 """Card search routes (Scryfall proxy)."""
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from ..clients.scryfall import scryfall
 from ..clients.edhrec import edhrec, parse_edhrec_recommendations, parse_edhrec_combos, slugify_commander
+from ..models.schemas import CardPrinting
 
 router = APIRouter()
+
+
+@router.get("/printings", response_model=list[CardPrinting])
+async def get_card_printings(name: str = Query(..., description="Exact card name")):
+    """Get all printings of a card across all sets (cached 24h)."""
+    printings = await scryfall.get_card_printings(name)
+    if not printings:
+        raise HTTPException(status_code=404, detail=f"No printings found for '{name}'")
+    return printings
 
 
 @router.get("/search")

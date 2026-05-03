@@ -1,135 +1,426 @@
-"""Wishlist API routes."""
+"""Wishlist API routes — extended with set/foil/priority/status/deck/tags."""
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from datetime import date
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import PlainTextResponse
+
 from ..database import get_db
+from ..models.schemas import (
+    WishlistItemCreate,
+    WishlistItemResponse,
+    WishlistItemUpdate,
+    WishlistSummary,
+)
+from ..services.card_resolver import resolve_card
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class WishlistCardInfo(BaseModel):
-    name: str = ""
-    set_name: str = ""
-    image_uri: str = ""
-    scryfall_id: str = ""
+def _parse_tags(tags_csv: str) -> list[str]:
+    """Parse comma-separated tags string into a list, filtering empties."""
+    if not tags_csv:
+        return []
+    return [t.strip() for t in tags_csv.split(",") if t.strip()]
 
 
-class WishlistItemResponse(BaseModel):
-    id: int = 0
-    card_id: int = 0
-    target_price_eur: float = 0.0
-    notes: str = ""
-    added_at: str = ""
-    current_price: float | None = None
-    is_deal: bool = False
-    card: WishlistCardInfo = WishlistCardInfo()
+def _safe_float(value) -> float | None:
+    """Safely convert a price string/value to float or None."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
 
 
-class WishlistAdd(BaseModel):
-    scryfall_id: str = ""
-    card_name: str = ""
-    target_price_eur: float = 0.0
-    notes: str = ""
+def _build_item_response(row, current_price: float | None) -> WishlistItemResponse:
+    """Build a WishlistItemResponse from a DB row + computed price."""
+    target = row["target_price_eur"] or 0
+    is_deal = current_price is not None and target > 0 and current_price <= target
+    return WishlistItemResponse(
+        id=row["id"],
+        card_id=row["card_id"] or 0,
+        card_name=row["card_name"] or "",
+        scryfall_id=row["scryfall_id"] or "",
+        set_code=row["set_code"],
+        set_name=row["set_name"],
+        is_foil=bool(row["is_foil"]),
+        quantity=row["quantity"] or 1,
+        target_price_eur=target,
+        priority=row["priority"] or 3,
+        status=row["status"] or "wanted",
+        deck_id=row["deck_id"],
+        deck_name=row["deck_name"],
+        tags=_parse_tags(row["tags"] or ""),
+        notes=row["notes"] or "",
+        added_at=row["added_at"] or "",
+        acquired_at=row["acquired_at"],
+        current_price_eur=current_price,
+        is_deal=is_deal,
+        image_uri=row["image_uri"],
+    )
+
+
+def _get_current_price(row) -> float | None:
+    """Extract current price from joined row (prefers cardmarket trend, falls back to scryfall)."""
+    cm_price = _safe_float(row["cm_trend"]) if "cm_trend" in row.keys() else None
+    if cm_price is not None:
+        return cm_price
+    if row["is_foil"]:
+        return _safe_float(row["price_eur_foil"])
+    return _safe_float(row["price_eur"])
+
+
+_BASE_SELECT = """
+    SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
+           w.set_code, w.is_foil, w.quantity, w.priority, w.status,
+           w.deck_id, w.tags, w.acquired_at,
+           c.name AS card_name, c.scryfall_id, c.image_uri,
+           c.set_name, c.price_eur, c.price_eur_foil,
+           d.name AS deck_name,
+           (SELECT ph.trend FROM cardmarket_products cp
+            JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+            WHERE LOWER(cp.card_name) = LOWER(c.name)
+            ORDER BY ph.date DESC LIMIT 1) AS cm_trend
+    FROM wishlist w
+    LEFT JOIN cards c ON c.id = w.card_id
+    LEFT JOIN decks d ON d.id = w.deck_id
+"""
+
+
+@router.get("/summary", response_model=WishlistSummary)
+async def get_wishlist_summary():
+    """Aggregate stats for the wishlist (only 'wanted' items)."""
+    db = await get_db()
+    cursor = await db.execute(f"""
+        {_BASE_SELECT}
+        WHERE w.removed_at IS NULL AND w.status = 'wanted'
+    """)
+    rows = await cursor.fetchall()
+
+    total_items = 0
+    total_quantity = 0
+    total_target_eur = 0.0
+    total_current_eur = 0.0
+    items_below = 0
+    items_above = 0
+    items_unknown = 0
+    by_priority: dict[int, int] = {}
+    deck_counts: dict[int, dict] = {}
+
+    for row in rows:
+        total_items += 1
+        qty = row["quantity"] or 1
+        total_quantity += qty
+        target = row["target_price_eur"] or 0
+        total_target_eur += target * qty
+
+        price = _get_current_price(row)
+        if price is not None:
+            total_current_eur += price * qty
+            if target > 0 and price <= target:
+                items_below += 1
+            elif target > 0:
+                items_above += 1
+        else:
+            items_unknown += 1
+
+        prio = row["priority"] or 3
+        by_priority[prio] = by_priority.get(prio, 0) + 1
+
+        deck_id = row["deck_id"]
+        if deck_id is not None:
+            if deck_id not in deck_counts:
+                deck_counts[deck_id] = {"deck_id": deck_id, "deck_name": row["deck_name"] or "", "count": 0}
+            deck_counts[deck_id]["count"] += 1
+
+    return WishlistSummary(
+        total_items=total_items,
+        total_quantity=total_quantity,
+        total_target_eur=round(total_target_eur, 2),
+        total_current_eur=round(total_current_eur, 2),
+        items_below_target=items_below,
+        items_above_target=items_above,
+        items_unknown_price=items_unknown,
+        by_priority=by_priority,
+        by_deck=list(deck_counts.values()),
+    )
+
+
+@router.get("/export/cardmarket", response_class=PlainTextResponse)
+async def export_cardmarket():
+    """Plain-text decklist format for Cardmarket Wantlist import."""
+    db = await get_db()
+    cursor = await db.execute("""
+        SELECT w.quantity, c.name
+        FROM wishlist w
+        LEFT JOIN cards c ON c.id = w.card_id
+        WHERE w.removed_at IS NULL AND w.status = 'wanted'
+        ORDER BY w.priority DESC, c.name ASC
+    """)
+    rows = await cursor.fetchall()
+    lines = [f"{row['quantity'] or 1} {row['name']}" for row in rows if row["name"]]
+    content = "\n".join(lines) + "\n" if lines else ""
+    today = date.today().isoformat()
+    return PlainTextResponse(
+        content=content,
+        headers={"Content-Disposition": f"attachment; filename=wantlist_{today}.txt"},
+    )
+
+
+@router.get("/export/json")
+async def export_json():
+    """Full JSON export of the wishlist for backup."""
+    db = await get_db()
+    cursor = await db.execute(f"""
+        {_BASE_SELECT}
+        WHERE w.removed_at IS NULL
+        ORDER BY w.added_at DESC
+    """)
+    rows = await cursor.fetchall()
+    items = []
+    for row in rows:
+        price = _get_current_price(row)
+        items.append(_build_item_response(row, price).model_dump())
+    return {"items": items, "exported_at": date.today().isoformat()}
 
 
 @router.get("/", response_model=list[WishlistItemResponse])
-async def list_wishlist():
+async def list_wishlist(
+    status: str = Query("wanted", description="Filter by status. Use '*' for all."),
+    priority: int | None = Query(None, ge=1, le=5, description="Filter by priority"),
+    deck_id: int | None = Query(None, description="Filter by deck"),
+    tag: str | None = Query(None, description="Filter by tag"),
+    is_deal_only: bool = Query(False, description="Only items where current <= target"),
+    sort: str = Query("priority", description="Sort field: priority|added_at|target_price|current_price|delta_eur"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """Paginated wishlist with filters."""
     db = await get_db()
-    cursor = await db.execute(
-        """SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
-                  c.name, c.set_name, c.image_uri, c.scryfall_id
-           FROM wishlist w
-           LEFT JOIN cards c ON c.id = w.card_id
-           WHERE w.removed_at IS NULL
-           ORDER BY w.added_at DESC"""
-    )
+
+    conditions = ["w.removed_at IS NULL"]
+    params: list = []
+
+    if status != "*":
+        conditions.append("w.status = ?")
+        params.append(status)
+
+    if priority is not None:
+        conditions.append("w.priority = ?")
+        params.append(priority)
+
+    if deck_id is not None:
+        conditions.append("w.deck_id = ?")
+        params.append(deck_id)
+
+    if tag:
+        conditions.append("(',' || w.tags || ',') LIKE ?")
+        params.append(f"%,{tag.strip()},%")
+
+    where_clause = " AND ".join(conditions)
+
+    # Determine sort
+    sort_map = {
+        "priority": "w.priority DESC, w.added_at DESC",
+        "added_at": "w.added_at DESC",
+        "target_price": "w.target_price_eur DESC",
+        "current_price": "cm_trend DESC",
+        "delta_eur": "(COALESCE(cm_trend, 0) - w.target_price_eur) ASC",
+    }
+    order_by = sort_map.get(sort, sort_map["priority"])
+
+    offset = (page - 1) * page_size
+    query = f"""
+        {_BASE_SELECT}
+        WHERE {where_clause}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+    """
+    params.extend([page_size, offset])
+
+    cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
 
     items = []
-    for r in rows:
-        card_name = r["name"] or ""
-        # Try to find current price from cardmarket_price_history
-        price_cursor = await db.execute(
-            """SELECT ph.trend FROM cardmarket_products cp
-            JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-            WHERE LOWER(cp.card_name) = LOWER(?)
-            ORDER BY ph.date DESC LIMIT 1""",
-            (card_name,),
-        )
-        price_row = await price_cursor.fetchone()
-        current_price = price_row[0] if price_row else None
-        is_deal = (
-            current_price is not None
-            and r["target_price_eur"] > 0
-            and current_price <= r["target_price_eur"]
-        )
-        items.append(WishlistItemResponse(
-            id=r["id"],
-            card_id=r["card_id"] or 0,
-            target_price_eur=r["target_price_eur"] or 0,
-            notes=r["notes"] or "",
-            added_at=r["added_at"] or "",
-            current_price=current_price,
-            is_deal=is_deal,
-            card=WishlistCardInfo(
-                name=card_name,
-                set_name=r["set_name"] or "",
-                image_uri=r["image_uri"] or "",
-                scryfall_id=r["scryfall_id"] or "",
-            ),
-        ))
+    for row in rows:
+        price = _get_current_price(row)
+        if is_deal_only:
+            target = row["target_price_eur"] or 0
+            if price is None or target <= 0 or price > target:
+                continue
+        items.append(_build_item_response(row, price))
+
     return items
 
 
-@router.post("/", response_model=WishlistItemResponse)
-async def add_to_wishlist(item: WishlistAdd):
+@router.get("/{item_id}", response_model=WishlistItemResponse)
+async def get_wishlist_item(item_id: int):
+    """Get a single wishlist item by ID."""
+    db = await get_db()
+    cursor = await db.execute(f"""
+        {_BASE_SELECT}
+        WHERE w.id = ? AND w.removed_at IS NULL
+    """, (item_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    price = _get_current_price(row)
+    return _build_item_response(row, price)
+
+
+@router.post("/")
+async def add_to_wishlist(item: WishlistItemCreate):
+    """Add a card to the wishlist. Returns owned-check warning if applicable."""
     db = await get_db()
 
-    # Resolve to card_id
-    card_id = None
-    card_name = ""
-    if item.scryfall_id:
-        cursor = await db.execute(
-            "SELECT id, name FROM cards WHERE scryfall_id = ?", (item.scryfall_id,)
-        )
-        row = await cursor.fetchone()
-        if row:
-            card_id = row["id"]
-            card_name = row["name"]
-    if not card_id and item.card_name:
-        cursor = await db.execute(
-            "SELECT id, name FROM cards WHERE LOWER(name) = LOWER(?)", (item.card_name.strip(),)
-        )
-        row = await cursor.fetchone()
-        if row:
-            card_id = row["id"]
-            card_name = row["name"]
+    if not item.card_name and not item.scryfall_id:
+        raise HTTPException(status_code=422, detail="Either card_name or scryfall_id is required")
 
-    if not card_id:
-        raise HTTPException(status_code=404, detail="Card not found in database. Sync collection first.")
+    # Resolve card
+    card = await resolve_card(
+        db,
+        card_name=item.card_name,
+        scryfall_id=item.scryfall_id,
+        set_code=item.set_code,
+    )
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found in database or Scryfall")
 
+    card_id = card["id"]
+
+    # Owned-check: count across all printings of same card name
+    cursor = await db.execute(
+        """SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0) as owned
+           FROM collection col
+           JOIN cards c2 ON c2.id = col.card_id
+           WHERE LOWER(c2.name) = LOWER((SELECT name FROM cards WHERE id = ?))""",
+        (card_id,),
+    )
+    owned_row = await cursor.fetchone()
+    owned = owned_row["owned"] if owned_row else 0
+
+    warning = None
+    if owned >= item.quantity:
+        warning = f"You already own {owned} copies in your collection"
+
+    # Validate deck_id if provided
+    if item.deck_id is not None:
+        cursor = await db.execute("SELECT id FROM decks WHERE id = ?", (item.deck_id,))
+        if not await cursor.fetchone():
+            raise HTTPException(status_code=422, detail=f"Deck with id {item.deck_id} does not exist")
+
+    # Insert
     try:
         cursor = await db.execute(
-            "INSERT INTO wishlist (card_id, target_price_eur, notes) VALUES (?, ?, ?)",
-            (card_id, item.target_price_eur, item.notes.strip()),
+            """INSERT INTO wishlist
+               (card_id, set_code, is_foil, quantity, target_price_eur, priority, status, deck_id, tags, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                card_id,
+                item.set_code,
+                int(item.is_foil),
+                item.quantity,
+                item.target_price_eur,
+                item.priority,
+                item.status,
+                item.deck_id,
+                item.tags.strip(),
+                item.notes.strip(),
+            ),
         )
         await db.commit()
-        return WishlistItemResponse(
-            id=cursor.lastrowid or 0,
-            card_id=card_id,
-            target_price_eur=item.target_price_eur,
-            notes=item.notes.strip(),
-            card=WishlistCardInfo(name=card_name),
-        )
+        new_id = cursor.lastrowid
     except Exception as e:
         if "UNIQUE" in str(e):
-            raise HTTPException(status_code=409, detail="Card already on wishlist")
+            raise HTTPException(
+                status_code=409,
+                detail="Card already on wishlist with this set/foil combination",
+            )
         raise
+
+    # Fetch the created item for response
+    cursor = await db.execute(f"""
+        {_BASE_SELECT}
+        WHERE w.id = ?
+    """, (new_id,))
+    row = await cursor.fetchone()
+    price = _get_current_price(row) if row else None
+    resp = _build_item_response(row, price) if row else None
+
+    return {"item": resp, "warning": warning}
+
+
+@router.patch("/{item_id}", response_model=WishlistItemResponse)
+async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
+    """Partial update of a wishlist item."""
+    db = await get_db()
+
+    # Check exists
+    cursor = await db.execute(
+        "SELECT id FROM wishlist WHERE id = ? AND removed_at IS NULL", (item_id,)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Build dynamic SET clause
+    fields = []
+    params: list = []
+    update_data = updates.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=422, detail="No fields to update")
+
+    field_map = {
+        "target_price_eur": "target_price_eur",
+        "priority": "priority",
+        "status": "status",
+        "deck_id": "deck_id",
+        "tags": "tags",
+        "notes": "notes",
+        "quantity": "quantity",
+    }
+    for key, col in field_map.items():
+        if key in update_data:
+            val = update_data[key]
+            if key == "tags" and val is not None:
+                val = val.strip()
+            if key == "notes" and val is not None:
+                val = val.strip()
+            fields.append(f"{col} = ?")
+            params.append(val)
+
+    # Validate deck_id if being updated
+    if "deck_id" in update_data and update_data["deck_id"] is not None:
+        cursor = await db.execute("SELECT id FROM decks WHERE id = ?", (update_data["deck_id"],))
+        if not await cursor.fetchone():
+            raise HTTPException(status_code=422, detail=f"Deck with id {update_data['deck_id']} does not exist")
+
+    # If status changed to 'acquired', set acquired_at
+    if update_data.get("status") == "acquired":
+        fields.append("acquired_at = CURRENT_TIMESTAMP")
+
+    params.append(item_id)
+    await db.execute(
+        f"UPDATE wishlist SET {', '.join(fields)} WHERE id = ?",
+        params,
+    )
+    await db.commit()
+
+    # Return updated item
+    cursor = await db.execute(f"""
+        {_BASE_SELECT}
+        WHERE w.id = ?
+    """, (item_id,))
+    row = await cursor.fetchone()
+    price = _get_current_price(row)
+    return _build_item_response(row, price)
 
 
 @router.delete("/{item_id}")
 async def remove_from_wishlist(item_id: int):
+    """Soft-delete: set removed_at timestamp."""
     db = await get_db()
     cursor = await db.execute(
         "UPDATE wishlist SET removed_at = CURRENT_TIMESTAMP WHERE id = ? AND removed_at IS NULL",
@@ -139,3 +430,47 @@ async def remove_from_wishlist(item_id: int):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"ok": True}
+
+
+@router.post("/{item_id}/acquire")
+async def acquire_wishlist_item(item_id: int):
+    """Mark item as acquired with timestamp."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, status FROM wishlist WHERE id = ? AND removed_at IS NULL",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if row["status"] == "acquired":
+        raise HTTPException(status_code=400, detail="Already acquired")
+
+    await db.execute(
+        "UPDATE wishlist SET status = 'acquired', acquired_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (item_id,),
+    )
+    await db.commit()
+    return {"ok": True, "status": "acquired"}
+
+
+@router.post("/{item_id}/restore")
+async def restore_wishlist_item(item_id: int):
+    """Restore a soft-deleted item (set removed_at = NULL)."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, removed_at FROM wishlist WHERE id = ?",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if row["removed_at"] is None:
+        raise HTTPException(status_code=400, detail="Item is not deleted")
+
+    await db.execute(
+        "UPDATE wishlist SET removed_at = NULL WHERE id = ?",
+        (item_id,),
+    )
+    await db.commit()
+    return {"ok": True, "status": "restored"}

@@ -1,6 +1,7 @@
 """Pydantic models for API request/response and external data."""
 from __future__ import annotations
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -197,3 +198,80 @@ class EDHRECCombo(BaseModel):
     color_identity: list[str] = []
     result: str = ""
     link: str = ""
+
+
+# --- Wishlist Models ---
+
+class WishlistItemCreate(BaseModel):
+    card_name: str | None = None
+    scryfall_id: str | None = None
+    set_code: str | None = None
+    is_foil: bool = False
+    quantity: int = Field(1, ge=1, le=99)
+    target_price_eur: float = Field(0, ge=0)
+    priority: int = Field(3, ge=1, le=5)
+    status: Literal["wanted", "acquired", "dropped"] = "wanted"
+    deck_id: int | None = None
+    tags: str = ""
+    notes: str = ""
+
+
+class WishlistItemUpdate(BaseModel):
+    """All fields optional for PATCH semantics."""
+    target_price_eur: float | None = Field(None, ge=0)
+    priority: int | None = Field(None, ge=1, le=5)
+    status: Literal["wanted", "acquired", "dropped"] | None = None
+    deck_id: int | None = None
+    tags: str | None = None
+    notes: str | None = None
+    quantity: int | None = Field(None, ge=1, le=99)
+
+
+class WishlistItemResponse(BaseModel):
+    id: int
+    card_id: int
+    card_name: str
+    scryfall_id: str
+    set_code: str | None = None
+    set_name: str | None = None
+    is_foil: bool
+    quantity: int
+    target_price_eur: float
+    priority: int
+    status: str
+    deck_id: int | None = None
+    deck_name: str | None = None
+    tags: list[str] = []
+    notes: str
+    added_at: str
+    acquired_at: str | None = None
+    current_price_eur: float | None = None
+    is_deal: bool = False
+    image_uri: str | None = None
+
+
+class WishlistSummary(BaseModel):
+    total_items: int
+    total_quantity: int
+    total_target_eur: float
+    total_current_eur: float
+    items_below_target: int
+    items_above_target: int
+    items_unknown_price: int
+    by_priority: dict[int, int] = {}
+    by_deck: list[dict] = []
+
+
+class CardPrinting(BaseModel):
+    """A specific set printing of a card from Scryfall."""
+    scryfall_id: str
+    set_code: str
+    set_name: str
+    collector_number: str
+    rarity: str
+    released_at: str
+    image_uri: str | None = None
+    price_eur: float | None = None
+    price_eur_foil: float | None = None
+    is_foil_available: bool = False
+    is_nonfoil_available: bool = False
