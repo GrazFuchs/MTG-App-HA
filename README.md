@@ -157,7 +157,7 @@ mtg-collection-ha/                     # GitHub Repository Root
 │       ├── database.py      # SQLite-Schema, Init, Connection
 │       ├── scheduler.py     # APScheduler für täglichen Sync
 │       ├── version.py       # VERSION = "0.4.0"
-│       ├── mcp_server.py    # MCP-Server (22 Tools, 3 Resources, 2 Prompts)
+│       ├── mcp_server.py    # MCP-Server (26 Tools, 3 Resources, 2 Prompts)
 │       ├── clients/
 │       │   ├── archidekt.py # Archidekt API Client (Auth, Decks, Collection)
 │       │   ├── scryfall.py  # Scryfall API Client (Suche, Preise)
@@ -369,8 +369,12 @@ Der integrierte MCP-Server (Model Context Protocol) ermöglicht es AI-Assistente
 | `add_cardmarket_listing` | Manuelles Cardmarket-Listing erstellen |
 | `clear_cardmarket_listings` | Alle Cardmarket-Listings löschen |
 | `suggest_what_to_sell` | KI-Verkaufsempfehlungen: ungenutzte Karten mit hohem Wert |
-| `get_wishlist` | Aktuelle Wunschliste mit Deal-Status abrufen |
-| `add_to_wishlist` | Karte zur Wunschliste hinzufügen (mit Preis-Alert) |
+| `get_wishlist` | Wunschliste abrufen (Filter: status, priority_min, deck_id, deals_only) |
+| `add_to_wishlist` | Karte zur Wunschliste hinzufügen (set_code, is_foil, quantity, priority, deck, tags) |
+| `update_wishlist_item` | Wunschlisten-Eintrag aktualisieren (PATCH-Semantik: nur geänderte Felder) |
+| `wishlist_summary` | Aggregat-Stats der Wunschliste (Gesamtwert, Deals, nach Priorität/Deck) |
+| `find_card_printings` | Alle Druckversionen einer Karte mit Set, Preis, Foil-Verfügbarkeit |
+| `wishlist_to_cardmarket_decklist` | Wunschliste als Cardmarket-Wantlist-Plaintext exportieren |
 | `analyze_deck_completeness` | Deck-Vollständigkeit analysieren (fehlende Karten, Kosten) |
 
 ### Verfügbare Resources

@@ -515,39 +515,88 @@ async def suggest_what_to_sell(target_amount_eur: float = 50.0, max_suggestions:
 
 
 @mcp.tool()
-async def get_wishlist() -> str:
-    """Get the current wishlist with deal status."""
+async def get_wishlist(
+    status: str = "wanted",
+    priority_min: int = 1,
+    deck_id: int | None = None,
+    deals_only: bool = False,
+) -> str:
+    """Get the wishlist with filters and current prices.
+
+    Args:
+        status: Filter by status: 'wanted', 'acquired', 'dropped', or 'all'
+        priority_min: Minimum priority (1-5). Default 1 = show all.
+        deck_id: Only show items for a specific deck.
+        deals_only: If True, only return items where current_price <= target_price_eur.
+
+    Returns:
+        JSON list of wishlist items with current price, is_deal flag, and all fields.
+    """
     from .database import get_db
     try:
         db = await get_db()
+        conditions = ["w.removed_at IS NULL"]
+        params: list = []
+        if status != "all":
+            conditions.append("w.status = ?")
+            params.append(status)
+        if priority_min > 1:
+            conditions.append("w.priority >= ?")
+            params.append(priority_min)
+        if deck_id is not None:
+            conditions.append("w.deck_id = ?")
+            params.append(deck_id)
+        where = " AND ".join(conditions)
         cursor = await db.execute(
-            """SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
-                      c.name, c.set_name, c.scryfall_id
+            f"""SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
+                      w.set_code, w.is_foil, w.quantity, w.priority, w.status,
+                      w.deck_id, w.tags, w.acquired_at,
+                      c.name AS card_name, c.scryfall_id, c.set_name,
+                      c.price_eur, c.price_eur_foil,
+                      d.name AS deck_name,
+                      (SELECT ph.trend FROM cardmarket_products cp
+                       JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                       WHERE LOWER(cp.card_name) = LOWER(c.name)
+                       ORDER BY ph.date DESC LIMIT 1) AS cm_trend
                FROM wishlist w
                LEFT JOIN cards c ON c.id = w.card_id
-               WHERE w.removed_at IS NULL
-               ORDER BY w.added_at DESC"""
+               LEFT JOIN decks d ON d.id = w.deck_id
+               WHERE {where}
+               ORDER BY w.priority DESC, w.added_at DESC""",
+            params,
         )
         rows = await cursor.fetchall()
         items = []
         for r in rows:
-            card_name = r["name"] or ""
-            price_cursor = await db.execute(
-                """SELECT ph.trend FROM cardmarket_products cp
-                JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                WHERE LOWER(cp.card_name) = LOWER(?)
-                ORDER BY ph.date DESC LIMIT 1""",
-                (card_name,),
-            )
-            pr = await price_cursor.fetchone()
-            current = pr[0] if pr else None
+            # Prefer cardmarket trend, fall back to scryfall price
+            def _fp(v):
+                try: return float(v) if v and v != "" else None
+                except (ValueError, TypeError): return None
+            current = _fp(r["cm_trend"])
+            if current is None:
+                current = _fp(r["price_eur_foil"]) if r["is_foil"] else _fp(r["price_eur"])
+            target = r["target_price_eur"] or 0
+            is_deal = current is not None and target > 0 and current <= target
+            if deals_only and not is_deal:
+                continue
+            tags = [t.strip() for t in (r["tags"] or "").split(",") if t.strip()]
             items.append({
-                "card_name": card_name,
-                "card_id": r["card_id"],
-                "target_price_eur": r["target_price_eur"],
-                "current_price": current,
-                "is_deal": current is not None and r["target_price_eur"] > 0 and current <= r["target_price_eur"],
-                "notes": r["notes"],
+                "id": r["id"],
+                "card_name": r["card_name"] or "",
+                "set_code": r["set_code"],
+                "is_foil": bool(r["is_foil"]),
+                "quantity": r["quantity"] or 1,
+                "priority": r["priority"] or 3,
+                "status": r["status"] or "wanted",
+                "deck_id": r["deck_id"],
+                "deck_name": r["deck_name"],
+                "tags": tags,
+                "target_price_eur": target,
+                "current_price_eur": current,
+                "is_deal": is_deal,
+                "notes": r["notes"] or "",
+                "added_at": r["added_at"] or "",
+                "acquired_at": r["acquired_at"],
             })
         return json.dumps(items, indent=2)
     except Exception as e:
@@ -555,43 +604,277 @@ async def get_wishlist() -> str:
 
 
 @mcp.tool()
-async def add_to_wishlist(card_name: str, target_price_eur: float = 0.0, notes: str = "") -> str:
-    """Add a card to the wishlist with optional price alert threshold.
+async def add_to_wishlist(
+    card_name: str,
+    set_code: str = "",
+    is_foil: bool = False,
+    quantity: int = 1,
+    target_price_eur: float = 0.0,
+    priority: int = 3,
+    deck_id: int | None = None,
+    tags: str = "",
+    notes: str = "",
+) -> str:
+    """Add a card to the wishlist.
 
     Args:
-        card_name: Exact card name (resolved to card_id via DB or Scryfall)
-        target_price_eur: Maximum price to trigger deal alert (0 = no alert)
-        notes: Optional notes
+        card_name: Exact card name (resolved via DB or Scryfall).
+        set_code: Optional 3-letter set code (e.g. 'mh3'). Empty = no set preference.
+        is_foil: Whether the desired version is foil.
+        quantity: Number of copies wanted (1-99).
+        target_price_eur: Maximum price per copy to trigger deal alert (0 = no alert).
+        priority: 1 (low) to 5 (high). Default 3.
+        deck_id: Optional ID of a deck this card is wanted for.
+        tags: Comma-separated tags (e.g. 'modern,foil-priority').
+        notes: Free-form notes.
+
+    Returns:
+        JSON string with the created item or error.
     """
     from .database import get_db
-    from .services.sync_service import upsert_card
-    from .clients.scryfall import scryfall
+    from .services.card_resolver import resolve_card
+    try:
+        if not 1 <= priority <= 5:
+            return json.dumps({"error": "priority must be 1-5"})
+        if not 1 <= quantity <= 99:
+            return json.dumps({"error": "quantity must be 1-99"})
+        db = await get_db()
+        card = await resolve_card(db, card_name=card_name, set_code=set_code or None)
+        if not card:
+            return json.dumps({"error": f"Card '{card_name}' not found"})
+        try:
+            cursor = await db.execute(
+                """INSERT INTO wishlist
+                   (card_id, set_code, is_foil, quantity, target_price_eur, priority, deck_id, tags, notes)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    card["id"], set_code or None, int(is_foil), quantity,
+                    target_price_eur, priority, deck_id, tags.strip(), notes.strip(),
+                ),
+            )
+            await db.commit()
+            return json.dumps({
+                "id": cursor.lastrowid,
+                "card_name": card["name"],
+                "set_code": set_code or None,
+                "is_foil": is_foil,
+                "quantity": quantity,
+                "target_price_eur": target_price_eur,
+                "priority": priority,
+            }, indent=2)
+        except Exception as e:
+            if "UNIQUE" in str(e):
+                return json.dumps({"error": "Already on wishlist with this set/foil combination"})
+            raise
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def update_wishlist_item(
+    item_id: int,
+    target_price_eur: float | None = None,
+    priority: int | None = None,
+    status: str | None = None,
+    notes: str | None = None,
+) -> str:
+    """Update a wishlist item's fields. Only provided (non-None) fields are changed.
+
+    Args:
+        item_id: ID of the wishlist item to update.
+        target_price_eur: New price alert threshold (0 = no alert).
+        priority: New priority 1 (low) to 5 (high).
+        status: New status: 'wanted', 'acquired', or 'dropped'.
+        notes: New notes text.
+
+    Returns:
+        JSON with updated item or error.
+    """
+    from .database import get_db
     try:
         db = await get_db()
-
-        # Try to find card in local DB first
         cursor = await db.execute(
-            "SELECT id FROM cards WHERE LOWER(name) = LOWER(?)", (card_name.strip(),)
+            "SELECT id FROM wishlist WHERE id = ? AND removed_at IS NULL", (item_id,)
         )
-        row = await cursor.fetchone()
+        if not await cursor.fetchone():
+            return json.dumps({"error": f"Wishlist item {item_id} not found"})
 
-        if row:
-            card_id = row["id"]
-        else:
-            # Fetch from Scryfall and upsert
-            card_data = await scryfall.get_card_by_name(card_name.strip(), exact=True)
-            card_id = await upsert_card(db, card_data)
-            await db.commit()
+        fields = []
+        params: list = []
+        if target_price_eur is not None:
+            fields.append("target_price_eur = ?")
+            params.append(target_price_eur)
+        if priority is not None:
+            if not 1 <= priority <= 5:
+                return json.dumps({"error": "priority must be 1-5"})
+            fields.append("priority = ?")
+            params.append(priority)
+        if status is not None:
+            if status not in ("wanted", "acquired", "dropped"):
+                return json.dumps({"error": "status must be 'wanted', 'acquired', or 'dropped'"})
+            fields.append("status = ?")
+            params.append(status)
+            if status == "acquired":
+                fields.append("acquired_at = CURRENT_TIMESTAMP")
+        if notes is not None:
+            fields.append("notes = ?")
+            params.append(notes.strip())
 
+        if not fields:
+            return json.dumps({"error": "No fields to update"})
+
+        params.append(item_id)
         await db.execute(
-            "INSERT INTO wishlist (card_id, target_price_eur, notes) VALUES (?, ?, ?)",
-            (card_id, target_price_eur, notes.strip()),
+            f"UPDATE wishlist SET {', '.join(fields)} WHERE id = ?",
+            params,
         )
         await db.commit()
-        return json.dumps({"ok": True, "card_name": card_name.strip(), "card_id": card_id})
+        return json.dumps({"ok": True, "item_id": item_id, "updated": {k: v for k, v in zip(["target_price_eur", "priority", "status", "notes"], [target_price_eur, priority, status, notes]) if v is not None}})
     except Exception as e:
-        if "UNIQUE" in str(e):
-            return json.dumps({"error": f"'{card_name}' is already on the wishlist"})
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def wishlist_summary() -> str:
+    """Get aggregate stats for the wishlist.
+
+    Useful for questions like: 'How much would my wishlist cost?' or
+    'How many priority-5 cards do I want?'
+
+    Returns:
+        JSON with total items, quantities, target/current EUR values,
+        deal count, by_priority breakdown, and by_deck breakdown.
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            """SELECT w.quantity, w.target_price_eur, w.priority, w.deck_id, w.is_foil,
+                      c.name AS card_name, c.price_eur, c.price_eur_foil,
+                      d.name AS deck_name,
+                      (SELECT ph.trend FROM cardmarket_products cp
+                       JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                       WHERE LOWER(cp.card_name) = LOWER(c.name)
+                       ORDER BY ph.date DESC LIMIT 1) AS cm_trend
+               FROM wishlist w
+               LEFT JOIN cards c ON c.id = w.card_id
+               LEFT JOIN decks d ON d.id = w.deck_id
+               WHERE w.removed_at IS NULL AND w.status = 'wanted'"""
+        )
+        rows = await cursor.fetchall()
+        total_items = 0
+        total_qty = 0
+        total_target = 0.0
+        total_current = 0.0
+        deals = 0
+        unknown_price = 0
+        by_priority: dict[int, int] = {}
+        deck_counts: dict[int, dict] = {}
+
+        def _fp(v):
+            try: return float(v) if v and v != "" else None
+            except (ValueError, TypeError): return None
+
+        for r in rows:
+            total_items += 1
+            qty = r["quantity"] or 1
+            total_qty += qty
+            target = r["target_price_eur"] or 0
+            total_target += target * qty
+            current = _fp(r["cm_trend"])
+            if current is None:
+                current = _fp(r["price_eur_foil"]) if r["is_foil"] else _fp(r["price_eur"])
+            if current is not None:
+                total_current += current * qty
+                if target > 0 and current <= target:
+                    deals += 1
+            else:
+                unknown_price += 1
+            prio = r["priority"] or 3
+            by_priority[prio] = by_priority.get(prio, 0) + 1
+            if r["deck_id"] is not None:
+                did = r["deck_id"]
+                if did not in deck_counts:
+                    deck_counts[did] = {"deck_id": did, "deck_name": r["deck_name"] or "", "count": 0}
+                deck_counts[did]["count"] += 1
+
+        return json.dumps({
+            "total_items": total_items,
+            "total_quantity": total_qty,
+            "total_target_eur": round(total_target, 2),
+            "total_current_eur": round(total_current, 2),
+            "items_with_deals": deals,
+            "items_unknown_price": unknown_price,
+            "by_priority": by_priority,
+            "by_deck": list(deck_counts.values()),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def find_card_printings(card_name: str) -> str:
+    """List all printings of a card across sets, with prices.
+
+    Useful before adding to wishlist when comparing set prices or art.
+    Returns results sorted by release date (newest first).
+
+    Args:
+        card_name: Exact card name (e.g. 'Lightning Bolt').
+
+    Returns:
+        JSON list with set_code, set_name, rarity, released_at, price_eur, price_eur_foil.
+    """
+    from .clients.scryfall import scryfall
+    try:
+        printings = await scryfall.get_card_printings(card_name)
+        if not printings:
+            return json.dumps({"error": f"No printings found for '{card_name}'"})
+        # Return a concise view for Claude (full data can be large)
+        concise = [{
+            "scryfall_id": p["scryfall_id"],
+            "set_code": p["set_code"],
+            "set_name": p["set_name"],
+            "collector_number": p["collector_number"],
+            "rarity": p["rarity"],
+            "released_at": p["released_at"],
+            "price_eur": p["price_eur"],
+            "price_eur_foil": p["price_eur_foil"],
+            "foil_available": p["is_foil_available"],
+            "nonfoil_available": p["is_nonfoil_available"],
+        } for p in printings]
+        return json.dumps({"card": card_name, "printing_count": len(concise), "printings": concise}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def wishlist_to_cardmarket_decklist() -> str:
+    """Generate Cardmarket-compatible decklist from the current 'wanted' wishlist.
+
+    Returns plaintext that can be pasted directly into Cardmarket's
+    'Add cards' wantlist dialog.
+    Format: '<quantity> <card_name>' per line, sorted by priority desc then name.
+
+    Returns:
+        Plain text string (newline-separated), not JSON.
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            """SELECT w.quantity, c.name
+               FROM wishlist w
+               LEFT JOIN cards c ON c.id = w.card_id
+               WHERE w.removed_at IS NULL AND w.status = 'wanted'
+               ORDER BY w.priority DESC, c.name ASC"""
+        )
+        rows = await cursor.fetchall()
+        lines = [f"{r['quantity'] or 1} {r['name']}" for r in rows if r["name"]]
+        if not lines:
+            return "# Wishlist is empty"
+        return "\n".join(lines)
+    except Exception as e:
         return json.dumps({"error": str(e)})
 
 
