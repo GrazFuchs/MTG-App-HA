@@ -984,6 +984,46 @@ async def resource_deck(deck_id: str) -> str:
     return json.dumps(detail, default=str, indent=2)
 
 
+@mcp.tool()
+async def set_deck_ai_assessment(deck_id: int, assessment: str) -> str:
+    """Write or update the AI assessment for a deck.
+
+    Use this when the user asks for a deck review or analysis.
+    The text supports Markdown formatting. Max 5000 chars.
+
+    Args:
+        deck_id: The ID of the deck
+        assessment: The full assessment text (Markdown). Replaces previous assessment.
+
+    Returns:
+        JSON: {"deck_id": ..., "ai_assessment_updated_at": ..., "char_count": ...}
+    """
+    from .database import get_db
+    try:
+        if len(assessment) > 5000:
+            return json.dumps({"error": "Assessment exceeds 5000 character limit"})
+        db = await get_db()
+        cursor = await db.execute("SELECT id FROM decks WHERE id = ?", (deck_id,))
+        if not await cursor.fetchone():
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+        await db.execute(
+            "UPDATE decks SET ai_assessment = ?, ai_assessment_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (assessment, deck_id),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT ai_assessment_updated_at FROM decks WHERE id = ?", (deck_id,)
+        )
+        row = await cursor.fetchone()
+        return json.dumps({
+            "deck_id": deck_id,
+            "ai_assessment_updated_at": row[0] if row else None,
+            "char_count": len(assessment),
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Prompts ---
 
 @mcp.prompt()

@@ -16,6 +16,9 @@ import {
 import { api, DeckDetail, DeckCardEntry } from '../api';
 import { ManaCost, ManaSymbol } from '../components/ManaSymbol';
 import { CardHoverPreview } from '../components/CardHoverPreview';
+import { UserBracketBadge } from '../components/deck/UserBracketBadge';
+import { GameplanBox } from '../components/deck/GameplanBox';
+import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 
 const COLOR_MAP: Record<string, string> = {
   W: '#F9FAF4', U: '#0E68AB', B: '#150B00', R: '#D3202A', G: '#00733E',
@@ -237,7 +240,7 @@ export default function DeckView() {
           <Title2>{deck.name}</Title2>
           <div className={styles.meta}>
             <Badge appearance="outline">{deck.format || 'Unknown'}</Badge>
-            {deck.bracket > 0 && <Badge appearance="outline" color="informative">Bracket {deck.bracket}</Badge>}
+            <UserBracketBadge deck={deck} onUpdate={setDeck} />
             {commander?.card.mana_cost ? (
               <ManaCost cost={commander.card.mana_cost} size={18} />
             ) : colorIdentity.length > 0 && (
@@ -266,6 +269,8 @@ export default function DeckView() {
           </div>
           {deck.commander_name && <Body2 style={{ marginTop: 6 }}>Commander: {deck.commander_name}</Body2>}
           {deck.description && <Body1 style={{ marginTop: 8, opacity: 0.8 }}>{deck.description}</Body1>}
+          <GameplanBox deck={deck} onUpdate={setDeck} />
+          <AIAssessmentBox deck={deck} />
         </div>
       </div>
 

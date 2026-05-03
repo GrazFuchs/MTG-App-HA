@@ -357,6 +357,22 @@ async def _migration_9(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_10(db: aiosqlite.Connection):
+    """Decks: add user_bracket, gameplan, ai_assessment, ai_assessment_updated_at."""
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    columns = {row[1] for row in await cursor.fetchall()}
+
+    additions = {
+        "user_bracket": "ALTER TABLE decks ADD COLUMN user_bracket INTEGER DEFAULT NULL",
+        "gameplan": "ALTER TABLE decks ADD COLUMN gameplan TEXT DEFAULT ''",
+        "ai_assessment": "ALTER TABLE decks ADD COLUMN ai_assessment TEXT DEFAULT ''",
+        "ai_assessment_updated_at": "ALTER TABLE decks ADD COLUMN ai_assessment_updated_at TIMESTAMP DEFAULT NULL",
+    }
+    for col, stmt in additions.items():
+        if col not in columns:
+            await db.execute(stmt)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -366,6 +382,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     7: _migration_7,
     8: _migration_8,
     9: _migration_9,
+    10: _migration_10,
 }
 
 

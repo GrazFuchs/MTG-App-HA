@@ -16,12 +16,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./
 COPY --from=frontend-build /build/frontend/dist ./static
+COPY mcp-proxy.mjs /app/mcp-proxy.mjs
 
 COPY run.sh /
 RUN chmod a+x /run.sh
 
 LABEL \
-  io.hass.version="0.6.0" \
+  io.hass.version="0.7.0" \
   io.hass.type="addon" \
   io.hass.arch="aarch64|amd64"
 

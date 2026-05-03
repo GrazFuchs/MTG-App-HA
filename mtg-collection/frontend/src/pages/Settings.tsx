@@ -23,6 +23,7 @@ import {
 import { ArrowSync24Regular, DeleteRegular } from '@fluentui/react-icons';
 import { api, SyncStatus, SyncLogEntry } from '../api';
 import { t } from '../i18n';
+import { MCPSetupSection } from '../components/settings/MCPSetupSection';
 
 const useStyles = makeStyles({
   section: {
@@ -254,6 +255,8 @@ export default function Settings() {
           </Button>
         </div>
       </div>
+
+      <MCPSetupSection />
     </div>
   );
 }

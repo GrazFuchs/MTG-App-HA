@@ -1,3 +1,20 @@
+## 0.7.0
+
+### Added
+- **Wishlist**: Full wishlist management — Add-Form, priorities (1-5), status tracking, filters, CSV export
+- **Deck Header Features**: User-Bracket (editable 1-5), Gameplan field (500 chars), AI-Assessment (Markdown rendered, MCP-only write)
+- **MCP Setup UX**: Settings section with proxy download, config snippet (copy-to-clipboard), OS-specific paths
+- **Cardmarket Workflow Banner**: 5-step CSV roundtrip guide on Cardmarket page (dismissible via localStorage)
+- **AI-Assessment Markdown**: react-markdown + remark-gfm for safe rendering (no rehype-raw)
+- **MCP Tool**: `set_deck_ai_assessment` — AI can write deck assessments (max 5000 chars)
+- **API Endpoints**: `GET /api/mcp/proxy.mjs`, `GET /api/mcp/setup-instructions`, `PUT /api/decks/{id}/user-fields`
+- **Documentation**: MCP Setup Guide, Cardmarket Workflow Guide
+
+### Changed
+- Deck detail header shows Archidekt bracket + editable user bracket side-by-side
+- Dockerfile copies mcp-proxy.mjs into container for download endpoint
+- Schema migration #10: 4 new columns on `decks` table (user_bracket, gameplan, ai_assessment, ai_assessment_updated_at)
+
 ## 0.6.0
 
 ### Changed

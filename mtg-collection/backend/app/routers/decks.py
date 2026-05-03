@@ -2,7 +2,7 @@
 import json
 from fastapi import APIRouter, HTTPException
 from ..database import get_db
-from ..models.schemas import DeckSummary, DeckDetail, DeckCardEntry, CardResponse
+from ..models.schemas import DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate
 from ..services.queries import query_all_decks
 
 router = APIRouter()
@@ -64,7 +64,38 @@ async def get_deck(deck_id: int):
         commander_name=deck["commander_name"] or "",
         owner_username=deck["owner_username"] or "",
         bracket=deck["bracket"] or 0,
+        user_bracket=deck["user_bracket"],
+        gameplan=deck["gameplan"] or "",
+        ai_assessment=deck["ai_assessment"] or "",
+        ai_assessment_updated_at=deck["ai_assessment_updated_at"],
         view_count=deck["view_count"], created_at=deck["created_at"],
         updated_at=deck["updated_at"], last_synced=deck["last_synced"],
         cards=cards,
     )
+
+
+@router.put("/{deck_id}/user-fields", response_model=DeckDetail)
+async def update_deck_user_fields(deck_id: int, body: DeckUserFieldsUpdate):
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    fields = []
+    params: list = []
+    if body.user_bracket is not None:
+        fields.append("user_bracket = ?")
+        params.append(body.user_bracket)
+    elif body.model_fields_set and "user_bracket" in body.model_fields_set:
+        # Explicitly set to null
+        fields.append("user_bracket = NULL")
+    if body.gameplan is not None:
+        fields.append("gameplan = ?")
+        params.append(body.gameplan)
+
+    if fields:
+        params.append(deck_id)
+        await db.execute(f"UPDATE decks SET {', '.join(fields)} WHERE id = ?", params)
+        await db.commit()
+
+    return await get_deck(deck_id)

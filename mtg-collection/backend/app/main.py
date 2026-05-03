@@ -12,7 +12,7 @@ from .database import init_db, close_db
 from .logging_config import setup_logging
 from .scheduler import start_scheduler, stop_scheduler
 from .version import VERSION
-from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist, backup
+from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist, backup, mcp_setup
 
 setup_logging()
 
@@ -89,6 +89,7 @@ app.include_router(cards.router, prefix="/api/cards", tags=["cards"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
+app.include_router(mcp_setup.router, prefix="/api/mcp", tags=["mcp"])
 
 
 @app.get("/healthz", tags=["health"])

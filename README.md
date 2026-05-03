@@ -41,14 +41,16 @@ Ein Home Assistant Add-on zur Verwaltung deiner Magic: The Gathering Sammlung mi
   - Preisverlauf-Sparklines (30 Tage) beim Hovern über Kartennamen
   - Automatische Preis-Spike-Alerts mit Verkaufsempfehlungen für ungenutzte Kopien
 - **MCP-Server**: Streamable HTTP-Endpoint für AI-Assistenten (Claude, etc.)
-  - 22 Tools, 3 Resources, 2 Prompts inkl. Preisalerts, Preisverlauf, Deck-Nutzung, Preis-Sync, Doubletten, Wishlist, Deck-Vollständigkeit, Verkaufsempfehlungen
+  - 23 Tools, 3 Resources, 2 Prompts inkl. Preisalerts, Preisverlauf, Deck-Nutzung, Preis-Sync, Doubletten, Wishlist, Deck-Vollständigkeit, Verkaufsempfehlungen, AI-Deck-Assessment
+  - MCP-Setup-Wizard in Settings (Download + Config-Snippet + Anleitung)
 - **Web-UI**: React-Frontend mit Fluent UI
   - Dashboard: Übersichtskarten mit Statistiken + Preis-Spike-Alerts
   - Decks: Einklappbare Ordner, Bracket-Badges, Deck-Previews
-  - Deck-Detail: Commander-Header, kompakte Kartentabelle, Sideboard-Trennung, Scryfall- und EDHREC-Links
+  - Deck-Detail: Commander-Header, User-Bracket, Gameplan, AI-Assessment (Markdown), Mana-Kurve
   - Collection: Set-Filter, Deck-Filter, Gruppierung nach Kartenname, Deck-Nutzungs-Spalte
   - Duplicates: Doubletten-Ansicht mit Verkaufsdialog für Cardmarket-Listings
-  - Cardmarket: Preisalerts, Sparkline-Graphen, CSV Import/Export, Source-Tracking
+  - Cardmarket: Preisalerts, Sparkline-Graphen, CSV Import/Export, Workflow-Banner
+  - Wishlist: Add-Form, Prioritäten, Status-Tracking, CSV-Export
   - Karten-Hover: Scryfall-Vorschaubild + Oracle-Text
 - **Home Assistant Ingress**: Nahtlose Einbindung ins HA-Panel
 
@@ -532,9 +534,32 @@ Konfiguration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
 ---
 
+## 📚 Detailed Guides
+
+- [MCP Setup für Claude Desktop](docs/mcp-setup.md) — How to connect this add-on to Claude Desktop
+- [Cardmarket Workflow](docs/cardmarket-workflow.md) — CSV-based listing management
+
+---
+
 ## Changelog
 
-### 0.5.0
+### 0.7.0
+
+#### Hinzugefügt
+- **Wishlist**: Vollständige Wishlist-Verwaltung mit Add-Form, Prioritäten, Status-Tracking, Filter und CSV-Export
+- **Deck Header Features**: User-Bracket (editierbar), Gameplan-Feld (500 Zeichen), AI-Assessment (Markdown, nur via MCP)
+- **MCP Setup UX**: Settings-Sektion mit Proxy-Download, Config-Snippet (Copy-to-Clipboard), OS-spezifische Pfade
+- **Cardmarket Workflow-Banner**: 5-Step CSV-Roundtrip-Anleitung direkt auf der Cardmarket-Page (dismissible)
+- **AI-Assessment Markdown**: react-markdown + remark-gfm für sichere Markdown-Darstellung
+- **MCP-Tool**: `set_deck_ai_assessment` — AI kann Deck-Bewertungen schreiben
+- **API-Endpoints**: `GET /api/mcp/proxy.mjs`, `GET /api/mcp/setup-instructions`, `PUT /api/decks/{id}/user-fields`
+- **Dokumentation**: [MCP Setup Guide](docs/mcp-setup.md), [Cardmarket Workflow Guide](docs/cardmarket-workflow.md)
+
+#### Geändert
+- Deck-Detail-Header zeigt jetzt Archidekt-Bracket + editierbaren User-Bracket nebeneinander
+- Schema-Migration #10: 4 neue Spalten in `decks`-Tabelle
+
+### 0.6.0
 
 #### Hinzugefügt
 - **Duplicates-Tab**: Neuer Tab zeigt alle Karten mit überschüssigen Kopien (Owned > In Decks)

@@ -75,6 +75,10 @@ export interface DeckDetail {
   description: string;
   commander_name: string;
   bracket: number;
+  user_bracket: number | null;
+  gameplan: string;
+  ai_assessment: string;
+  ai_assessment_updated_at: string | null;
   featured_image: string;
   owner_username: string;
   cards: DeckCardEntry[];
@@ -271,11 +275,23 @@ export interface SyncStatus {
   cardmarket_configured: boolean;
 }
 
+export interface MCPSetupInstructions {
+  download_url: string;
+  config_example: Record<string, unknown>;
+  instructions: { step: number; text: string }[];
+  config_paths: { macos: string; windows: string; linux: string };
+}
+
 // API calls
 export const api = {
   // Decks
   getDecks: () => request<DeckSummary[]>('/api/decks/'),
   getDeck: (id: number) => request<DeckDetail>(`/api/decks/${id}`),
+  updateDeckUserFields: (deckId: number, fields: { user_bracket?: number | null; gameplan?: string }) =>
+    request<DeckDetail>(`/api/decks/${deckId}/user-fields`, {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    }),
 
   // Collection
   getCollection: (params?: URLSearchParams) =>
@@ -372,4 +388,7 @@ export const api = {
     request<{ ok: boolean }>(`/api/wishlist/${id}/restore`, { method: 'POST' }),
   getCardPrintings: (cardName: string) =>
     request<CardPrinting[]>(`/api/cards/printings?name=${encodeURIComponent(cardName)}`),
+
+  // MCP Setup
+  getMcpSetupInstructions: () => request<MCPSetupInstructions>('/api/mcp/setup-instructions'),
 };

@@ -85,11 +85,20 @@ class DeckDetail(BaseModel):
     commander_name: str = ""
     owner_username: str = ""
     bracket: int = 0
+    user_bracket: int | None = None
+    gameplan: str = ""
+    ai_assessment: str = ""
+    ai_assessment_updated_at: datetime | None = None
     view_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
     last_synced: datetime | None = None
     cards: list[DeckCardEntry] = []
+
+
+class DeckUserFieldsUpdate(BaseModel):
+    user_bracket: int | None = Field(None, ge=1, le=5)
+    gameplan: str | None = Field(None, max_length=500)
 
 
 # --- Collection Models ---

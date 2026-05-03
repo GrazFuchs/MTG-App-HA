@@ -27,6 +27,7 @@ import {
 import { ArrowUpload24Regular, Search24Regular, ArrowDownload24Regular, ChartMultiple24Regular } from '@fluentui/react-icons';
 import { api, CardmarketListing, PriceAlert, PriceHistoryEntry } from '../api';
 import { Sparkline } from '../components/Sparkline';
+import { CardmarketWorkflowBanner } from '../components/cardmarket/CardmarketWorkflowBanner';
 
 const useStyles = makeStyles({
   controls: {
@@ -233,6 +234,24 @@ export default function Cardmarket() {
   return (
     <div>
       <Title2>Cardmarket Listings</Title2>
+
+      <CardmarketWorkflowBanner
+        onImport={() => fileRef.current?.click()}
+        onExport={async () => {
+          setExporting(true);
+          setMsg(null);
+          try {
+            await api.exportCardmarketCSV();
+            setMsg({ type: 'success', text: 'CSV exported successfully' });
+          } catch (e: any) {
+            setMsg({ type: 'error', text: e.message });
+          } finally {
+            setExporting(false);
+          }
+        }}
+        exporting={exporting}
+        hasListings={listings.length > 0}
+      />
 
       <div className={styles.controls}>
         <Input
