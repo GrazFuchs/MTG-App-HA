@@ -143,17 +143,63 @@ export interface CollectionStats {
 export interface WishlistItem {
   id: number;
   card_id: number;
+  card_name: string;
+  scryfall_id: string;
+  set_code: string | null;
+  set_name: string | null;
+  is_foil: boolean;
+  quantity: number;
   target_price_eur: number;
+  priority: number;
+  status: 'wanted' | 'acquired' | 'dropped';
+  deck_id: number | null;
+  deck_name: string | null;
+  tags: string[];
   notes: string;
   added_at: string;
-  current_price: number | null;
+  acquired_at: string | null;
+  current_price_eur: number | null;
   is_deal: boolean;
-  card: {
-    name: string;
-    set_name: string;
-    image_uri: string;
-    scryfall_id: string;
-  };
+  image_uri: string | null;
+}
+
+export interface WishlistSummary {
+  total_items: number;
+  total_quantity: number;
+  total_target_eur: number;
+  total_current_eur: number;
+  items_below_target: number;
+  items_above_target: number;
+  items_unknown_price: number;
+  by_priority: Record<number, number>;
+  by_deck: { deck_id: number; deck_name: string; count: number }[];
+}
+
+export interface CardPrinting {
+  scryfall_id: string;
+  set_code: string;
+  set_name: string;
+  collector_number: string;
+  rarity: string;
+  released_at: string;
+  image_uri: string | null;
+  price_eur: number | null;
+  price_eur_foil: number | null;
+  is_foil_available: boolean;
+  is_nonfoil_available: boolean;
+}
+
+export interface WishlistAddPayload {
+  card_name?: string;
+  scryfall_id?: string;
+  set_code?: string;
+  is_foil?: boolean;
+  quantity?: number;
+  target_price_eur?: number;
+  priority?: number;
+  deck_id?: number;
+  tags?: string;
+  notes?: string;
 }
 
 export interface ValueSnapshot {
@@ -308,9 +354,22 @@ export const api = {
     request<{ status: string }>('/api/cardmarket/clear-listings', { method: 'DELETE' }),
 
   // Wishlist
-  getWishlist: () => request<WishlistItem[]>('/api/wishlist/'),
-  addToWishlist: (data: { card_name: string; target_price_eur?: number; notes?: string }) =>
-    request<WishlistItem>('/api/wishlist/', { method: 'POST', body: JSON.stringify(data) }),
+  getWishlist: (params?: URLSearchParams) =>
+    request<WishlistItem[]>(`/api/wishlist/?${params?.toString() ?? ''}`),
+  getWishlistSummary: () => request<WishlistSummary>('/api/wishlist/summary'),
+  addToWishlist: (payload: WishlistAddPayload) =>
+    request<{ item: WishlistItem; warning: string | null }>('/api/wishlist/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateWishlistItem: (id: number, data: Partial<WishlistAddPayload>) =>
+    request<WishlistItem>(`/api/wishlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   removeFromWishlist: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}`, { method: 'DELETE' }),
+  acquireWishlistItem: (id: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/acquire`, { method: 'POST' }),
+  restoreWishlistItem: (id: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/restore`, { method: 'POST' }),
+  getCardPrintings: (cardName: string) =>
+    request<CardPrinting[]>(`/api/cards/printings?name=${encodeURIComponent(cardName)}`),
 };
