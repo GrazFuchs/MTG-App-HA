@@ -1,3 +1,27 @@
+## 0.8.0
+
+### Added
+- **Sothera Vault Redesign**: Complete frontend redesign with space-opera aesthetic
+- **Theme System**: `src/theme/sothera.ts` — oklch accent ramp (6 named accents: sothera/nebula/endstone/stellar/drift/ember), glass surface tokens, dark Fluent UI theme override
+- **Shared Primitives**: `src/components/sothera/` — Panel, PageHeader, SectionHeader, DeltaBadge, CornerTicks, Sigil, BackdropFX
+- **Accent Picker**: Swappable accent colors persisted to localStorage, accessible from the topbar
+- **Galaxy-Foil Sparkline**: Rewritten Sparkline component with gradient fill, grid pattern, and glowing accent dot with concentric rings
+- **BackdropFX**: Animated starfield + nebula glow + horizon haze background layer
+
+### Changed
+- **Typography**: Space Grotesk (display, 600-700), Inter (body, 400-500), JetBrains Mono (mono/data, 500-600) via Google Fonts CDN
+- **All 8 pages rewritten**: Dashboard, Decks, DeckView, Collection, Cardmarket, Duplicates, Wishlist, Settings — from Fluent UI defaults to Sothera glass-panel layout with custom CSS grid tables
+- **Topbar**: New branded topbar with sigil, glyph navigation, status line, and accent picker — replaces Fluent UI TabList
+- **Background**: #04040A base with layered radial nebula gradients, replacing default Fluent dark/light mode
+- **Surfaces**: Glass panels (rgba(20,20,32,0.55), 1px hairline border, ≤2px radius, backdrop blur) replace Fluent UI Card components
+- **Bundle size**: Reduced by ~42 KB (1,052 KB → 1,010 KB) by dropping unused Fluent UI Table/Card imports
+
+### Technical
+- Styles use Griffel `makeStyles` throughout — no Tailwind, styled-components, or raw style tags
+- No new runtime dependencies added (fonts loaded via `<link>` in index.html)
+- `api.ts`, routing structure, data shapes, and backend unchanged
+- `tsc --noEmit` passes with zero errors
+
 ## 0.7.0
 
 ### Added
