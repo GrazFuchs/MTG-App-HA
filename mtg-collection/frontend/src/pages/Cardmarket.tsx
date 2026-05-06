@@ -1,101 +1,19 @@
 import { useEffect, useState, useRef } from 'react';
+import { makeStyles, shorthands } from '@griffel/react';
 import {
-  makeStyles,
-  tokens,
-  Title2,
-  Title3,
-  Body1,
-  Body2,
-  Caption1,
   Spinner,
   Input,
   Button,
-  Card,
-  CardHeader,
-  Badge,
   MessageBar,
   MessageBarBody,
-  Table,
-  TableHeader,
-  TableRow,
-  TableHeaderCell,
-  TableBody,
-  TableCell,
-  Divider,
-  Subtitle2,
 } from '@fluentui/react-components';
-import { ArrowUpload24Regular, Search24Regular, ArrowDownload24Regular, ChartMultiple24Regular } from '@fluentui/react-icons';
+import { ArrowUpload24Regular, ArrowDownload24Regular, ChartMultiple24Regular } from '@fluentui/react-icons';
 import { api, CardmarketListing, PriceAlert, PriceHistoryEntry } from '../api';
 import { Sparkline } from '../components/Sparkline';
 import { CardmarketWorkflowBanner } from '../components/cardmarket/CardmarketWorkflowBanner';
-
-const useStyles = makeStyles({
-  controls: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '12px',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-  },
-  statsRow: {
-    display: 'flex',
-    gap: '16px',
-    marginTop: '12px',
-    flexWrap: 'wrap',
-  },
-  statCard: {
-    padding: '12px 16px',
-    minWidth: '120px',
-  },
-  tableWrap: {
-    marginTop: '16px',
-    overflowX: 'auto',
-  },
-  alertsSection: {
-    marginTop: '24px',
-    marginBottom: '24px',
-  },
-  alertCard: {
-    padding: '12px 16px',
-    marginTop: '8px',
-  },
-  alertGroupHeader: {
-    cursor: 'pointer',
-    userSelect: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 0',
-  },
-  alertGroupChevron: {
-    display: 'inline-block',
-    transition: 'transform 0.15s ease',
-    fontSize: '10px',
-  },
-  alertGroupChevronOpen: {
-    transform: 'rotate(90deg)',
-  },
-  alertRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap',
-  },
-  sparklineCell: {
-    position: 'relative',
-  },
-  sparklinePopup: {
-    position: 'fixed',
-    zIndex: 10000,
-    background: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: '8px',
-    padding: '8px 12px',
-    boxShadow: tokens.shadow16,
-    pointerEvents: 'none',
-  },
-});
+import { sothera } from '../theme/sothera';
+import { useAccent } from '../main';
+import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
 const PRICE_TIERS = [
   { max: 0.5, label: 'Under €0.50', emoji: '🟤' },
@@ -114,11 +32,68 @@ function getPriceTier(trend: number): string {
   return PRICE_TIERS[PRICE_TIERS.length - 1].label;
 }
 
-function getPriceTierEmoji(label: string): string {
-  return PRICE_TIERS.find(t => t.label === label)?.emoji || '';
-}
+const useStyles = makeStyles({
+  controls: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+  },
+  btn: {
+    padding: '10px 16px',
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    letterSpacing: '2px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+  },
+  gridHeader: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 80px 70px 70px 90px 90px 100px 90px',
+    padding: '4px 0 14px',
+    borderBottom: `1px solid ${sothera.headerBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '2px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
+  },
+  gridRow: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 80px 70px 70px 90px 90px 100px 90px',
+    padding: '14px 0',
+    fontSize: '13px',
+    alignItems: 'center',
+  },
+  alertGroupHeader: {
+    cursor: 'pointer',
+    userSelect: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 0',
+    borderBottom: `1px solid ${sothera.rowBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '12px',
+    letterSpacing: '1px',
+    color: sothera.fgMuted,
+  },
+  sparklinePopup: {
+    position: 'fixed',
+    zIndex: 10000,
+    backgroundColor: sothera.glassBg,
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+    ...shorthands.borderColor(sothera.glassBorder),
+    padding: '8px 12px',
+    pointerEvents: 'none',
+    backdropFilter: 'blur(12px)',
+  },
+});
 
-function PriceCell({ cardName }: { cardName: string }) {
+function PriceCell({ cardName, accent }: { cardName: string; accent: string }) {
   const styles = useStyles();
   const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
   const [show, setShow] = useState(false);
@@ -164,19 +139,19 @@ function PriceCell({ cardName }: { cardName: string }) {
 
   return (
     <span
-      className={styles.sparklineCell}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
+      style={{ cursor: 'default' }}
     >
       {cardName}
       {show && history && history.length > 1 && (
         <div className={styles.sparklinePopup} style={{ left: pos.x, top: pos.y }}>
-          <Caption1 style={{ display: 'block', marginBottom: 4 }}>30-Day Price Trend</Caption1>
-          <Sparkline data={history} width={180} height={48} />
-          <Caption1 style={{ display: 'block', marginTop: 4 }}>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginBottom: 4, letterSpacing: 1.5, textTransform: 'uppercase' }}>30-DAY TREND</div>
+          <Sparkline data={history} width={180} height={48} accent={accent} dot={false} />
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgMuted, marginTop: 4 }}>
             €{history[history.length - 1].trend.toFixed(2)} (latest)
-          </Caption1>
+          </div>
         </div>
       )}
     </span>
@@ -185,6 +160,7 @@ function PriceCell({ cardName }: { cardName: string }) {
 
 export default function Cardmarket() {
   const styles = useStyles();
+  const { accent } = useAccent();
   const fileRef = useRef<HTMLInputElement>(null);
   const [listings, setListings] = useState<CardmarketListing[]>([]);
   const [stats, setStats] = useState<{ unique_listings: number; total_quantity: number; total_value: number } | null>(null);
@@ -231,9 +207,23 @@ export default function Cardmarket() {
     }
   };
 
+  const totalValue = stats?.total_value ?? 0;
+  const totalQty = stats?.total_quantity ?? 0;
+
   return (
     <div>
-      <Title2>Cardmarket Listings</Title2>
+      <PageHeader
+        eyebrow="⌖ COMMERCE TERMINAL · CARDMARKET LINK"
+        title="Cardmarket"
+        accent={accent.oklch}
+        right={
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase' }}>LISTINGS · TOTAL VALUE</div>
+            <div style={{ fontFamily: sothera.fontDisplay, fontSize: 28, fontWeight: 700, color: sothera.fg, fontFeatureSettings: '"tnum"', letterSpacing: -0.8 }}>€{totalValue.toFixed(2)}</div>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: accent.oklch, letterSpacing: 1.5 }}>{totalQty} CARDS · {stats?.unique_listings ?? 0} SLOTS</div>
+          </div>
+        }
+      />
 
       <CardmarketWorkflowBanner
         onImport={() => fileRef.current?.click()}
@@ -253,190 +243,127 @@ export default function Cardmarket() {
         hasListings={listings.length > 0}
       />
 
+      {/* Action buttons */}
       <div className={styles.controls}>
+        <input type="file" ref={fileRef} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
+        {[
+          { l: '⇡ IMPORT CSV', primary: true, onClick: () => fileRef.current?.click(), disabled: importing },
+          { l: '⇣ EXPORT CSV', primary: false, onClick: async () => {
+            setExporting(true); setMsg(null);
+            try { await api.exportCardmarketCSV(); setMsg({ type: 'success', text: 'CSV exported successfully' }); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setExporting(false); }
+          }, disabled: exporting || listings.length === 0 },
+          { l: '↯ SYNC PRICES', primary: false, onClick: async () => {
+            setSyncingPrices(true); setMsg(null);
+            try { const result = await api.syncPrices(); setMsg({ type: 'success', text: `Price sync: ${result.products_matched} matched, ${result.prices_stored} stored` }); api.getPriceAlerts().then(setAlerts).catch(() => {}); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setSyncingPrices(false); }
+          }, disabled: syncingPrices },
+        ].map(b => (
+          <div
+            key={b.l}
+            className={styles.btn}
+            onClick={b.disabled ? undefined : b.onClick}
+            style={{
+              background: b.primary ? accent.oklch : sothera.glassBg,
+              color: b.primary ? '#04040A' : sothera.fg,
+              borderColor: b.primary ? accent.oklch : sothera.glassBorder,
+              opacity: b.disabled ? 0.5 : 1,
+              cursor: b.disabled ? 'default' : 'pointer',
+            }}
+          >
+            {b.l}
+          </div>
+        ))}
         <Input
-          placeholder="Search listings..."
-          contentBefore={<Search24Regular />}
+          placeholder="Search..."
           value={search}
           onChange={(_, d) => setSearch(d.value)}
           onKeyDown={(e) => e.key === 'Enter' && load(search)}
-          style={{ minWidth: 200, flex: 1, maxWidth: 400 }}
+          style={{ minWidth: 200, flex: 1, maxWidth: 300, marginLeft: 'auto' }}
         />
-        <input type="file" ref={fileRef} accept=".csv" style={{ display: 'none' }} onChange={handleImport} />
-        <Button
-          icon={<ArrowUpload24Regular />}
-          appearance="primary"
-          onClick={() => fileRef.current?.click()}
-          disabled={importing}
-        >
-          {importing ? 'Importing...' : 'Import CSV'}
-        </Button>
-
-        <Button
-          icon={<ArrowDownload24Regular />}
-          appearance="secondary"
-          onClick={async () => {
-            setExporting(true);
-            setMsg(null);
-            try {
-              await api.exportCardmarketCSV();
-              setMsg({ type: 'success', text: 'CSV exported successfully' });
-            } catch (e: any) {
-              setMsg({ type: 'error', text: e.message });
-            } finally {
-              setExporting(false);
-            }
-          }}
-          disabled={exporting || listings.length === 0}
-        >
-          {exporting ? 'Exporting...' : 'Export CSV'}
-        </Button>
-        <Button
-          icon={<ChartMultiple24Regular />}
-          appearance="secondary"
-          onClick={async () => {
-            setSyncingPrices(true);
-            setMsg(null);
-            try {
-              const result = await api.syncPrices();
-              setMsg({ type: 'success', text: `Price sync: ${result.products_matched} products matched, ${result.prices_stored} prices stored` });
-              // Reload alerts after price sync
-              api.getPriceAlerts().then(setAlerts).catch(() => {});
-            } catch (e: any) {
-              setMsg({ type: 'error', text: `Price sync failed: ${e.message}` });
-            } finally {
-              setSyncingPrices(false);
-            }
-          }}
-          disabled={syncingPrices}
-        >
-          {syncingPrices ? 'Syncing Prices...' : 'Sync Prices'}
-        </Button>
       </div>
 
       {msg && (
-        <MessageBar intent={msg.type === 'success' ? 'success' : 'error'} style={{ marginTop: 8 }}>
+        <MessageBar intent={msg.type === 'success' ? 'success' : 'error'} style={{ marginTop: 8, marginBottom: 8 }}>
           <MessageBarBody>{msg.text}</MessageBarBody>
         </MessageBar>
       )}
 
-      {stats && (
-        <div className={styles.statsRow}>
-          <Card className={styles.statCard}>
-            <Caption1>Unique Listings</Caption1>
-            <Body1><strong>{stats.unique_listings}</strong></Body1>
-          </Card>
-          <Card className={styles.statCard}>
-            <Caption1>Total Quantity</Caption1>
-            <Body1><strong>{stats.total_quantity}</strong></Body1>
-          </Card>
-          <Card className={styles.statCard}>
-            <Caption1>Total Value</Caption1>
-            <Body1><strong>€{stats.total_value.toFixed(2)}</strong></Body1>
-          </Card>
-        </div>
-      )}
-
       {/* Price Alerts */}
       {!alertsLoading && alerts.length > 0 && (
-        <div className={styles.alertsSection}>
-          <Title3>📈 Price Spike Alerts ({alerts.length})</Title3>
-          {(() => {
-            // Group alerts by price tier
-            const tierMap = new Map<string, PriceAlert[]>();
-            for (const tier of PRICE_TIERS) {
-              tierMap.set(tier.label, []);
-            }
-            for (const a of alerts) {
-              const tierLabel = getPriceTier(a.trend);
-              tierMap.get(tierLabel)!.push(a);
-            }
-            // Render tiers in reverse order (highest first)
-            return [...PRICE_TIERS].reverse()
-              .filter(tier => (tierMap.get(tier.label)?.length || 0) > 0)
-              .map(tier => {
-                const tierAlerts = tierMap.get(tier.label)!;
-                const isOpen = openAlertGroups.has(tier.label);
-                return (
-                  <div key={tier.label} style={{ marginTop: 8 }}>
-                    <div
-                      className={styles.alertGroupHeader}
-                      onClick={() => setOpenAlertGroups(prev => {
-                        const next = new Set(prev);
-                        if (next.has(tier.label)) next.delete(tier.label);
-                        else next.add(tier.label);
-                        return next;
-                      })}
-                    >
-                      <span className={`${styles.alertGroupChevron} ${isOpen ? styles.alertGroupChevronOpen : ''}`}>▶</span>
-                      <Subtitle2>{tier.emoji} {tier.label} ({tierAlerts.length})</Subtitle2>
-                    </div>
-                    {isOpen && tierAlerts.map((a, i) => (
-                      <Card key={i} className={styles.alertCard}>
-                        <div className={styles.alertRow}>
+        <>
+          <SectionHeader num="01" title="Price Spike Alerts" right={`${alerts.length} DETECTED`} accent={accent.oklch} />
+          <Panel>
+            {(() => {
+              const tierMap = new Map<string, PriceAlert[]>();
+              for (const tier of PRICE_TIERS) tierMap.set(tier.label, []);
+              for (const a of alerts) tierMap.get(getPriceTier(a.trend))!.push(a);
+              return [...PRICE_TIERS].reverse()
+                .filter(tier => (tierMap.get(tier.label)?.length || 0) > 0)
+                .map(tier => {
+                  const tierAlerts = tierMap.get(tier.label)!;
+                  const isOpen = openAlertGroups.has(tier.label);
+                  return (
+                    <div key={tier.label}>
+                      <div
+                        className={styles.alertGroupHeader}
+                        onClick={() => setOpenAlertGroups(prev => {
+                          const next = new Set(prev);
+                          if (next.has(tier.label)) next.delete(tier.label);
+                          else next.add(tier.label);
+                          return next;
+                        })}
+                      >
+                        <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
+                        <span>{tier.emoji} {tier.label} ({tierAlerts.length})</span>
+                      </div>
+                      {isOpen && tierAlerts.map((a, i) => (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 120px', padding: '14px 0', borderBottom: `1px solid ${sothera.rowBorder}`, fontSize: 13, alignItems: 'center' }}>
                           <div>
-                            <Body2><strong>{a.card_name}</strong> — {a.expansion}</Body2>
-                            <Caption1 style={{ display: 'block' }}>{a.suggestion}</Caption1>
+                            <span style={{ fontWeight: 500, color: sothera.fg }}>{a.card_name}</span>
+                            <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginLeft: 8, color: sothera.fgMuted }}>{a.expansion}</span>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <Badge appearance="filled" color="danger">+{a.spike_pct}%</Badge>
-                            <Caption1 style={{ display: 'block', marginTop: 4 }}>
-                              €{a.avg30} → €{a.trend}
-                            </Caption1>
+                          <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{a.suggestion}</div>
+                          <div style={{ textAlign: 'right', fontFamily: sothera.fontMono, fontSize: 11, fontWeight: 600, color: accent.oklch }}>
+                            +{a.spike_pct}%
+                            <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginTop: 2 }}>€{a.avg30} → €{a.trend}</div>
                           </div>
                         </div>
-                      </Card>
-                    ))}
-                  </div>
-                );
-              });
-          })()}
-        </div>
+                      ))}
+                    </div>
+                  );
+                });
+            })()}
+          </Panel>
+        </>
       )}
 
-      <Divider style={{ margin: '16px 0' }} />
-
+      {/* Listings table */}
+      <SectionHeader num="02" title="Active Listings" right={`${listings.length} ROWS`} accent={accent.oklch} />
       {loading ? (
         <Spinner label="Loading..." style={{ marginTop: 24 }} />
       ) : listings.length === 0 ? (
-        <Body1 style={{ marginTop: 24 }}>No listings. Sync from profile or import a CSV.</Body1>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 16, letterSpacing: 1 }}>No listings. Sync from profile or import a CSV.</div>
       ) : (
-        <div className={styles.tableWrap}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Card</TableHeaderCell>
-                <TableHeaderCell>Set</TableHeaderCell>
-                <TableHeaderCell>Rarity</TableHeaderCell>
-                <TableHeaderCell>Qty</TableHeaderCell>
-                <TableHeaderCell>Price</TableHeaderCell>
-                <TableHeaderCell>Condition</TableHeaderCell>
-                <TableHeaderCell>Language</TableHeaderCell>
-                <TableHeaderCell>Reverse Holo</TableHeaderCell>
-                <TableHeaderCell>Source</TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listings.map((l) => (
-                <TableRow key={l.id} style={l.source === 'manual' ? { backgroundColor: 'rgba(255, 183, 77, 0.12)' } : undefined}>
-                  <TableCell><PriceCell cardName={l.card_name} /></TableCell>
-                  <TableCell>{l.set_name || l.set_code}</TableCell>
-                  <TableCell>{l.rarity || '—'}</TableCell>
-                  <TableCell>{l.quantity}</TableCell>
-                  <TableCell>€{l.price.toFixed(2)}</TableCell>
-                  <TableCell>{l.condition_full || l.condition}</TableCell>
-                  <TableCell>{l.language}</TableCell>
-                  <TableCell>{l.reverse_holo ? <Badge appearance="tint" color="important">Holo</Badge> : '—'}</TableCell>
-                  <TableCell>
-                    <Badge appearance="tint" color={l.source === 'manual' ? 'warning' : 'brand'}>
-                      {l.source || 'import'}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Panel>
+          <div className={styles.gridHeader}>
+            <div>NAME</div><div>SET</div><div>QTY</div><div>COND</div><div>LANG</div><div>SOURCE</div><div style={{ textAlign: 'right' }}>EUR</div><div style={{ textAlign: 'right' }}>RARITY</div>
+          </div>
+          {listings.map((l, i) => (
+            <div key={l.id} className={styles.gridRow} style={{ borderBottom: i < listings.length - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
+              <div style={{ fontWeight: 500, color: sothera.fg }}><PriceCell cardName={l.card_name} accent={accent.oklch} /></div>
+              <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{l.set_code?.toUpperCase() || '—'}</div>
+              <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{l.quantity}</div>
+              <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{l.condition || '—'}</div>
+              <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{l.language}</div>
+              <div>
+                <span style={{ fontFamily: sothera.fontMono, fontSize: 9, padding: '2px 6px', letterSpacing: 1.5, borderWidth: 1, borderStyle: 'solid', borderColor: l.source === 'manual' ? accent.oklch : sothera.glassBorder, color: l.source === 'manual' ? accent.oklch : sothera.fgMuted }}>
+                  {(l.source || 'import').toUpperCase()}
+                </span>
+              </div>
+              <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>€{l.price.toFixed(2)}</div>
+              <div style={{ textAlign: 'right', fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{l.rarity || '—'}</div>
+            </div>
+          ))}
+        </Panel>
       )}
     </div>
   );

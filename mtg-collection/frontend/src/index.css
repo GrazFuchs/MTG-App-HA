@@ -6,10 +6,26 @@ html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: var(--fontFamilyBase);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 body {
-  background: var(--colorNeutralBackground1);
-  color: var(--colorNeutralForeground1);
+  background: #04040A;
+  color: #EDEDF5;
+}
+
+/* Scrollbar styling for the void theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.10);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.18);
 }

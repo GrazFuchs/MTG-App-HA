@@ -1,21 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
+import { makeStyles } from '@griffel/react';
 import {
-  makeStyles,
-  tokens,
-  Title2,
-  Body1,
-  Caption1,
   Spinner,
   Button,
   Input,
   Select,
-  Table,
-  TableHeader,
-  TableRow,
-  TableHeaderCell,
-  TableBody,
-  TableCell,
-  Badge,
   Dialog,
   DialogSurface,
   DialogTitle,
@@ -31,12 +20,15 @@ import {
   ChevronDoubleRight20Regular,
 } from '@fluentui/react-icons';
 import { api, DuplicateEntry } from '../api';
+import { sothera } from '../theme/sothera';
+import { useAccent } from '../main';
+import { Panel, PageHeader } from '../components/sothera';
 
 const useStyles = makeStyles({
   controls: {
     display: 'flex',
     gap: '12px',
-    marginTop: '12px',
+    marginBottom: '16px',
     flexWrap: 'wrap',
   },
   input: {
@@ -44,28 +36,37 @@ const useStyles = makeStyles({
     flex: 1,
     maxWidth: '420px',
   },
-  select: {
-    minWidth: '140px',
+  gridHeader: {
+    display: 'grid',
+    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 90px 80px',
+    padding: '4px 0 14px',
+    borderBottom: `1px solid ${sothera.headerBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '2px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
   },
-  tableWrap: {
-    marginTop: '16px',
-    overflowX: 'auto',
+  gridRow: {
+    display: 'grid',
+    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 90px 80px',
+    padding: '12px 0',
+    fontSize: '13px',
+    alignItems: 'center',
   },
   cardLink: {
-    color: tokens.colorNeutralForeground1,
+    color: sothera.fg,
     textDecoration: 'none',
-    '&:hover': {
+    fontWeight: 500,
+    ':hover': {
       textDecoration: 'underline',
-      color: tokens.colorBrandForeground1,
     },
   },
   cardImg: {
     width: '32px',
     height: '44px',
     borderRadius: '4px',
-    objectFit: 'cover',
-    verticalAlign: 'middle',
-    marginRight: '8px',
+    objectFit: 'cover' as const,
   },
   pagination: {
     display: 'flex',
@@ -76,12 +77,12 @@ const useStyles = makeStyles({
     flexWrap: 'wrap',
   },
   pageInfo: {
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    color: sothera.fgMuted,
+    letterSpacing: '1px',
     minWidth: '180px',
-    textAlign: 'center' as const,
-  },
-  dialogInput: {
-    width: '100%',
-    marginTop: '8px',
+    textAlign: 'center',
   },
   formRow: {
     display: 'flex',
@@ -89,10 +90,15 @@ const useStyles = makeStyles({
     marginTop: '8px',
     flexWrap: 'wrap',
   },
+  dialogInput: {
+    width: '100%',
+    marginTop: '8px',
+  },
 });
 
 export default function Duplicates() {
   const styles = useStyles();
+  const { accent } = useAccent();
   const [items, setItems] = useState<DuplicateEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -155,7 +161,12 @@ export default function Duplicates() {
 
   return (
     <div>
-      <Title2>Duplicates ({total} cards with extras)</Title2>
+      <PageHeader
+        eyebrow={`◫ SURPLUS · ${total} CANDIDATES`}
+        title="Duplicates"
+        accent={accent.oklch}
+      />
+
       <div className={styles.controls}>
         <Input
           placeholder="Search duplicates..."
@@ -171,63 +182,46 @@ export default function Duplicates() {
       {loading ? (
         <Spinner label="Loading duplicates..." style={{ marginTop: 24 }} />
       ) : items.length === 0 ? (
-        <Body1 style={{ marginTop: 24 }}>No duplicate cards found.</Body1>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>No duplicate cards found.</div>
       ) : (
         <>
-          <div className={styles.tableWrap}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>Card</TableHeaderCell>
-                  <TableHeaderCell>Set</TableHeaderCell>
-                  <TableHeaderCell>Owned</TableHeaderCell>
-                  <TableHeaderCell>In Decks</TableHeaderCell>
-                  <TableHeaderCell>Extras</TableHeaderCell>
-                  <TableHeaderCell>Price (EUR)</TableHeaderCell>
-                  <TableHeaderCell>Extra Value</TableHeaderCell>
-                  <TableHeaderCell />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item, i) => (
-                  <TableRow key={i}>
-                    <TableCell>
-                      {item.image_uri && <img src={item.image_uri} alt="" className={styles.cardImg} />}
-                      <a
-                        href={`https://scryfall.com/card/${item.set_code.toLowerCase()}/${item.collector_number}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.cardLink}
-                      >
-                        {item.card_name}
-                      </a>
-                    </TableCell>
-                    <TableCell>
-                      <Caption1>{item.set_name} ({item.set_code.toUpperCase()})</Caption1>
-                    </TableCell>
-                    <TableCell>{item.total_copies}</TableCell>
-                    <TableCell>{item.in_decks}</TableCell>
-                    <TableCell>
-                      <Badge appearance="filled" color="warning">{item.extras}</Badge>
-                    </TableCell>
-                    <TableCell>{item.price_eur ? `€${item.price_eur}` : '—'}</TableCell>
-                    <TableCell>
-                      {item.price_eur ? `€${(parseFloat(item.price_eur) * item.extras).toFixed(2)}` : '—'}
-                    </TableCell>
-                    <TableCell>
-                      <Button size="small" appearance="primary" onClick={() => openListingDialog(item)}>
-                        Sell
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <Panel>
+            <div className={styles.gridHeader}>
+              <div /><div>CARD</div><div>SET</div><div>OWNED</div><div>DECKS</div><div>EXTRA</div><div style={{ textAlign: 'right' }}>EUR</div><div style={{ textAlign: 'right' }}>VALUE</div><div />
+            </div>
+            {items.map((item, i) => (
+              <div key={i} className={styles.gridRow} style={{ borderBottom: i < items.length - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
+                <div>{item.image_uri && <img src={item.image_uri} alt="" className={styles.cardImg} />}</div>
+                <div>
+                  <a
+                    href={`https://scryfall.com/card/${item.set_code.toLowerCase()}/${item.collector_number}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.cardLink}
+                  >
+                    {item.card_name}
+                  </a>
+                </div>
+                <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{item.set_name} ({item.set_code.toUpperCase()})</div>
+                <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.total_copies}</div>
+                <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{item.in_decks}</div>
+                <div>
+                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, padding: '2px 8px', letterSpacing: 1.5, borderWidth: 1, borderStyle: 'solid', borderColor: accent.oklch, color: accent.oklch }}>
+                    {item.extras}
+                  </span>
+                </div>
+                <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.price_eur ? `€${item.price_eur}` : '—'}</div>
+                <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.price_eur ? `€${(parseFloat(item.price_eur) * item.extras).toFixed(2)}` : '—'}</div>
+                <div>
+                  <Button size="small" appearance="primary" onClick={() => openListingDialog(item)}>Sell</Button>
+                </div>
+              </div>
+            ))}
+          </Panel>
           <div className={styles.pagination}>
             <Button icon={<ChevronDoubleLeft20Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(1)} />
             <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
-            <Caption1 className={styles.pageInfo}>Page {page} of {totalPages} ({total} entries)</Caption1>
+            <span className={styles.pageInfo}>Page {page} of {totalPages} ({total} entries)</span>
             <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} />
             <Button icon={<ChevronDoubleRight20Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(totalPages)} />
           </div>
@@ -241,10 +235,10 @@ export default function Duplicates() {
             <DialogContent>
               {selectedCard && (
                 <>
-                  <Body1><strong>{selectedCard.card_name}</strong> — {selectedCard.set_name}</Body1>
+                  <div style={{ fontWeight: 600, color: sothera.fg }}>{selectedCard.card_name} <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>— {selectedCard.set_name}</span></div>
                   <div className={styles.formRow}>
                     <div>
-                      <Caption1>Quantity (max {selectedCard.extras})</Caption1>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Quantity (max {selectedCard.extras})</div>
                       <Input
                         type="number"
                         min={1}
@@ -255,7 +249,7 @@ export default function Duplicates() {
                       />
                     </div>
                     <div>
-                      <Caption1>Price (EUR)</Caption1>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Price (EUR)</div>
                       <Input
                         value={listingPrice}
                         onChange={(_, d) => setListingPrice(d.value)}
@@ -265,7 +259,7 @@ export default function Duplicates() {
                   </div>
                   <div className={styles.formRow}>
                     <div>
-                      <Caption1>Condition</Caption1>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Condition</div>
                       <Select value={listingCondition} onChange={(_, d) => setListingCondition(d.value)} className={styles.dialogInput}>
                         <option value="MT">Mint</option>
                         <option value="NM">Near Mint</option>
@@ -277,7 +271,7 @@ export default function Duplicates() {
                       </Select>
                     </div>
                     <div>
-                      <Caption1>Language</Caption1>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Language</div>
                       <Select value={listingLanguage} onChange={(_, d) => setListingLanguage(d.value)} className={styles.dialogInput}>
                         <option>English</option>
                         <option>German</option>

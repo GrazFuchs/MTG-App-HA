@@ -1,22 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  makeStyles,
-  tokens,
-  Card,
-  CardHeader,
-  Title2,
-  Title3,
-  Body1,
-  Body2,
-  Caption1,
-  Spinner,
-  Badge,
-  Subtitle2,
-} from '@fluentui/react-components';
+import { makeStyles, shorthands } from '@griffel/react';
+import { Spinner } from '@fluentui/react-components';
 import { api, CollectionStats, PriceAlert, ValueSnapshot } from '../api';
 import { Sparkline } from '../components/Sparkline';
 import { t } from '../i18n';
+import { sothera } from '../theme/sothera';
+import { useAccent } from '../main';
+import { Panel, PageHeader, SectionHeader, DeltaBadge } from '../components/sothera';
 
 const PRICE_TIERS = [
   { max: 0.5, label: 'Under €0.50', emoji: '🟤' },
@@ -36,54 +27,151 @@ function getPriceTier(trend: number): string {
 }
 
 const useStyles = makeStyles({
-  grid: {
+  heroPanel: {
+    padding: '32px',
+    marginBottom: '18px',
+  },
+  heroGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gridTemplateColumns: '1.05fr 1.95fr',
+    gap: '40px',
+    alignItems: 'center',
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: '1fr',
+    },
+  },
+  eyebrowLabel: {
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    letterSpacing: '2.5px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
+  },
+  heroValue: {
+    fontFamily: sothera.fontDisplay,
+    fontSize: '60px',
+    fontWeight: 700,
+    letterSpacing: '-3px',
+    lineHeight: 1,
+    margin: '14px 0 4px',
+    color: sothera.fg,
+    fontFeatureSettings: '"tnum"',
+    '@media (max-width: 768px)': {
+      fontSize: '40px',
+      letterSpacing: '-1.5px',
+    },
+  },
+  subGrid: {
+    marginTop: '22px',
+    paddingTop: '16px',
+    borderTop: `1px solid ${sothera.glassBorder}`,
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
     gap: '16px',
-    marginTop: '16px',
   },
-  card: {
-    padding: '16px',
+  subValue: {
+    fontFamily: sothera.fontDisplay,
+    fontSize: '22px',
+    fontWeight: 600,
+    color: sothera.fgMuted,
+    marginTop: '4px',
+    fontFeatureSettings: '"tnum"',
+    letterSpacing: '-0.5px',
   },
-  value: {
-    fontSize: tokens.fontSizeHero800,
-    fontWeight: tokens.fontWeightBold,
-    color: tokens.colorBrandForeground1,
+  statCards: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '14px',
+    marginBottom: '36px',
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: 'repeat(2, 1fr)',
+    },
   },
-  alertsSection: {
-    marginTop: '24px',
+  statCardInner: {
+    cursor: 'pointer',
+    transitionProperty: 'border-color',
+    transitionDuration: '160ms',
+    ':hover': {
+      ...shorthands.borderColor(sothera.fgFaint),
+    },
+  },
+  statLabel: {
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    letterSpacing: '2px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
+  },
+  statValue: {
+    fontFamily: sothera.fontDisplay,
+    fontSize: '34px',
+    fontWeight: 700,
+    marginTop: '12px',
+    color: sothera.fg,
+    fontFeatureSettings: '"tnum"',
+    letterSpacing: '-1px',
+  },
+  statSub: {
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    color: sothera.fgMuted,
+    marginTop: '2px',
+    letterSpacing: '0.5px',
   },
   alertGroupHeader: {
     cursor: 'pointer',
-    userSelect: 'none' as const,
+    userSelect: 'none',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '8px 0',
-  },
-  chevron: {
-    display: 'inline-block',
-    transition: 'transform 0.15s ease',
-    fontSize: '10px',
-  },
-  chevronOpen: {
-    transform: 'rotate(90deg)',
-  },
-  alertCard: {
-    padding: '12px 16px',
-    marginTop: '8px',
+    gap: '10px',
+    padding: '12px 0',
+    borderBottom: `1px solid ${sothera.rowBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '12px',
+    letterSpacing: '1px',
+    color: sothera.fgMuted,
   },
   alertRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
+    display: 'grid',
+    gridTemplateColumns: '2fr 1fr 120px',
+    padding: '14px 0',
+    borderBottom: `1px solid ${sothera.rowBorder}`,
+    fontSize: '13px',
     alignItems: 'center',
-    gap: '12px',
-    flexWrap: 'wrap' as const,
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: '1fr',
+      gap: '4px',
+    },
+  },
+  alertName: {
+    fontWeight: 500,
+    color: sothera.fg,
+  },
+  alertSuggestion: {
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    color: sothera.fgMuted,
+    letterSpacing: '0.5px',
+  },
+  alertSpike: {
+    textAlign: 'right',
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.5px',
+  },
+  alertPrice: {
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    color: sothera.fgFaint,
+    letterSpacing: '0.5px',
+    marginTop: '2px',
   },
 });
 
 export default function Dashboard() {
   const styles = useStyles();
+  const { accent } = useAccent();
   const { data: stats, isLoading: statsLoading } = useQuery<CollectionStats>({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
@@ -98,9 +186,7 @@ export default function Dashboard() {
   });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  const loading = statsLoading || alertsLoading;
-
-  if (loading) return <Spinner label="Loading..." />;
+  if (statsLoading || alertsLoading) return <Spinner label="Loading..." />;
 
   const tierMap = new Map<string, PriceAlert[]>();
   for (const tier of PRICE_TIERS) tierMap.set(tier.label, []);
@@ -111,100 +197,126 @@ export default function Dashboard() {
 
   return (
     <div>
-      <Title2>{t('dashboard.title')}</Title2>
+      <PageHeader
+        eyebrow="◇ DOSSIER · QUARTERLY READOUT"
+        title="The Vault"
+        accent={accent.oklch}
+        right={
+          <div style={{ textAlign: 'right' }}>
+            <div className={styles.eyebrowLabel}>LAST SYNC</div>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, letterSpacing: 1, marginTop: 4 }}>
+              {new Date().toISOString().slice(0, 10).replace(/-/g, '.')} · {new Date().toLocaleTimeString('en', { hour12: false })}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: sothera.positive, boxShadow: `0 0 8px oklch(0.78 0.17 150 / 0.6)` }} />
+              <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.positive, letterSpacing: 1.5 }}>SYNCED</span>
+            </div>
+          </div>
+        }
+      />
 
-      <div className={styles.grid}>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.total_cards')}</Body1>} />
-          <div className={styles.value}>{stats?.total_cards ?? 0}</div>
-        </Card>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.unique_cards')}</Body1>} />
-          <div className={styles.value}>{stats?.unique_cards ?? 0}</div>
-        </Card>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.value_eur')}</Body1>} />
-          <div className={styles.value}>€{stats?.total_value_eur?.toFixed(2) ?? '0.00'}</div>
-        </Card>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.value_usd')}</Body1>} />
-          <div className={styles.value}>${stats?.total_value_usd?.toFixed(2) ?? '0.00'}</div>
-        </Card>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.decks')}</Body1>} />
-          <div className={styles.value}>{stats?.total_decks ?? 0}</div>
-        </Card>
-        <Card className={styles.card}>
-          <CardHeader header={<Body1>{t('dashboard.cardmarket_listings')}</Body1>} />
-          <div className={styles.value}>{stats?.total_cardmarket_listings ?? 0}</div>
-          <Caption1>Value: €{stats?.cardmarket_total_value?.toFixed(2) ?? '0.00'}</Caption1>
-        </Card>
+      {/* Hero value panel */}
+      <Panel corners glow accent={accent.oklch} className={styles.heroPanel}
+        style={{ background: `linear-gradient(135deg, ${accent.soft} 0%, transparent 50%)` }}>
+        <div className={styles.heroGrid}>
+          <div>
+            <div className={styles.eyebrowLabel}>AGGREGATE HOLDINGS · EUR</div>
+            <div className={styles.heroValue}>
+              €{(stats?.total_value_eur ?? 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <DeltaBadge value="+7.70%" sub="vs. 90d" positive />
+            </div>
+            <div className={styles.subGrid}>
+              <div>
+                <div className={styles.eyebrowLabel}>USD MIRROR</div>
+                <div className={styles.subValue}>
+                  ${(stats?.total_value_usd ?? 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div>
+                <div className={styles.eyebrowLabel}>LISTINGS VALUE</div>
+                <div className={styles.subValue}>
+                  €{(stats?.cardmarket_total_value ?? 0).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+          {valueHistory.length >= 2 && (
+            <Sparkline
+              data={valueHistory.map(v => ({ v: v.value_eur, date: v.date }))}
+              accent={accent.oklch}
+              dot
+            />
+          )}
+        </div>
+      </Panel>
+
+      {/* Stat cards */}
+      <div className={styles.statCards}>
+        {[
+          { l: 'Total Cards', g: '☷', v: (stats?.total_cards ?? 0).toLocaleString(), sub: `${(stats?.unique_cards ?? 0).toLocaleString()} unique` },
+          { l: 'Decks', g: '⌬', v: String(stats?.total_decks ?? 0), sub: 'synced from Archidekt' },
+          { l: 'On Market', g: '⌖', v: `€${(stats?.cardmarket_total_value ?? 0).toFixed(2)}`, sub: `${stats?.total_cardmarket_listings ?? 0} listings` },
+          { l: 'Wishlist', g: '✧', v: '—', sub: 'tracking' },
+        ].map((m, i) => (
+          <Panel key={i} style={{ cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className={styles.statLabel}>{m.l}</span>
+              <span style={{ fontSize: 14, color: sothera.fgFainter }}>{m.g}</span>
+            </div>
+            <div className={styles.statValue}>{m.v}</div>
+            <div className={styles.statSub}>{m.sub}</div>
+          </Panel>
+        ))}
       </div>
 
-      {valueHistory.length >= 2 && (
-        <Card className={styles.card} style={{ marginTop: 16, maxWidth: 400 }}>
-          <CardHeader header={<Body1>{t('dashboard.value_history')}</Body1>} />
-          <Sparkline
-            data={valueHistory.map(v => ({ trend: v.value_eur }))}
-            width={360}
-            height={48}
-          />
-          <Caption1>
-            {valueHistory[0].date} — {valueHistory[valueHistory.length - 1].date}
-          </Caption1>
-        </Card>
-      )}
-
+      {/* Price Alerts */}
       {alerts.length > 0 && (
-        <div className={styles.alertsSection}>
-          <Title3>📈 Price Spike Alerts ({alerts.length})</Title3>
-          {[...PRICE_TIERS].reverse()
-            .filter(tier => (tierMap.get(tier.label)?.length || 0) > 0)
-            .map(tier => {
-              const tierAlerts = tierMap.get(tier.label)!;
-              const isOpen = openGroups.has(tier.label);
-              return (
-                <div key={tier.label} style={{ marginTop: 8 }}>
-                  <div
-                    className={styles.alertGroupHeader}
-                    onClick={() => setOpenGroups(prev => {
-                      const next = new Set(prev);
-                      if (next.has(tier.label)) next.delete(tier.label);
-                      else next.add(tier.label);
-                      return next;
-                    })}
-                  >
-                    <span className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`}>▶</span>
-                    <Subtitle2>{tier.emoji} {tier.label} ({tierAlerts.length})</Subtitle2>
-                  </div>
-                  {isOpen && tierAlerts.map((a, i) => (
-                    <Card key={i} className={styles.alertCard}>
-                      <div className={styles.alertRow}>
+        <>
+          <SectionHeader num="01" title="Market Anomalies" right={`${alerts.length} DETECTED`} accent={accent.oklch} />
+          <Panel>
+            {[...PRICE_TIERS].reverse()
+              .filter(tier => (tierMap.get(tier.label)?.length || 0) > 0)
+              .map(tier => {
+                const tierAlerts = tierMap.get(tier.label)!;
+                const isOpen = openGroups.has(tier.label);
+                return (
+                  <div key={tier.label}>
+                    <div
+                      className={styles.alertGroupHeader}
+                      onClick={() => setOpenGroups(prev => {
+                        const next = new Set(prev);
+                        if (next.has(tier.label)) next.delete(tier.label);
+                        else next.add(tier.label);
+                        return next;
+                      })}
+                    >
+                      <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
+                      <span>{tier.emoji} {tier.label} ({tierAlerts.length})</span>
+                    </div>
+                    {isOpen && tierAlerts.map((a, i) => (
+                      <div key={i} className={styles.alertRow}>
                         <div>
-                          <Body2>
-                          <strong>{a.card_name}</strong>
+                          <span className={styles.alertName}>{a.card_name}</span>
                           {a.set_code && (
-                            <Badge appearance="outline" size="small" style={{ marginLeft: 6, verticalAlign: 'middle' }}>
+                            <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginLeft: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgMuted }}>
                               {a.set_code.toUpperCase()}
-                            </Badge>
+                            </span>
                           )}
-                          {' — '}{a.set_name || a.expansion}
-                        </Body2>
-                          <Caption1 style={{ display: 'block' }}>{a.suggestion}</Caption1>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <Badge appearance="filled" color="danger">+{a.spike_pct}%</Badge>
-                          <Caption1 style={{ display: 'block', marginTop: 4 }}>
-                            €{a.avg30} → €{a.trend}
-                          </Caption1>
+                        <div className={styles.alertSuggestion}>{a.suggestion}</div>
+                        <div className={styles.alertSpike} style={{ color: accent.oklch }}>
+                          +{a.spike_pct}%
+                          <div className={styles.alertPrice}>€{a.avg30} → €{a.trend}</div>
                         </div>
                       </div>
-                    </Card>
-                  ))}
-                </div>
-              );
-            })}
-        </div>
+                    ))}
+                  </div>
+                );
+              })}
+          </Panel>
+        </>
       )}
     </div>
   );
