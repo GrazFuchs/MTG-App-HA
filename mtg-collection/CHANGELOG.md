@@ -1,3 +1,26 @@
+## 0.9.0
+
+### Added
+- **Light Theme**: "Daylight Orbital Station" variant — cool near-white (`#F4F5FA`) base, frosted-glass surfaces (`rgba(255,255,255,0.72)`), AA-compliant darker oklch accents for all 6 accent families (sothera / nebula / endstone / stellar / drift / ember)
+- **Auto/Dark/Light Toggle**: 3-state theme control in the topbar (◎ AUTO · ◑ DARK · ○ LITE). Auto mode reads `prefers-color-scheme` and updates live on macOS appearance change
+- **CSS Custom Property Token System** (`--sv-*`): all design tokens are CSS custom properties that switch atomically under `:root[data-sv-theme="light"]` — zero page-level code changes required
+- **`SotheraThemeProvider`** + **`useSotheraTheme()`** hook (`src/theme/index.ts`): returns `{mode, setMode, isDark, fluentTheme}`. Theme choice persisted to `localStorage` under key `sothera.theme`
+- **`ACCENTS_LIGHT`**: Light-mode accent map (darkened for AA contrast on white surfaces) exposed alongside `ACCENTS` (dark)
+
+### Changed
+- **BackdropFX**: Light branch — nebula masked to upper 35% of viewport (no full-bleed), no star dust, softer glow. Dark branch unchanged
+- **Sparkline galaxy-foil**: Fill gradient stops use `var(--sv-foil-sN)` + `var(--sv-foil-top-opacity)` — switches automatically between dark (high-chroma) and light (−30% chroma) variants
+- **Topbar accent picker**: Swatches reflect the active theme's accent variant (dark vs light)
+- **`FluentProvider`**: Now picks `sotheraTheme` (dark) or `sotheraLightTheme` (light, built with `createLightTheme`) at runtime — no static import
+- **220ms crossfade**: `transition: background-color 220ms, color 220ms, border-color 220ms` applied globally via `index.css` — no hard cutover flash on theme switch
+- **Scrollbar**: Uses `var(--sv-border-strong)` / `var(--sv-fg-faint)` — inverts cleanly on light
+- **Bundle size**: 1,010 KB → 1,024 KB (+14 KB raw / ~4 KB gzip) — delta from `createLightTheme` import
+
+### Technical
+- No `isDark` ternaries in any page or component — token layer is the single source of truth
+- `tsc --noEmit`: 0 errors; `npm run build`: clean
+- No new runtime dependencies
+
 ## 0.8.0
 
 ### Added

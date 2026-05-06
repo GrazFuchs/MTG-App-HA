@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.7.0 |
+| App version | 0.9.0 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -66,7 +66,9 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 - **MCP Server**: Streamable HTTP endpoint for AI assistants (Claude, etc.)
   - 27 tools, 3 resources, 2 prompts — price alerts, price history, deck usage, duplicates, wishlist, deck completeness, sell advisor, AI deck assessment
   - MCP setup wizard in Settings (download, config snippet, step-by-step guide)
-- **Web UI**: React frontend with Fluent UI
+- **Web UI**: React frontend with Sothera Vault design — space-opera aesthetic, glass-panel surfaces, galaxy-foil sparklines
+  - **Themes**: Dark (deep void), Light (daylight orbital station), Auto (follows system `prefers-color-scheme`) — toggle in the topbar, persisted across sessions
+  - **Accent system**: 6 oklch accent families (Sothera / Nebula / Endstone / Stellar / Drift / Ember) — swappable from the topbar, persisted to localStorage
   - Dashboard: stats overview cards + price-spike alerts
   - Decks: collapsible folders, bracket badges, deck previews
   - Deck Detail: Commander header, user bracket, gameplan, AI assessment (Markdown), mana curve

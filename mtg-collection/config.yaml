@@ -1,5 +1,5 @@
 name: "MTG Collection Manager"
-version: "0.8.0"
+version: "0.9.0"
 slug: "mtg-collection"
 description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
 arch:
