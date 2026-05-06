@@ -4,7 +4,8 @@ import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
-import { sotheraTheme, ACCENTS, type AccentName, type AccentDef } from './theme/sothera';
+import { ACCENTS, ACCENTS_LIGHT, type AccentName, type AccentDef } from './theme/sothera';
+import { SotheraThemeProvider, useSotheraTheme } from './theme';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -19,7 +20,7 @@ const basePath = (() => {
   return '/';
 })();
 
-// Accent context for swapping accent colors across the app
+// Accent context — provides the active theme's accent variant
 interface AccentCtx {
   accent: AccentDef;
   accentName: AccentName;
@@ -32,11 +33,40 @@ const AccentContext = createContext<AccentCtx>({
 });
 export const useAccent = () => useContext(AccentContext);
 
+// Inner component: reads theme mode to pick the right accent variant
+function AccentProvider({ accentName, setAccent, children }: {
+  accentName: AccentName;
+  setAccent: (name: AccentName) => void;
+  children: React.ReactNode;
+}) {
+  const { isDark } = useSotheraTheme();
+  const accents = isDark ? ACCENTS : ACCENTS_LIGHT;
+  const accent = accents[accentName] || accents.sothera;
+  return (
+    <AccentContext.Provider value={{ accent, accentName, setAccent }}>
+      {children}
+    </AccentContext.Provider>
+  );
+}
+
+// Inner component: reads fluentTheme from context
+function ThemedApp() {
+  const { fluentTheme } = useSotheraTheme();
+  return (
+    <FluentProvider theme={fluentTheme}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter basename={basePath}>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </FluentProvider>
+  );
+}
+
 function Root() {
   const [accentName, setAccentName] = useState<AccentName>(
     () => (localStorage.getItem('sothera-accent') as AccentName) || 'sothera'
   );
-  const accent = ACCENTS[accentName] || ACCENTS.sothera;
 
   const setAccent = (name: AccentName) => {
     setAccentName(name);
@@ -44,15 +74,11 @@ function Root() {
   };
 
   return (
-    <AccentContext.Provider value={{ accent, accentName, setAccent }}>
-      <FluentProvider theme={sotheraTheme}>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter basename={basePath}>
-            <App />
-          </BrowserRouter>
-        </QueryClientProvider>
-      </FluentProvider>
-    </AccentContext.Provider>
+    <SotheraThemeProvider>
+      <AccentProvider accentName={accentName} setAccent={setAccent}>
+        <ThemedApp />
+      </AccentProvider>
+    </SotheraThemeProvider>
   );
 }
 
@@ -61,3 +87,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Root />
   </React.StrictMode>
 );
+

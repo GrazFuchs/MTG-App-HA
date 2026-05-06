@@ -63,8 +63,8 @@ export function Sparkline({
       <defs>
         {/* Galaxy-foil gradient fill under the line */}
         <linearGradient id={`spark-fill-${uid}`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={accentColor} stopOpacity="0.35" />
-          <stop offset="50%" stopColor="oklch(0.55 0.22 320)" stopOpacity="0.12" />
+          <stop offset="0%" stopColor={accentColor} style={{ stopOpacity: 'var(--sv-foil-top-opacity)' }} />
+          <stop offset="50%" style={{ stopColor: 'var(--sv-foil-s2)', stopOpacity: '0.12' }} />
           <stop offset="100%" stopColor={accentColor} stopOpacity="0" />
         </linearGradient>
         {/* Grid pattern */}

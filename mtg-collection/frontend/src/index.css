@@ -1,5 +1,66 @@
+/* ── Sothera design tokens ──────────────────────────────────────── */
+:root {
+  /* Dark (default) */
+  --sv-bg:              #04040A;
+  --sv-surface:         rgba(20,20,32,0.55);
+  --sv-surface-elev:    rgba(30,30,48,0.80);
+  --sv-border:          rgba(255,255,255,0.07);
+  --sv-border-strong:   rgba(255,255,255,0.12);
+  --sv-grid-line:       rgba(255,255,255,0.04);
+  --sv-fg:              #EDEDF5;
+  --sv-fg-muted:        #9A9AB0;
+  --sv-fg-faint:        #5E5E78;
+  --sv-fg-fainter:      #3A3A4E;
+  --sv-positive:        oklch(0.78 0.17 150);
+  --sv-positive-soft:   oklch(0.78 0.17 150 / 0.10);
+  --sv-negative:        oklch(0.70 0.20 25);
+  --sv-negative-soft:   oklch(0.70 0.20 25 / 0.10);
+  /* Galaxy-foil gradient (dark) */
+  --sv-foil:            linear-gradient(120deg, oklch(0.32 0.10 290) 0%, oklch(0.55 0.22 320) 30%, oklch(0.62 0.20 270) 55%, oklch(0.72 0.16 200) 80%, oklch(0.70 0.14 170) 100%);
+  --sv-foil-s0:         oklch(0.32 0.10 290);
+  --sv-foil-s1:         oklch(0.55 0.22 320);
+  --sv-foil-s2:         oklch(0.62 0.20 270);
+  --sv-foil-s3:         oklch(0.72 0.16 200);
+  --sv-foil-s4:         oklch(0.70 0.14 170);
+  --sv-foil-top-opacity: 0.35;
+}
+
+:root[data-sv-theme="light"] {
+  --sv-bg:              #F4F5FA;
+  --sv-surface:         rgba(255,255,255,0.72);
+  --sv-surface-elev:    rgba(255,255,255,0.92);
+  --sv-border:          rgba(15,18,40,0.10);
+  --sv-border-strong:   rgba(15,18,40,0.18);
+  --sv-grid-line:       rgba(15,18,40,0.05);
+  --sv-fg:              #0E1024;
+  --sv-fg-muted:        #4A4D63;
+  --sv-fg-faint:        #7B7E94;
+  --sv-fg-fainter:      #B0B3C4;
+  --sv-positive:        oklch(0.55 0.17 150);
+  --sv-positive-soft:   oklch(0.55 0.17 150 / 0.10);
+  --sv-negative:        oklch(0.50 0.20 25);
+  --sv-negative-soft:   oklch(0.50 0.20 25 / 0.10);
+  /* Galaxy-foil gradient (light — reduced chroma) */
+  --sv-foil:            linear-gradient(120deg, oklch(0.62 0.10 290) 0%, oklch(0.55 0.18 320) 30%, oklch(0.58 0.16 270) 55%, oklch(0.65 0.14 200) 80%, oklch(0.62 0.12 170) 100%);
+  --sv-foil-s0:         oklch(0.62 0.10 290);
+  --sv-foil-s1:         oklch(0.55 0.18 320);
+  --sv-foil-s2:         oklch(0.58 0.16 270);
+  --sv-foil-s3:         oklch(0.65 0.14 200);
+  --sv-foil-s4:         oklch(0.62 0.12 170);
+  --sv-foil-top-opacity: 0.20;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
+  /* 220ms crossfade on theme switch */
+  transition-property: background-color, color, border-color, fill, stroke;
+  transition-duration: 220ms;
+  transition-timing-function: ease;
+}
+
+/* Opt out transitions for animations/transforms that shouldn't bleed */
+*, *::before, *::after {
+  transition-property: background-color, color, border-color;
 }
 
 html, body, #root {
@@ -10,11 +71,12 @@ html, body, #root {
 }
 
 body {
-  background: #04040A;
-  color: #EDEDF5;
+  background: var(--sv-bg);
+  color: var(--sv-fg);
+  transition: background-color 220ms ease, color 220ms ease;
 }
 
-/* Scrollbar styling for the void theme */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -23,9 +85,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.10);
+  background: var(--sv-border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.18);
+  background: var(--sv-fg-faint);
 }

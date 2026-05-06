@@ -9,8 +9,9 @@ import Settings from './pages/Settings';
 import Duplicates from './pages/Duplicates';
 import Wishlist from './pages/Wishlist';
 import { t } from './i18n';
-import { sothera, ACCENTS, type AccentName } from './theme/sothera';
+import { sothera, ACCENTS, ACCENTS_LIGHT, type AccentName } from './theme/sothera';
 import { useAccent } from './main';
+import { useSotheraTheme } from './theme';
 import { Sigil, BackdropFX } from './components/sothera';
 
 const useStyles = makeStyles({
@@ -115,6 +116,32 @@ const useStyles = makeStyles({
       transform: 'scale(1.3)',
     },
   },
+  themePicker: {
+    display: 'flex',
+    gap: '2px',
+    alignItems: 'center',
+    marginLeft: '8px',
+    paddingLeft: '8px',
+    borderLeft: `1px solid ${sothera.glassBorder}`,
+  },
+  themeBtn: {
+    padding: '4px 7px',
+    fontSize: '9px',
+    fontFamily: sothera.fontMono,
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+    background: 'transparent',
+    color: sothera.fgFaint,
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+    ...shorthands.borderColor('transparent'),
+    transitionProperty: 'color, border-color',
+    transitionDuration: '140ms',
+    ':hover': {
+      color: sothera.fgMuted,
+    },
+  },
 });
 
 const navItems = [
@@ -132,6 +159,8 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { accent, accentName, setAccent } = useAccent();
+  const { mode, setMode, isDark } = useSotheraTheme();
+  const displayAccents = isDark ? ACCENTS : ACCENTS_LIGHT;
 
   const isActive = (id: string) =>
     location.pathname === id ||
@@ -181,7 +210,7 @@ export default function App() {
           </div>
 
           <div className={styles.accentPicker}>
-            {(Object.entries(ACCENTS) as [AccentName, typeof accent][]).map(([name, a]) => (
+            {(Object.entries(displayAccents) as [AccentName, typeof accent][]).map(([name, a]) => (
               <div
                 key={name}
                 className={styles.accentDot}
@@ -193,6 +222,21 @@ export default function App() {
                   transform: name === accentName ? 'scale(1.3)' : undefined,
                 }}
               />
+            ))}
+          </div>
+
+          <div className={styles.themePicker}>
+            {(['auto', 'dark', 'light'] as const).map(m => (
+              <button
+                key={m}
+                className={styles.themeBtn}
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                aria-label={`Theme: ${m}`}
+                style={mode === m ? { color: accent.oklch, borderColor: accent.oklch } : undefined}
+              >
+                {m === 'auto' ? '◎' : m === 'dark' ? '◑' : '○'}
+              </button>
             ))}
           </div>
         </div>
