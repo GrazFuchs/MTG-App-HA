@@ -1,22 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, createContext, useContext } from 'react';
 import ReactDOM from 'react-dom/client';
-import { FluentProvider, webLightTheme, webDarkTheme } from '@fluentui/react-components';
+import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
+import { sotheraTheme, ACCENTS, type AccentName, type AccentDef } from './theme/sothera';
 import './index.css';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });
-
-// Detect HA dark mode: check HA body attribute, then CSS media query fallback
-function getIsDark(): boolean {
-  const ha = document.body.getAttribute('data-theme');
-  if (ha === 'dark') return true;
-  if (ha === 'light') return false;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
 
 // HA ingress: extract /api/hassio_ingress/<token> from the path
 const basePath = (() => {
@@ -26,30 +19,40 @@ const basePath = (() => {
   return '/';
 })();
 
+// Accent context for swapping accent colors across the app
+interface AccentCtx {
+  accent: AccentDef;
+  accentName: AccentName;
+  setAccent: (name: AccentName) => void;
+}
+const AccentContext = createContext<AccentCtx>({
+  accent: ACCENTS.sothera,
+  accentName: 'sothera',
+  setAccent: () => {},
+});
+export const useAccent = () => useContext(AccentContext);
+
 function Root() {
-  const [dark, setDark] = useState(getIsDark);
+  const [accentName, setAccentName] = useState<AccentName>(
+    () => (localStorage.getItem('sothera-accent') as AccentName) || 'sothera'
+  );
+  const accent = ACCENTS[accentName] || ACCENTS.sothera;
 
-  useEffect(() => {
-    // React to OS-level prefers-color-scheme changes
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => setDark(getIsDark());
-    mq.addEventListener('change', handler);
-
-    // Observe HA data-theme attribute mutations on <body>
-    const observer = new MutationObserver(() => setDark(getIsDark()));
-    observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
-
-    return () => { mq.removeEventListener('change', handler); observer.disconnect(); };
-  }, []);
+  const setAccent = (name: AccentName) => {
+    setAccentName(name);
+    localStorage.setItem('sothera-accent', name);
+  };
 
   return (
-    <FluentProvider theme={dark ? webDarkTheme : webLightTheme}>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter basename={basePath}>
-          <App />
-        </BrowserRouter>
-      </QueryClientProvider>
-    </FluentProvider>
+    <AccentContext.Provider value={{ accent, accentName, setAccent }}>
+      <FluentProvider theme={sotheraTheme}>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter basename={basePath}>
+            <App />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </FluentProvider>
+    </AccentContext.Provider>
   );
 }
 

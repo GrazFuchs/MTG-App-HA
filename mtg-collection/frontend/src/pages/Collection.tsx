@@ -1,21 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { makeStyles } from '@griffel/react';
 import {
-  makeStyles,
-  tokens,
-  Title2,
-  Body1,
-  Caption1,
   Spinner,
   Input,
   Button,
   Select,
-  Card,
-  Table,
-  TableHeader,
-  TableRow,
-  TableHeaderCell,
-  TableBody,
-  TableCell,
 } from '@fluentui/react-components';
 import {
   Search24Regular,
@@ -27,92 +16,9 @@ import {
 import { api, CollectionEntry, CollectionSet, DeckSummary } from '../api';
 import { CardHoverPreview } from '../components/CardHoverPreview';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-
-const useStyles = makeStyles({
-  controls: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '12px',
-    flexWrap: 'wrap',
-  },
-  input: {
-    minWidth: '240px',
-    flex: 1,
-    maxWidth: '420px',
-  },
-  select: {
-    minWidth: '180px',
-  },
-  tableWrap: {
-    marginTop: '16px',
-    overflowX: 'auto',
-  },
-  nameCell: {
-    minWidth: '220px',
-  },
-  hoverAnchor: {
-    display: 'inline-block',
-    width: '100%',
-  },
-  cardLink: {
-    color: tokens.colorNeutralForeground1,
-    textDecoration: 'none',
-    '&:hover': {
-      textDecoration: 'underline',
-      color: tokens.colorBrandForeground1,
-    },
-  },
-  groupHeader: {
-    cursor: 'pointer',
-    userSelect: 'none',
-    backgroundColor: tokens.colorNeutralBackground3,
-    '&:hover': {
-      backgroundColor: tokens.colorNeutralBackground3Hover,
-    },
-  },
-  chevron: {
-    display: 'inline-block',
-    transition: 'transform 0.15s ease',
-    fontSize: '10px',
-    marginRight: '6px',
-  },
-  chevronOpen: {
-    transform: 'rotate(90deg)',
-  },
-  deckUsage: {
-    fontSize: '12px',
-  },
-  groupRow: {
-    fontWeight: 600,
-  },
-  pagination: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    marginTop: '16px',
-    flexWrap: 'wrap',
-  },
-  pageInfo: {
-    minWidth: '180px',
-    textAlign: 'center' as const,
-  },
-  mobileCardList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '8px',
-    marginTop: '16px',
-  },
-  mobileCard: {
-    padding: '12px',
-  },
-  mobileCardRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '4px',
-  },
-});
+import { sothera } from '../theme/sothera';
+import { useAccent } from '../main';
+import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
 function scryfallUrl(card: { set_code: string; collector_number: string; name: string }) {
   if (card.set_code && card.collector_number) {
@@ -149,8 +55,87 @@ interface CardGroup {
   inDecks: number;
 }
 
+const useStyles = makeStyles({
+  controls: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+  },
+  input: {
+    minWidth: '240px',
+    flex: 1,
+    maxWidth: '420px',
+  },
+  select: {
+    minWidth: '180px',
+  },
+  gridHeader: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 80px 80px 80px 1.5fr 80px 100px',
+    padding: '4px 0 14px',
+    borderBottom: `1px solid ${sothera.headerBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '2px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
+    '@media (max-width: 768px)': {
+      display: 'none',
+    },
+  },
+  gridRow: {
+    display: 'grid',
+    gridTemplateColumns: '2fr 80px 80px 80px 1.5fr 80px 100px',
+    padding: '12px 0',
+    fontSize: '13px',
+    alignItems: 'center',
+    '@media (max-width: 768px)': {
+      gridTemplateColumns: '1fr auto',
+      gap: '4px',
+    },
+  },
+  cardLink: {
+    color: sothera.fg,
+    textDecoration: 'none',
+    fontWeight: 500,
+    ':hover': {
+      textDecoration: 'underline',
+    },
+  },
+  groupHeader: {
+    cursor: 'pointer',
+    userSelect: 'none',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    ':hover': {
+      backgroundColor: 'rgba(255,255,255,0.04)',
+    },
+  },
+  pagination: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    marginTop: '16px',
+    flexWrap: 'wrap',
+  },
+  pageInfo: {
+    fontFamily: sothera.fontMono,
+    fontSize: '11px',
+    color: sothera.fgMuted,
+    letterSpacing: '1px',
+    minWidth: '180px',
+    textAlign: 'center',
+  },
+  mobileCard: {
+    padding: '12px',
+    marginBottom: '8px',
+  },
+});
+
 export default function Collection() {
   const styles = useStyles();
+  const { accent } = useAccent();
   const [entries, setEntries] = useState<CollectionEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -193,12 +178,10 @@ export default function Collection() {
   }, [load, searchQuery, sortBy, sortDir, page]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
   const handleSearch = () => { setPage(1); setSearchQuery(searchInput.trim()); };
   const handleSetChange = (value: string) => { setPage(1); setSelectedSet(value); };
   const handleDeckChange = (value: string) => { setPage(1); setSelectedDeck(value); };
 
-  // Group by card name
   const groups = useMemo(() => {
     const map = new Map<string, CardGroup>();
     for (const entry of entries) {
@@ -209,7 +192,6 @@ export default function Collection() {
       const group = map.get(name)!;
       group.entries.push(entry);
       group.totalCopies += getCopies(entry);
-      // in_decks is per-name, take the max (they should all be same)
       group.inDecks = Math.max(group.inDecks, entry.in_decks || 0);
     }
     return Array.from(map.values());
@@ -226,7 +208,18 @@ export default function Collection() {
 
   return (
     <div>
-      <Title2>Collection ({total} entries, page {page}/{totalPages})</Title2>
+      <PageHeader
+        eyebrow={`☷ INDEX · ${total} REGISTERED`}
+        title="Collection"
+        accent={accent.oklch}
+        right={
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase' }}>PAGE {page} OF {totalPages}</div>
+            <div style={{ fontFamily: sothera.fontDisplay, fontSize: 22, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"', marginTop: 4 }}>{total} entries</div>
+          </div>
+        }
+      />
+
       <div className={styles.controls}>
         <Input
           placeholder="Search cards..."
@@ -265,167 +258,92 @@ export default function Collection() {
       {loading ? (
         <Spinner label="Loading collection..." style={{ marginTop: 24 }} />
       ) : entries.length === 0 ? (
-        <Body1 style={{ marginTop: 24 }}>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>
           {searchQuery || selectedSet ? 'No cards found.' : 'Collection is empty. Sync your decks to populate it.'}
-        </Body1>
+        </div>
       ) : (
         <>
-        {isMobile ? (
-          <div className={styles.mobileCardList}>
-            {entries.map(entry => (
-              <Card key={entry.id} className={styles.mobileCard}>
-                <CardHoverPreview card={entry.card}>
-                  <a
-                    href={scryfallUrl(entry.card)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.cardLink}
-                  >
-                    <Body1><strong>{entry.card.name}</strong></Body1>
-                  </a>
-                </CardHoverPreview>
-                <Caption1>{entry.card.set_name || entry.card.set_code || ''}</Caption1>
-                <div className={styles.mobileCardRow}>
-                  <Caption1>Qty: {getCopies(entry)} ({getFinish(entry)})</Caption1>
-                  <Caption1>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</Caption1>
-                </div>
-                {(entry.in_decks ?? 0) > 0 && (
-                  <Caption1>In {entry.in_decks} deck{entry.in_decks > 1 ? 's' : ''}</Caption1>
-                )}
-              </Card>
-            ))}
-          </div>
-        ) : (
-        <div className={styles.tableWrap}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Name</TableHeaderCell>
-                <TableHeaderCell>Copies</TableHeaderCell>
-                <TableHeaderCell>In Decks</TableHeaderCell>
-                <TableHeaderCell>Finish</TableHeaderCell>
-                <TableHeaderCell>Edition</TableHeaderCell>
-                <TableHeaderCell>Language</TableHeaderCell>
-                <TableHeaderCell>Price (EUR)</TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {isMobile ? (
+            <div>
+              {entries.map(entry => (
+                <Panel key={entry.id} className={styles.mobileCard}>
+                  <CardHoverPreview card={entry.card}>
+                    <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>
+                      <strong>{entry.card.name}</strong>
+                    </a>
+                  </CardHoverPreview>
+                  <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, marginTop: 4 }}>{entry.card.set_name || entry.card.set_code}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>Qty: {getCopies(entry)} ({getFinish(entry)})</span>
+                    <span style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</span>
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          ) : (
+            <Panel>
+              <div className={styles.gridHeader}>
+                <div>NAME</div><div>COPIES</div><div>IN DECKS</div><div>FINISH</div><div>EDITION</div><div>LANG</div><div style={{ textAlign: 'right' }}>EUR</div>
+              </div>
               {groups.map(group => {
                 const isOpen = openGroups.has(group.name);
                 if (group.entries.length === 1) {
-                  // Single entry — render directly
                   const entry = group.entries[0];
                   return (
-                    <TableRow key={entry.id}>
-                      <TableCell className={styles.nameCell}>
+                    <div key={entry.id} className={styles.gridRow} style={{ borderBottom: `1px solid ${sothera.rowBorder}` }}>
+                      <div>
                         <CardHoverPreview card={entry.card}>
-                          <a
-                            href={scryfallUrl(entry.card)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`${styles.hoverAnchor} ${styles.cardLink}`}
-                          >
-                            {entry.card.name}
-                          </a>
+                          <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                         </CardHoverPreview>
-                      </TableCell>
-                      <TableCell>{getCopies(entry)}</TableCell>
-                      <TableCell className={styles.deckUsage}>
-                        {group.inDecks > 0 ? group.inDecks : '—'}
-                      </TableCell>
-                      <TableCell>{getFinish(entry)}</TableCell>
-                      <TableCell>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
-                      <TableCell>{entry.language || '—'}</TableCell>
-                      <TableCell>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</TableCell>
-                    </TableRow>
+                      </div>
+                      <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{getCopies(entry)}</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{getFinish(entry)}</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{entry.card.set_name || entry.card.set_code || '—'}</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{entry.language || '—'}</div>
+                      <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</div>
+                    </div>
                   );
                 }
-                // Multi-entry group — collapsible
                 return (
-                  <>{/* Fragment for group */}
-                    <TableRow
-                      key={group.name}
-                      className={styles.groupHeader}
-                      onClick={() => toggleGroup(group.name)}
-                    >
-                      <TableCell className={`${styles.nameCell} ${styles.groupRow}`}>
-                        <span className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`}>▶</span>
+                  <div key={group.name}>
+                    <div className={`${styles.gridRow} ${styles.groupHeader}`} style={{ borderBottom: `1px solid ${sothera.rowBorder}` }} onClick={() => toggleGroup(group.name)}>
+                      <div style={{ fontWeight: 600, color: sothera.fg }}>
+                        <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10, marginRight: 6 }}>▶</span>
                         {group.name}
-                        <Caption1 style={{ marginLeft: 8 }}>({group.entries.length} printings)</Caption1>
-                      </TableCell>
-                      <TableCell className={styles.groupRow}>{group.totalCopies}</TableCell>
-                      <TableCell className={styles.groupRow}>
-                        {group.inDecks > 0 ? group.inDecks : '—'}
-                      </TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell />
-                      <TableCell />
-                    </TableRow>
+                        <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginLeft: 8, color: sothera.fgFaint }}>({group.entries.length} printings)</span>
+                      </div>
+                      <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{group.totalCopies}</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>
+                      <div /><div /><div /><div />
+                    </div>
                     {isOpen && group.entries.map(entry => (
-                      <TableRow key={entry.id}>
-                        <TableCell className={styles.nameCell} style={{ paddingLeft: 32 }}>
+                      <div key={entry.id} className={styles.gridRow} style={{ borderBottom: `1px solid ${sothera.rowBorder}`, paddingLeft: 32 }}>
+                        <div>
                           <CardHoverPreview card={entry.card}>
-                            <a
-                              href={scryfallUrl(entry.card)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`${styles.hoverAnchor} ${styles.cardLink}`}
-                            >
-                              {entry.card.name}
-                            </a>
+                            <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                           </CardHoverPreview>
-                        </TableCell>
-                        <TableCell>{getCopies(entry)}</TableCell>
-                        <TableCell className={styles.deckUsage}>
-                          {group.inDecks > 0 ? group.inDecks : '—'}
-                        </TableCell>
-                        <TableCell>{getFinish(entry)}</TableCell>
-                        <TableCell>{entry.card.set_name || entry.card.set_code || '—'}</TableCell>
-                        <TableCell>{entry.language || '—'}</TableCell>
-                        <TableCell>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</TableCell>
-                      </TableRow>
+                        </div>
+                        <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{getCopies(entry)}</div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{getFinish(entry)}</div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{entry.card.set_name || entry.card.set_code || '—'}</div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{entry.language || '—'}</div>
+                        <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{getPrice(entry) === '—' ? '—' : `€${getPrice(entry)}`}</div>
+                      </div>
                     ))}
-                  </>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
-        </div>
-        )}
-        <div className={styles.pagination}>
-          <Button
-            icon={<ChevronDoubleLeft20Regular />}
-            appearance="subtle"
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage(1)}
-          />
-          <Button
-            icon={<ChevronLeft24Regular />}
-            appearance="subtle"
-            size="small"
-            disabled={page <= 1}
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-          />
-          <Caption1 className={styles.pageInfo}>
-            Page {page} of {totalPages} ({total} entries)
-          </Caption1>
-          <Button
-            icon={<ChevronRight24Regular />}
-            appearance="subtle"
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-          />
-          <Button
-            icon={<ChevronDoubleRight20Regular />}
-            appearance="subtle"
-            size="small"
-            disabled={page >= totalPages}
-            onClick={() => setPage(totalPages)}
-          />
-        </div>
+            </Panel>
+          )}
+          <div className={styles.pagination}>
+            <Button icon={<ChevronDoubleLeft20Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(1)} />
+            <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
+            <span className={styles.pageInfo}>Page {page} of {totalPages} ({total} entries)</span>
+            <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} />
+            <Button icon={<ChevronDoubleRight20Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(totalPages)} />
+          </div>
         </>
       )}
     </div>

@@ -1,74 +1,123 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  makeStyles,
-  tokens,
-  Card,
-  CardHeader,
-  CardPreview,
-  Title2,
-  Title3,
-  Body1,
-  Caption1,
-  Spinner,
-  Badge,
-  Divider,
-  Select,
-} from '@fluentui/react-components';
+import { makeStyles, shorthands } from '@griffel/react';
+import { Spinner, Select } from '@fluentui/react-components';
 import { api, DeckSummary } from '../api';
+import { sothera } from '../theme/sothera';
+import { useAccent } from '../main';
+import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
 const useStyles = makeStyles({
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '16px',
-    marginTop: '12px',
+    gap: '14px',
   },
   card: {
     cursor: 'pointer',
-    '&:hover': { boxShadow: tokens.shadow8 },
+    backgroundColor: sothera.glassBg,
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+    ...shorthands.borderColor(sothera.glassBorder),
+    transitionProperty: 'border-color, box-shadow',
+    transitionDuration: '160ms',
+    position: 'relative',
+    ':hover': {
+      ...shorthands.borderColor(sothera.fgFaint),
+    },
   },
-  img: {
+  artWrap: {
+    position: 'relative',
+    height: '140px',
+    overflow: 'hidden',
+    borderBottom: `1px solid ${sothera.glassBorder}`,
+  },
+  artImg: {
     width: '100%',
-    height: '160px',
+    height: '100%',
     objectFit: 'cover',
+    filter: 'saturate(0.85) contrast(1.05)',
   },
-  meta: {
+  artOverlay: {
+    position: 'absolute',
+    inset: '0',
+    background: 'linear-gradient(180deg, transparent 30%, rgba(4,4,10,0.85) 100%)',
+  },
+  bracketTag: {
+    position: 'absolute',
+    top: '10px',
+    left: '10px',
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '1.5px',
+    color: sothera.fg,
+    padding: '3px 7px',
+    background: 'rgba(0,0,0,0.45)',
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+  },
+  cardBody: {
+    padding: '16px',
+  },
+  cardName: {
+    fontFamily: sothera.fontDisplay,
+    fontSize: '15px',
+    fontWeight: 600,
+    color: sothera.fg,
+    marginBottom: '8px',
+    letterSpacing: '-0.3px',
+  },
+  cardMeta: {
     display: 'flex',
-    gap: '8px',
-    marginTop: '4px',
+    gap: '6px',
+    alignItems: 'center',
     flexWrap: 'wrap',
   },
-  folderSection: { marginTop: '24px' },
-  folderHeader: {
+  formatBadge: {
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    padding: '3px 7px',
+    ...shorthands.borderWidth('1px'),
+    ...shorthands.borderStyle('solid'),
+    ...shorthands.borderColor(sothera.glassBorder),
+    color: sothera.fgMuted,
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+  },
+  cardFooter: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-    userSelect: 'none',
-    marginBottom: '4px',
+    justifyContent: 'space-between',
+    marginTop: '12px',
+    paddingTop: '10px',
+    borderTop: `1px solid ${sothera.rowBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    color: sothera.fgFaint,
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
   },
-  chevron: {
-    display: 'inline-block',
-    transition: 'transform 0.2s ease',
-    fontSize: '12px',
+  cardValue: {
+    fontWeight: 600,
   },
-  chevronOpen: { transform: 'rotate(90deg)' },
+  emptyMsg: {
+    fontFamily: sothera.fontMono,
+    fontSize: '13px',
+    color: sothera.fgMuted,
+    marginTop: '24px',
+    letterSpacing: '1px',
+  },
 });
 
 export default function Decks() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { accent } = useAccent();
   const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openFolders, setOpenFolders] = useState<Set<string> | null>(null);
   const [bracketFilter, setBracketFilter] = useState('');
 
   useEffect(() => {
-    api.getDecks().then(d => {
-      setDecks(d);
-      setOpenFolders(new Set(d.map(dk => dk.folder_name || 'Uncategorized')));
-    }).finally(() => setLoading(false));
+    api.getDecks().then(setDecks).finally(() => setLoading(false));
   }, []);
 
   const filteredDecks = useMemo(() => {
@@ -91,15 +140,6 @@ export default function Decks() {
     });
   }, [filteredDecks]);
 
-  const toggleFolder = (folder: string) => {
-    setOpenFolders(prev => {
-      const next = new Set(prev ?? []);
-      if (next.has(folder)) next.delete(folder);
-      else next.add(folder);
-      return next;
-    });
-  };
-
   const availableBrackets = useMemo(() => {
     const set = new Set(decks.map(d => d.bracket).filter(b => b > 0));
     return [...set].sort();
@@ -110,19 +150,22 @@ export default function Decks() {
   if (decks.length === 0) {
     return (
       <div>
-        <Title2>Decks</Title2>
-        <Body1 style={{ marginTop: 16 }}>
-          No decks synced yet. Go to Settings to trigger a sync from Archidekt.
-        </Body1>
+        <PageHeader eyebrow="⌬ INDEX" title="Decks" accent={accent.oklch} />
+        <div className={styles.emptyMsg}>No decks synced yet. Go to Settings to trigger a sync from Archidekt.</div>
       </div>
     );
   }
 
   return (
     <div>
-      <Title2>Decks ({filteredDecks.length}{bracketFilter ? ` of ${decks.length}` : ''})</Title2>
+      <PageHeader
+        eyebrow={`⌬ INDEX · ${filteredDecks.length} BOUND DECKS`}
+        title="Decks"
+        accent={accent.oklch}
+      />
+
       {availableBrackets.length > 0 && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginBottom: 16 }}>
           <Select
             value={bracketFilter}
             onChange={(_, d) => setBracketFilter(d.value)}
@@ -135,42 +178,51 @@ export default function Decks() {
           </Select>
         </div>
       )}
-      {grouped.map(([folder, folderDecks]) => {
-        const isOpen = openFolders?.has(folder) ?? true;
-        return (
-          <div key={folder} className={styles.folderSection}>
-            <div className={styles.folderHeader} onClick={() => toggleFolder(folder)}>
-              <span className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`}>▶</span>
-              <Title3>{folder} ({folderDecks.length})</Title3>
-            </div>
-            <Divider />
-            {isOpen && (
-              <div className={styles.grid}>
-                {folderDecks.map(d => (
-                  <Card key={d.id} className={styles.card} onClick={() => navigate(`/decks/${d.id}`)}>
-                    {d.featured_image && (
-                      <CardPreview>
-                        <img src={d.featured_image} alt={d.name} className={styles.img} />
-                      </CardPreview>
+
+      {grouped.map(([folder, folderDecks], fi) => (
+        <div key={folder} style={{ marginBottom: 36 }}>
+          <SectionHeader
+            num={String(fi + 1).padStart(2, '0')}
+            title={folder}
+            right={`${folderDecks.length} DECKS`}
+            accent={accent.oklch}
+          />
+          <div className={styles.grid}>
+            {folderDecks.map(d => (
+              <div
+                key={d.id}
+                className={styles.card}
+                onClick={() => navigate(`/decks/${d.id}`)}
+              >
+                {d.featured_image && (
+                  <div className={styles.artWrap}>
+                    <img src={d.featured_image} alt={d.name} className={styles.artImg} />
+                    <div className={styles.artOverlay} />
+                    <div style={{ position: 'absolute', inset: 0, background: accent.soft, mixBlendMode: 'color', opacity: 0.35 }} />
+                    {d.bracket > 0 && (
+                      <div className={styles.bracketTag} style={{ borderColor: accent.oklch }}>
+                        BR.{d.bracket}
+                      </div>
                     )}
-                    <CardHeader
-                      header={<Body1><strong>{d.name}</strong></Body1>}
-                      description={
-                        <div className={styles.meta}>
-                          <Badge appearance="outline">{d.format || 'Unknown'}</Badge>
-                          {d.bracket > 0 && <Badge appearance="outline" color="informative">Bracket {String(d.bracket)}</Badge>}
-                          <Caption1>{String(d.card_count)} cards</Caption1>
-                          {d.commander_name && <Caption1>{'\u2694'} {d.commander_name}</Caption1>}
-                        </div>
-                      }
-                    />
-                  </Card>
-                ))}
+                  </div>
+                )}
+                <div className={styles.cardBody}>
+                  <div className={styles.cardName}>{d.name}</div>
+                  <div className={styles.cardMeta}>
+                    <span className={styles.formatBadge}>{d.format || 'Unknown'}</span>
+                  </div>
+                  <div className={styles.cardFooter}>
+                    <span>{d.card_count} CARDS</span>
+                    <span className={styles.cardValue} style={{ color: accent.oklch }}>
+                      {d.commander_name ? `⚔ ${d.commander_name}` : ''}
+                    </span>
+                  </div>
+                </div>
               </div>
-            )}
+            ))}
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }
