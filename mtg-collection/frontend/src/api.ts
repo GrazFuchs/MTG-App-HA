@@ -242,6 +242,70 @@ export interface ListingHealthResponse {
   no_match: Array<{ listing_id: number; card_name: string; my_price: number }>;
 }
 
+// --- Deck Combos ---
+
+export interface DeckCombo {
+  id: number;
+  combo_id: string;
+  name: string;
+  color_identity: string;
+  cards: string[];
+  result: string[];
+  prerequisites: string;
+  steps: string;
+  is_partial: boolean;
+  missing_cards: string[];
+}
+
+// --- Deck Compare ---
+
+export interface CardSummary {
+  name: string;
+  set_code: string;
+  image_uri: string;
+  price_eur: string;
+}
+
+export interface DeckCompareResponse {
+  decks: DeckSummary[];
+  common_cards: CardSummary[];
+  pairwise_overlap: Array<{
+    deck_a: number;
+    deck_b: number;
+    overlap_count: number;
+    overlap_cards: string[];
+  }>;
+  unique_to: Record<number, CardSummary[]>;
+  color_identity_intersection: string[];
+  color_identity_union: string[];
+}
+
+// --- Deck Completeness ---
+
+export interface MissingCard {
+  name: string;
+  quantity_needed: number;
+  current_market_price_eur: number;
+}
+
+export interface DeckCompletenessResponse {
+  deck_id: number;
+  total_unique_cards: number;
+  owned_unique: number;
+  completeness_pct: number;
+  missing_cards: MissingCard[];
+  total_acquisition_cost_eur: number;
+  most_expensive_missing: MissingCard[];
+}
+
+// --- Card Search with Owned Indicator ---
+
+export interface CardSearchResult extends Card {
+  owned_quantity: number;
+  owned_foil_quantity: number;
+  in_decks: string[];
+}
+
 export interface WishlistAddPayload {
   card_name?: string;
   scryfall_id?: string;
@@ -458,4 +522,18 @@ export const api = {
   // Listing health
   getListingHealth: (threshold_pct = 15) =>
     request<ListingHealthResponse>(`/api/cardmarket/listings/health?threshold_pct=${threshold_pct}`),
+
+  // Deck combos
+  getDeckCombos: (deckId: number, includePartial = true) =>
+    request<DeckCombo[]>(`/api/decks/${deckId}/combos?include_partial=${includePartial}`),
+  syncDeckCombos: (deckId: number) =>
+    request<{ count: number }>(`/api/decks/${deckId}/combos/sync`, { method: 'POST' }),
+
+  // Deck compare
+  compareDecks: (ids: number[]) =>
+    request<DeckCompareResponse>(`/api/decks/compare?ids=${ids.join(',')}`),
+
+  // Deck completeness
+  getDeckCompleteness: (deckId: number) =>
+    request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
 };

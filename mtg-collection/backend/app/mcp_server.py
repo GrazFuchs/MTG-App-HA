@@ -1296,6 +1296,211 @@ def suggest_upgrades(deck_name: str, budget: str = "20 EUR") -> str:
     )
 
 
+@mcp.tool()
+async def get_deck_combos(deck_id: int, include_partial: bool = True) -> str:
+    """Get all known combos in a deck (from Spellbook cache).
+
+    include_partial: if True, also return combos missing 1 card (almost-combos).
+    Useful for finding upgrade suggestions.
+
+    Args:
+        deck_id: Local deck ID (from list_decks)
+        include_partial: Whether to include combos missing 1 card
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+        if not await cursor.fetchone():
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+
+        where = "WHERE deck_id = ?" if include_partial else "WHERE deck_id = ? AND is_partial = 0"
+        cursor = await db.execute(
+            f"SELECT * FROM deck_combos {where} ORDER BY is_partial, name",
+            (deck_id,),
+        )
+        rows = await cursor.fetchall()
+        combos = []
+        for r in rows:
+            combos.append({
+                "combo_id": r["combo_id"],
+                "name": r["name"],
+                "color_identity": r["color_identity"],
+                "cards": json.loads(r["cards_json"] or "[]"),
+                "result": json.loads(r["result_json"] or "[]"),
+                "prerequisites": r["prerequisites"],
+                "steps": r["steps"],
+                "is_partial": bool(r["is_partial"]),
+                "missing_cards": json.loads(r["missing_cards_json"] or "[]"),
+            })
+        return json.dumps({
+            "deck_id": deck_id,
+            "total_combos": len(combos),
+            "full_combos": len([c for c in combos if not c["is_partial"]]),
+            "partial_combos": len([c for c in combos if c["is_partial"]]),
+            "combos": combos,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def compare_decks(deck_ids: list[int]) -> str:
+    """Compare 2-4 decks: common cards, unique cards, color identity overlap.
+
+    Use this to find shared staples that could be moved between decks,
+    or to check if two decks are too similar to coexist.
+
+    Args:
+        deck_ids: List of 2-4 deck IDs to compare
+    """
+    from .database import get_db
+    try:
+        if len(deck_ids) < 2 or len(deck_ids) > 4:
+            return json.dumps({"error": "Provide 2-4 deck IDs"})
+
+        db = await get_db()
+        deck_names: dict[int, str] = {}
+        deck_card_sets: dict[int, set[str]] = {}
+        deck_colors: dict[int, set[str]] = {}
+
+        for did in deck_ids:
+            cursor = await db.execute("SELECT name FROM decks WHERE id=?", (did,))
+            row = await cursor.fetchone()
+            if not row:
+                return json.dumps({"error": f"Deck {did} not found"})
+            deck_names[did] = row["name"]
+
+            cursor = await db.execute(
+                """SELECT c.name, c.color_identity
+                FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
+                WHERE dc.deck_id=?""", (did,)
+            )
+            names: set[str] = set()
+            colors: set[str] = set()
+            for r in await cursor.fetchall():
+                names.add(r["name"])
+                for c in json.loads(r["color_identity"] or "[]"):
+                    colors.add(c)
+            deck_card_sets[did] = names
+            deck_colors[did] = colors
+
+        # Common cards
+        all_name_sets = list(deck_card_sets.values())
+        common = set.intersection(*all_name_sets)
+
+        # Pairwise overlap
+        pairwise = []
+        for i in range(len(deck_ids)):
+            for j in range(i + 1, len(deck_ids)):
+                a, b = deck_ids[i], deck_ids[j]
+                overlap = deck_card_sets[a] & deck_card_sets[b]
+                pairwise.append({
+                    "deck_a": f"{deck_names[a]} (#{a})",
+                    "deck_b": f"{deck_names[b]} (#{b})",
+                    "overlap_count": len(overlap),
+                    "overlap_cards": sorted(overlap)[:20],  # Limit for readability
+                })
+
+        # Unique per deck
+        unique_to = {}
+        for did in deck_ids:
+            others = set()
+            for other_id in deck_ids:
+                if other_id != did:
+                    others.update(deck_card_sets[other_id])
+            unique = deck_card_sets[did] - others
+            unique_to[deck_names[did]] = sorted(unique)
+
+        # Color identity
+        all_color_sets = list(deck_colors.values())
+        color_union = sorted(set.union(*all_color_sets))
+        color_intersection = sorted(set.intersection(*all_color_sets))
+
+        return json.dumps({
+            "decks": {did: deck_names[did] for did in deck_ids},
+            "common_cards": sorted(common),
+            "common_count": len(common),
+            "pairwise_overlap": pairwise,
+            "unique_to": unique_to,
+            "color_identity_union": color_union,
+            "color_identity_intersection": color_intersection,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def find_card_in_collection(card_name: str) -> str:
+    """Look up a card in the user's collection: how many owned (foil/non-foil),
+    in which decks it's used, current market price.
+
+    Use this when the user asks "do I have X" or "where is my X being used".
+
+    Args:
+        card_name: Exact or partial card name to search for
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        # Find card in collection
+        cursor = await db.execute(
+            """SELECT c.name, c.set_name, c.set_code, c.rarity,
+                   c.price_eur, c.price_eur_foil, c.image_uri,
+                   col.quantity, col.foil_quantity, col.condition, col.language
+            FROM collection col
+            JOIN cards c ON c.id = col.card_id
+            WHERE LOWER(c.name) LIKE LOWER(?)
+            ORDER BY c.name""",
+            (f"%{card_name}%",),
+        )
+        col_rows = await cursor.fetchall()
+
+        # Find deck usage
+        cursor = await db.execute(
+            """SELECT d.name as deck_name, d.id as deck_id,
+                   dc.quantity, dc.category, dc.is_commander, c.name
+            FROM deck_cards dc
+            JOIN cards c ON c.id = dc.card_id
+            JOIN decks d ON d.id = dc.deck_id
+            WHERE LOWER(c.name) LIKE LOWER(?)
+            ORDER BY d.name""",
+            (f"%{card_name}%",),
+        )
+        deck_rows = await cursor.fetchall()
+
+        if not col_rows and not deck_rows:
+            return json.dumps({"card_name": card_name, "found": False, "message": "Card not found in collection or decks"})
+
+        collection_entries = [{
+            "name": r["name"], "set": r["set_name"], "rarity": r["rarity"],
+            "quantity": r["quantity"], "foil_quantity": r["foil_quantity"],
+            "condition": r["condition"], "language": r["language"],
+            "price_eur": r["price_eur"], "price_eur_foil": r["price_eur_foil"],
+        } for r in col_rows]
+
+        total_owned = sum(r["quantity"] + r["foil_quantity"] for r in col_rows)
+        total_foil = sum(r["foil_quantity"] for r in col_rows)
+
+        deck_usage = [{
+            "deck_name": r["deck_name"], "deck_id": r["deck_id"],
+            "quantity": r["quantity"], "category": r["category"],
+            "is_commander": bool(r["is_commander"]),
+        } for r in deck_rows]
+
+        return json.dumps({
+            "card_name": card_name,
+            "found": True,
+            "total_owned": total_owned,
+            "total_foil": total_foil,
+            "collection_entries": collection_entries,
+            "used_in_decks": len(deck_usage),
+            "deck_usage": deck_usage,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 def mount_mcp_server(app: FastAPI):
     """Mount the MCP server onto the FastAPI app."""
     from starlette.requests import Request

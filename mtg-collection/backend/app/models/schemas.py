@@ -325,3 +325,93 @@ class CardPrinting(BaseModel):
     price_eur_foil: float | None = None
     is_foil_available: bool = False
     is_nonfoil_available: bool = False
+
+
+# --- Deck Combo Models ---
+
+class DeckCombo(BaseModel):
+    id: int
+    combo_id: str
+    name: str = ""
+    color_identity: str = ""
+    cards: list[str] = []
+    result: list[str] = []
+    prerequisites: str = ""
+    steps: str = ""
+    is_partial: bool = False
+    missing_cards: list[str] = []
+
+
+# --- Deck Compare Models ---
+
+class CardSummary(BaseModel):
+    name: str
+    set_code: str = ""
+    image_uri: str = ""
+    price_eur: str = ""
+
+
+class PairwiseOverlap(BaseModel):
+    deck_a: int
+    deck_b: int
+    overlap_count: int
+    overlap_cards: list[str] = []
+
+
+class DeckCompareResponse(BaseModel):
+    decks: list[DeckSummary]
+    common_cards: list[CardSummary]
+    pairwise_overlap: list[PairwiseOverlap]
+    unique_to: dict[int, list[CardSummary]]
+    color_identity_intersection: list[str]
+    color_identity_union: list[str]
+
+
+# --- Deck Completeness Models ---
+
+class MissingCard(BaseModel):
+    name: str
+    quantity_needed: int = 1
+    current_market_price_eur: float = 0
+
+
+class DeckCompletenessResponse(BaseModel):
+    deck_id: int
+    total_unique_cards: int
+    owned_unique: int
+    completeness_pct: float
+    missing_cards: list[MissingCard]
+    total_acquisition_cost_eur: float
+    most_expensive_missing: list[MissingCard]
+
+
+# --- Card Search Owned Indicator ---
+
+class CardSearchResult(BaseModel):
+    """Extended card result with ownership info."""
+    id: int
+    scryfall_id: str
+    name: str
+    mana_cost: str = ""
+    cmc: float = 0
+    type_line: str = ""
+    oracle_text: str = ""
+    colors: list[str] = []
+    color_identity: list[str] = []
+    set_code: str = ""
+    set_name: str = ""
+    collector_number: str = ""
+    rarity: str = ""
+    image_uri: str = ""
+    image_art_crop: str = ""
+    power: str = ""
+    toughness: str = ""
+    loyalty: str = ""
+    keywords: list[str] = []
+    price_usd: str = ""
+    price_eur: str = ""
+    price_usd_foil: str = ""
+    price_eur_foil: str = ""
+    owned_quantity: int = 0
+    owned_foil_quantity: int = 0
+    in_decks: list[str] = []

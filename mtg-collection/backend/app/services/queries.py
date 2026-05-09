@@ -163,3 +163,41 @@ async def record_value_snapshot(db: aiosqlite.Connection) -> None:
          stats["total_value_eur"], stats["total_value_usd"]),
     )
     await db.commit()
+
+
+async def query_spending_stats_30d(db: aiosqlite.Connection) -> dict[str, Any]:
+    """Return acquisition spending totals for the last 30 days.
+
+    Returns:
+        count:                   number of acquired items in the window
+        total_spent_eur:         sum of paid_price_eur for those items
+        total_current_value_eur: current market value (Cardmarket trend or Scryfall price)
+    """
+    cursor = await db.execute(
+        """
+        SELECT
+            COUNT(*) AS count,
+            COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS total_spent,
+            COALESCE(SUM(
+                COALESCE(
+                    (SELECT ph.trend FROM cardmarket_products cp
+                     JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                     WHERE LOWER(cp.card_name) = LOWER(c.name)
+                     ORDER BY ph.date DESC LIMIT 1),
+                    CAST(NULLIF(c.price_eur, '') AS REAL),
+                    0
+                ) * w.quantity
+            ), 0) AS total_current_value
+        FROM wishlist w
+        LEFT JOIN cards c ON c.id = w.card_id
+        WHERE w.removed_at IS NULL
+          AND w.status = 'acquired'
+          AND w.acquired_at >= datetime('now', '-30 days')
+        """
+    )
+    row = await cursor.fetchone()
+    return {
+        "count": int(row[0]),
+        "total_spent_eur": round(float(row[1]), 2),
+        "total_current_value_eur": round(float(row[2]), 2),
+    }

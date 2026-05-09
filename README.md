@@ -38,6 +38,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
   - [Frontend](#frontend)
   - [Database](#database)
 - [API Reference](#api-reference)
+- [Home Assistant Integration Guide](docs/ha-integration.md)
 - [MCP Server (AI Integration)](#mcp-server-ai-integration)
   - [Available Tools](#available-tools)
   - [Available Resources](#available-resources)

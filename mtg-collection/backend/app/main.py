@@ -12,7 +12,7 @@ from .database import init_db, close_db
 from .logging_config import setup_logging
 from .scheduler import start_scheduler, stop_scheduler
 from .version import VERSION
-from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist, backup, mcp_setup
+from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist, backup, mcp_setup, voice
 
 setup_logging()
 
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
         import asyncio
         from .services.ha_publisher import publish_discovery, publish_stats
         asyncio.create_task(_startup_mqtt_publish())
+        asyncio.create_task(_start_service_subscriber())
 
     # Start MCP session manager (required for streamable HTTP transport)
     if _mcp_available and mcp_server is not None:
@@ -53,12 +54,23 @@ async def _startup_mqtt_publish():
     import asyncio
     await asyncio.sleep(10)  # Wait for DB to be populated
     try:
-        from .services.ha_publisher import publish_discovery, publish_stats
+        from .services.ha_publisher import publish_discovery, publish_stats, publish_wishlist_sensors
         await publish_discovery()
         await publish_stats()
+        await publish_wishlist_sensors()
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Startup MQTT publish failed: %s", e)
+
+
+async def _start_service_subscriber():
+    """Start the long-running MQTT service subscriber."""
+    try:
+        from .services.ha_publisher import service_subscriber_loop
+        await service_subscriber_loop()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("MQTT service subscriber exited unexpectedly: %s", e)
 
 
 app = FastAPI(
@@ -90,6 +102,7 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
 app.include_router(backup.router, prefix="/api/backup", tags=["backup"])
 app.include_router(mcp_setup.router, prefix="/api/mcp", tags=["mcp"])
+app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 
 
 @app.get("/healthz", tags=["health"])

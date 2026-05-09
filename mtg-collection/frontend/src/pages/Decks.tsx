@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { makeStyles, shorthands } from '@griffel/react';
-import { Spinner, Select } from '@fluentui/react-components';
+import { Spinner, Select, Button } from '@fluentui/react-components';
 import { api, DeckSummary } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
@@ -165,7 +165,7 @@ export default function Decks() {
       />
 
       {availableBrackets.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <Select
             value={bracketFilter}
             onChange={(_, d) => setBracketFilter(d.value)}
@@ -176,6 +176,14 @@ export default function Decks() {
               <option key={b} value={String(b)}>Bracket {String(b)}</option>
             ))}
           </Select>
+          <Button
+            appearance="subtle"
+            size="small"
+            onClick={() => navigate('/decks/compare')}
+            style={{ color: sothera.fgMuted, fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1 }}
+          >
+            ⌬ Compare Decks
+          </Button>
         </div>
       )}
 

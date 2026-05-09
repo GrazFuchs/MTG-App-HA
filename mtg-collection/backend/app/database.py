@@ -399,6 +399,29 @@ async def _migration_11(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_12(db: aiosqlite.Connection):
+    """Add deck_combos table for Spellbook combo cache."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS deck_combos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deck_id INTEGER REFERENCES decks(id) ON DELETE CASCADE,
+            combo_id TEXT NOT NULL,
+            name TEXT DEFAULT '',
+            color_identity TEXT DEFAULT '',
+            cards_json TEXT NOT NULL,
+            result_json TEXT DEFAULT '',
+            prerequisites TEXT DEFAULT '',
+            steps TEXT DEFAULT '',
+            is_partial INTEGER DEFAULT 0,
+            missing_cards_json TEXT DEFAULT '',
+            cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(deck_id, combo_id)
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_combos_deck ON deck_combos(deck_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_combos_partial ON deck_combos(is_partial)")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -410,6 +433,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     9: _migration_9,
     10: _migration_10,
     11: _migration_11,
+    12: _migration_12,
 }
 
 

@@ -1,0 +1,40 @@
+language: "en"
+
+# MTG Collection Manager — HA Assist Intent Sentences
+#
+# Installation:
+#   Copy this file to your HA config directory:
+#     custom_sentences/en/mtg_collection.yaml
+#   Then restart Home Assistant (or reload voice assistants).
+#
+# The intents below call REST sensors that you must configure in configuration.yaml.
+# See docs/ha-integration.md for the full setup guide.
+
+intents:
+  HassMTGGetCardCount:
+    data:
+      - sentences:
+          - "(how many|wie viele) {card_name} (do I have|habe ich)"
+          - "count (of|for) {card_name} in (my collection|meiner Sammlung)"
+          - "(do I own|habe ich) (any|irgendwelche) {card_name}"
+
+  HassMTGGetCollectionValue:
+    data:
+      - sentences:
+          - "(what('s| is)|wie viel ist) my collection worth"
+          - "value of my (mtg |magic |)collection"
+          - "wie viel ist meine (sammlung|kollektion) wert"
+
+  HassMTGGetActiveDeals:
+    data:
+      - sentences:
+          - "(any|are there|gibt es) (active|aktive) (deals|Angebote) (on my wishlist|auf meiner Wunschliste|)"
+          - "show (me |)my wishlist deals"
+          - "zeig (mir |)meine Wunschlisten-Angebote"
+
+  HassMTGTriggerSync:
+    data:
+      - sentences:
+          - "(trigger|start|run) (a |)(mtg |)sync"
+          - "(synchronize|sync) my (mtg |magic |)collection"
+          - "MTG Synchronisierung starten"

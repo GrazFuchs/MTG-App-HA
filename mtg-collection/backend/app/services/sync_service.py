@@ -466,6 +466,17 @@ async def _do_full_sync() -> dict:
                 result = await sync_deck(did, folder_cache=folder_cache)
                 total_synced += result["cards_synced"]
                 logger.info("Synced deck '%s' (%d cards)", result["name"], result["cards_synced"])
+
+                # Best-effort combo sync after successful deck sync
+                try:
+                    from .combo_sync import sync_combos_for_deck
+                    await asyncio.sleep(1)  # Rate limit for Spellbook API
+                    combo_count = await sync_combos_for_deck(result["deck_id"])
+                    if combo_count:
+                        logger.info("Synced %d combos for deck '%s'", combo_count, result["name"])
+                except Exception as combo_err:
+                    logger.warning("Combo sync failed for deck '%s': %s", result["name"], combo_err)
+
             except Exception as e:
                 error_msg = f"Deck {did}: {e}"
                 errors.append(error_msg)

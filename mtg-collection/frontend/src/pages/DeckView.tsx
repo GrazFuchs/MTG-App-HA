@@ -8,6 +8,8 @@ import { CardHoverPreview } from '../components/CardHoverPreview';
 import { UserBracketBadge } from '../components/deck/UserBracketBadge';
 import { GameplanBox } from '../components/deck/GameplanBox';
 import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
+import { DeckCombosSection } from '../components/deck/DeckCombosSection';
+import { DeckCompletenessSection } from '../components/deck/DeckCompletenessSection';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, SectionHeader, CornerTicks } from '../components/sothera';
@@ -275,6 +277,10 @@ export default function DeckView() {
       </div>
       <GameplanBox deck={deck} onUpdate={setDeck} />
       <AIAssessmentBox deck={deck} />
+
+      {/* Combos & Completeness */}
+      <DeckCombosSection deckId={deck.id} />
+      <DeckCompletenessSection deckId={deck.id} />
 
       {/* Charts row */}
       <div className={styles.chartGrid}>

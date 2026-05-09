@@ -384,6 +384,11 @@ async def add_to_wishlist(item: WishlistItemCreate):
     price = _get_current_price(row) if row else None
     resp = _build_item_response(row, price) if row else None
 
+    # Publish MQTT sensor for the new wishlist item (fire-and-forget)
+    import asyncio
+    from ..services.ha_publisher import publish_wishlist_sensor_by_id
+    asyncio.create_task(publish_wishlist_sensor_by_id(new_id))
+
     return {"item": resp, "warning": warning}
 
 
@@ -449,7 +454,18 @@ async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
     """, (item_id,))
     row = await cursor.fetchone()
     price = _get_current_price(row)
-    return _build_item_response(row, price)
+    result = _build_item_response(row, price)
+
+    # Update MQTT sensor: remove for terminal statuses, re-publish otherwise
+    import asyncio
+    from ..services.ha_publisher import publish_wishlist_sensor_by_id, delete_wishlist_sensor
+    new_status = update_data.get("status", row["status"] if row else None)
+    if new_status in ("acquired", "dropped"):
+        asyncio.create_task(delete_wishlist_sensor(item_id))
+    else:
+        asyncio.create_task(publish_wishlist_sensor_by_id(item_id))
+
+    return result
 
 
 @router.delete("/{item_id}")
@@ -463,6 +479,11 @@ async def remove_from_wishlist(item_id: int):
     await db.commit()
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    import asyncio
+    from ..services.ha_publisher import delete_wishlist_sensor
+    asyncio.create_task(delete_wishlist_sensor(item_id))
+
     return {"ok": True}
 
 
@@ -547,6 +568,11 @@ async def acquire_wishlist_item(item_id: int, body: WishlistAcquireRequest | Non
         (paid_price, source, item_id),
     )
     await db.commit()
+
+    import asyncio
+    from ..services.ha_publisher import delete_wishlist_sensor
+    asyncio.create_task(delete_wishlist_sensor(item_id))
+
     return {"ok": True, "status": "acquired"}
 
 
@@ -569,6 +595,11 @@ async def mark_not_received(item_id: int):
         (item_id,),
     )
     await db.commit()
+
+    import asyncio
+    from ..services.ha_publisher import delete_wishlist_sensor
+    asyncio.create_task(delete_wishlist_sensor(item_id))
+
     return {"ok": True, "status": "not_received"}
 
 

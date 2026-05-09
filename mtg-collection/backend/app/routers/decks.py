@@ -1,8 +1,12 @@
 """Deck API routes."""
 import json
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from ..database import get_db
-from ..models.schemas import DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate
+from ..models.schemas import (
+    DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate,
+    DeckCombo, DeckCompareResponse, DeckCompletenessResponse, MissingCard,
+    CardSummary, PairwiseOverlap,
+)
 from ..services.queries import query_all_decks
 
 router = APIRouter()
@@ -13,6 +17,99 @@ async def list_decks():
     db = await get_db()
     decks = await query_all_decks(db)
     return [DeckSummary(**d) for d in decks]
+
+
+@router.get("/compare", response_model=DeckCompareResponse)
+async def compare_decks(ids: str = Query(..., description="Comma-separated deck IDs (max 4)")):
+    """Compare 2-4 decks: common cards, unique cards, color identity overlap."""
+    db = await get_db()
+    try:
+        deck_ids = [int(x.strip()) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid deck ID format — provide numeric IDs")
+    if len(deck_ids) < 2 or len(deck_ids) > 4:
+        raise HTTPException(status_code=400, detail="Provide 2-4 deck IDs")
+
+    # Load deck summaries
+    decks = []
+    deck_card_sets: dict[int, dict[str, dict]] = {}  # deck_id -> {card_name: card_info}
+    deck_colors: dict[int, set[str]] = {}
+
+    for did in deck_ids:
+        cursor = await db.execute(
+            """SELECT d.*, (SELECT COUNT(*) FROM deck_cards WHERE deck_id=d.id) as card_count
+            FROM decks d WHERE d.id=?""", (did,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Deck {did} not found")
+        decks.append(DeckSummary(
+            id=row["id"], archidekt_id=row["archidekt_id"], name=row["name"],
+            format=row["format"], commander_name=row["commander_name"] or "",
+            featured_image=row["featured_image"] or "", card_count=row["card_count"],
+            folder_name=row["folder_name"] or "", bracket=row["bracket"] or 0,
+            last_synced=row["last_synced"],
+        ))
+
+        # Get cards in this deck
+        cursor = await db.execute(
+            """SELECT c.name, c.set_code, c.image_uri, c.price_eur, c.color_identity
+            FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
+            WHERE dc.deck_id=?""", (did,)
+        )
+        cards_in_deck: dict[str, dict] = {}
+        colors: set[str] = set()
+        for r in await cursor.fetchall():
+            cards_in_deck[r["name"]] = {
+                "name": r["name"], "set_code": r["set_code"] or "",
+                "image_uri": r["image_uri"] or "", "price_eur": r["price_eur"] or "",
+            }
+            for c in json.loads(r["color_identity"] or "[]"):
+                colors.add(c)
+        deck_card_sets[did] = cards_in_deck
+        deck_colors[did] = colors
+
+    # Common cards (in ALL decks)
+    all_names = [set(deck_card_sets[did].keys()) for did in deck_ids]
+    common_names = set.intersection(*all_names) if all_names else set()
+    # Use first deck's card info for common cards
+    common_cards = [CardSummary(**deck_card_sets[deck_ids[0]][n]) for n in sorted(common_names)]
+
+    # Pairwise overlap
+    pairwise = []
+    for i in range(len(deck_ids)):
+        for j in range(i + 1, len(deck_ids)):
+            a, b = deck_ids[i], deck_ids[j]
+            overlap = set(deck_card_sets[a].keys()) & set(deck_card_sets[b].keys())
+            pairwise.append(PairwiseOverlap(
+                deck_a=a, deck_b=b,
+                overlap_count=len(overlap),
+                overlap_cards=sorted(overlap),
+            ))
+
+    # Unique to each deck
+    unique_to: dict[int, list[CardSummary]] = {}
+    for did in deck_ids:
+        others = set()
+        for other_id in deck_ids:
+            if other_id != did:
+                others.update(deck_card_sets[other_id].keys())
+        unique_names = set(deck_card_sets[did].keys()) - others
+        unique_to[did] = [CardSummary(**deck_card_sets[did][n]) for n in sorted(unique_names)]
+
+    # Color identity intersection/union
+    all_color_sets = [deck_colors[did] for did in deck_ids]
+    color_union = sorted(set.union(*all_color_sets)) if all_color_sets else []
+    color_intersection = sorted(set.intersection(*all_color_sets)) if all_color_sets else []
+
+    return DeckCompareResponse(
+        decks=decks,
+        common_cards=common_cards,
+        pairwise_overlap=pairwise,
+        unique_to=unique_to,
+        color_identity_intersection=color_intersection,
+        color_identity_union=color_union,
+    )
 
 
 @router.get("/{deck_id}", response_model=DeckDetail)
@@ -99,3 +196,103 @@ async def update_deck_user_fields(deck_id: int, body: DeckUserFieldsUpdate):
         await db.commit()
 
     return await get_deck(deck_id)
+
+
+@router.get("/{deck_id}/combos", response_model=list[DeckCombo])
+async def get_deck_combos(deck_id: int, include_partial: bool = True):
+    """Get cached combos for a deck."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    where = "WHERE deck_id = ?" if include_partial else "WHERE deck_id = ? AND is_partial = 0"
+    cursor = await db.execute(
+        f"SELECT * FROM deck_combos {where} ORDER BY is_partial, name",
+        (deck_id,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        DeckCombo(
+            id=r["id"],
+            combo_id=r["combo_id"],
+            name=r["name"] or "",
+            color_identity=r["color_identity"] or "",
+            cards=json.loads(r["cards_json"] or "[]"),
+            result=json.loads(r["result_json"] or "[]"),
+            prerequisites=r["prerequisites"] or "",
+            steps=r["steps"] or "",
+            is_partial=bool(r["is_partial"]),
+            missing_cards=json.loads(r["missing_cards_json"] or "[]"),
+        )
+        for r in rows
+    ]
+
+
+@router.post("/{deck_id}/combos/sync")
+async def sync_deck_combos(deck_id: int):
+    """Manually trigger a combo re-sync from Spellbook."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    from ..services.combo_sync import sync_combos_for_deck
+    count = await sync_combos_for_deck(deck_id)
+    return {"count": count}
+
+
+@router.get("/{deck_id}/completeness", response_model=DeckCompletenessResponse)
+async def get_deck_completeness(deck_id: int):
+    """Get deck completeness: how many cards are owned vs needed."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    # Get unique cards in deck with quantities
+    cursor = await db.execute(
+        """SELECT c.name, dc.quantity, c.price_eur,
+           COALESCE((SELECT SUM(col.quantity + col.foil_quantity)
+                     FROM collection col WHERE col.card_id = c.id), 0) as owned
+        FROM deck_cards dc
+        JOIN cards c ON c.id = dc.card_id
+        WHERE dc.deck_id = ?
+        ORDER BY c.name""",
+        (deck_id,),
+    )
+    rows = await cursor.fetchall()
+
+    total_unique = len(rows)
+    owned_unique = 0
+    missing_cards: list[MissingCard] = []
+    total_cost = 0.0
+
+    for r in rows:
+        owned = r["owned"]
+        needed = r["quantity"]
+        if owned >= needed:
+            owned_unique += 1
+        else:
+            price = float(r["price_eur"]) if r["price_eur"] else 0.0
+            missing_qty = needed - owned
+            cost = price * missing_qty
+            total_cost += cost
+            missing_cards.append(MissingCard(
+                name=r["name"],
+                quantity_needed=missing_qty,
+                current_market_price_eur=price,
+            ))
+
+    completeness_pct = (owned_unique / total_unique * 100) if total_unique > 0 else 100.0
+    most_expensive = sorted(missing_cards, key=lambda m: m.current_market_price_eur, reverse=True)[:5]
+
+    return DeckCompletenessResponse(
+        deck_id=deck_id,
+        total_unique_cards=total_unique,
+        owned_unique=owned_unique,
+        completeness_pct=round(completeness_pct, 1),
+        missing_cards=missing_cards,
+        total_acquisition_cost_eur=round(total_cost, 2),
+        most_expensive_missing=most_expensive,
+    )

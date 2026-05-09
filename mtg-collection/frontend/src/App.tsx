@@ -3,6 +3,7 @@ import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 import Dashboard from './pages/Dashboard';
 import Decks from './pages/Decks';
 import DeckView from './pages/DeckView';
+import DeckCompare from './pages/DeckCompare';
 import Collection from './pages/Collection';
 import Cardmarket from './pages/Cardmarket';
 import Settings from './pages/Settings';
@@ -245,6 +246,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/decks" element={<Decks />} />
+            <Route path="/decks/compare" element={<DeckCompare />} />
             <Route path="/decks/:id" element={<DeckView />} />
             <Route path="/collection" element={<Collection />} />
             <Route path="/duplicates" element={<Duplicates />} />

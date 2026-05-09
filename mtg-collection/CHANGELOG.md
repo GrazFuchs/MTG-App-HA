@@ -1,3 +1,33 @@
+## 0.11.0
+
+### Added
+- **Deck Combo Detection** (Sprint 11): Automatic combo discovery via Commander Spellbook integration — combos synced on every deck sync + manual refresh
+- **Deck Compare**: Compare 2–4 decks side-by-side — overlap matrix, common cards, unique-per-deck, color identity intersection (`GET /api/decks/compare?ids=…`)
+- **Deck Completeness**: Per-deck ownership progress bar with missing card list and estimated cost (`GET /api/decks/{id}/completeness`)
+- **Owned-Indicator on Card Search**: Scryfall search results now show `owned_quantity`, `owned_foil_quantity`, and `in_decks` fields (batch query, no N+1)
+- **Combo Detail Dialog**: Click any combo to see cards involved, results, prerequisites, steps, and Spellbook link
+- **DeckCompare Page**: Full deck comparison UI with multi-select dropdowns, overlap matrix grid, URL-param-based state
+- **OwnedBadge Component**: Reusable badge showing "✓ Owned (N×)" with foil indicator and deck tooltip
+- **3 new MCP Tools**: `get_deck_combos`, `compare_decks`, `find_card_in_collection`
+
+### Changed
+- `sync_deck()` now triggers best-effort combo sync after successful Archidekt import (1s rate-limit between decks)
+- Card search endpoints (`/api/cards/search`, `/api/cards/by-name`) enriched with collection ownership data
+- Decks page adds "⌬ Compare Decks" navigation button
+- DeckView page shows Combos section and Completeness section below AI Assessment
+
+### Fixed
+- FastAPI route ordering: `/compare` now correctly defined before `/{deck_id}` to prevent path-parameter matching
+- `GET /api/decks/compare` returns HTTP 400 for non-numeric deck IDs (was unhandled ValueError → 500)
+- React Fragment key warning in DeckCompare overlap matrix
+
+### Technical
+- Schema Migration #12: `deck_combos` table with `deck_id` FK CASCADE, UNIQUE constraint, 2 indexes
+- `backend/app/clients/spellbook.py` — Commander Spellbook API client (singleton)
+- `backend/app/services/combo_sync.py` — combo fetch/cache service with DELETE-before-INSERT strategy
+- `frontend/src/pages/DeckCompare.tsx`, `frontend/src/components/deck/DeckCombosSection.tsx`, `DeckCompletenessSection.tsx`, `ComboDetailDialog.tsx`, `OwnedBadge.tsx` — new components
+- i18n: ~20 new keys per language (EN + DE) for combos, compare, completeness, owned indicators
+
 ## 0.10.0
 
 ### Added
