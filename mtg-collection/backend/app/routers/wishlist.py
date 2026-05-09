@@ -1,15 +1,21 @@
-"""Wishlist API routes — extended with set/foil/priority/status/deck/tags."""
+"""Wishlist API routes — extended with set/foil/priority/status/deck/tags/acquisition."""
 import logging
 from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ..database import get_db
 from ..models.schemas import (
+    AcquisitionStats,
+    MonthBucket,
+    SourceBucket,
+    WishlistAcquireRequest,
     WishlistItemCreate,
     WishlistItemResponse,
     WishlistItemUpdate,
+    WishlistOrderRequest,
     WishlistSummary,
 )
 from ..services.card_resolver import resolve_card
@@ -39,6 +45,13 @@ def _build_item_response(row, current_price: float | None) -> WishlistItemRespon
     """Build a WishlistItemResponse from a DB row + computed price."""
     target = row["target_price_eur"] or 0
     is_deal = current_price is not None and target > 0 and current_price <= target
+    # Compute price delta for acquired items
+    paid = _safe_float(row["paid_price_eur"]) if "paid_price_eur" in row.keys() else None
+    price_delta_eur: float | None = None
+    price_delta_pct: float | None = None
+    if paid is not None and current_price is not None and current_price > 0:
+        price_delta_eur = round(paid - current_price, 2)
+        price_delta_pct = round((paid - current_price) / current_price * 100, 1)
     return WishlistItemResponse(
         id=row["id"],
         card_id=row["card_id"] or 0,
@@ -60,6 +73,14 @@ def _build_item_response(row, current_price: float | None) -> WishlistItemRespon
         current_price_eur=current_price,
         is_deal=is_deal,
         image_uri=row["image_uri"],
+        is_ordered=bool(row["is_ordered"]) if "is_ordered" in row.keys() else False,
+        ordered_at=row["ordered_at"] if "ordered_at" in row.keys() else None,
+        expected_price_eur=_safe_float(row["expected_price_eur"]) if "expected_price_eur" in row.keys() else None,
+        paid_price_eur=paid,
+        source=row["source"] if "source" in row.keys() else None,
+        not_received_at=row["not_received_at"] if "not_received_at" in row.keys() else None,
+        price_delta_eur=price_delta_eur,
+        price_delta_pct=price_delta_pct,
     )
 
 
@@ -77,6 +98,8 @@ _BASE_SELECT = """
     SELECT w.id, w.card_id, w.target_price_eur, w.notes, w.added_at,
            w.set_code, w.is_foil, w.quantity, w.priority, w.status,
            w.deck_id, w.tags, w.acquired_at,
+           w.is_ordered, w.ordered_at, w.expected_price_eur,
+           w.paid_price_eur, w.source, w.not_received_at,
            c.name AS card_name, c.scryfall_id, c.image_uri,
            c.set_name, c.price_eur, c.price_eur_foil,
            d.name AS deck_name,
@@ -189,11 +212,12 @@ async def export_json():
 
 @router.get("/", response_model=list[WishlistItemResponse])
 async def list_wishlist(
-    status: str = Query("wanted", description="Filter by status. Use '*' for all."),
+    status: str = Query("wanted", description="Filter by status. Use '*' for all, 'ordered' for is_ordered=1."),
     priority: int | None = Query(None, ge=1, le=5, description="Filter by priority"),
     deck_id: int | None = Query(None, description="Filter by deck"),
     tag: str | None = Query(None, description="Filter by tag"),
     is_deal_only: bool = Query(False, description="Only items where current <= target"),
+    is_ordered: Optional[bool] = Query(None, description="Filter by ordered flag"),
     sort: str = Query("priority", description="Sort field: priority|added_at|target_price|current_price|delta_eur"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -204,9 +228,19 @@ async def list_wishlist(
     conditions = ["w.removed_at IS NULL"]
     params: list = []
 
-    if status != "*":
+    if status == "ordered":
+        # Convenience alias: ordered = wanted + is_ordered=1
+        conditions.append("w.status = 'wanted'")
+        conditions.append("w.is_ordered = 1")
+    elif status != "*":
         conditions.append("w.status = ?")
         params.append(status)
+        if is_ordered is not None:
+            conditions.append("w.is_ordered = ?")
+            params.append(1 if is_ordered else 0)
+    elif is_ordered is not None:
+        conditions.append("w.is_ordered = ?")
+        params.append(1 if is_ordered else 0)
 
     if priority is not None:
         conditions.append("w.priority = ?")
@@ -432,9 +466,9 @@ async def remove_from_wishlist(item_id: int):
     return {"ok": True}
 
 
-@router.post("/{item_id}/acquire")
-async def acquire_wishlist_item(item_id: int):
-    """Mark item as acquired with timestamp."""
+@router.post("/{item_id}/order")
+async def order_wishlist_item(item_id: int, body: WishlistOrderRequest | None = None):
+    """Mark a wishlist item as ordered (bought but not yet received)."""
     db = await get_db()
     cursor = await db.execute(
         "SELECT id, status FROM wishlist WHERE id = ? AND removed_at IS NULL",
@@ -444,14 +478,204 @@ async def acquire_wishlist_item(item_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Item not found")
     if row["status"] == "acquired":
-        raise HTTPException(status_code=400, detail="Already acquired")
+        raise HTTPException(status_code=400, detail="Cannot order an already acquired item")
+    if row["status"] == "not_received":
+        raise HTTPException(status_code=400, detail="Cannot order an item marked as not received")
+
+    expected = body.expected_price_eur if body else None
+    await db.execute(
+        """UPDATE wishlist SET is_ordered = 1, ordered_at = CURRENT_TIMESTAMP,
+           expected_price_eur = COALESCE(?, expected_price_eur)
+           WHERE id = ?""",
+        (expected, item_id),
+    )
+    await db.commit()
+    return {"ok": True, "is_ordered": True}
+
+
+@router.post("/{item_id}/unorder")
+async def unorder_wishlist_item(item_id: int):
+    """Undo the ordered flag (e.g. cancelled order)."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, is_ordered FROM wishlist WHERE id = ? AND removed_at IS NULL",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if not row["is_ordered"]:
+        raise HTTPException(status_code=400, detail="Item is not ordered")
 
     await db.execute(
-        "UPDATE wishlist SET status = 'acquired', acquired_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE wishlist SET is_ordered = 0, ordered_at = NULL WHERE id = ?",
         (item_id,),
     )
     await db.commit()
+    return {"ok": True, "is_ordered": False}
+
+
+@router.post("/{item_id}/acquire")
+async def acquire_wishlist_item(item_id: int, body: WishlistAcquireRequest | None = None):
+    """Mark item as acquired with optional paid_price_eur and source."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, status, is_ordered, expected_price_eur FROM wishlist WHERE id = ? AND removed_at IS NULL",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if row["status"] == "acquired":
+        raise HTTPException(status_code=400, detail="Already acquired")
+
+    paid_price = None
+    source = None
+    if body:
+        paid_price = body.paid_price_eur
+        source = body.source
+    # If was ordered and no paid_price given, use expected_price as paid_price
+    if paid_price is None and row["is_ordered"] and row["expected_price_eur"] is not None:
+        paid_price = row["expected_price_eur"]
+
+    await db.execute(
+        """UPDATE wishlist
+           SET status = 'acquired', acquired_at = CURRENT_TIMESTAMP,
+               is_ordered = 0, paid_price_eur = COALESCE(?, paid_price_eur),
+               source = COALESCE(?, source)
+           WHERE id = ?""",
+        (paid_price, source, item_id),
+    )
+    await db.commit()
     return {"ok": True, "status": "acquired"}
+
+
+@router.post("/{item_id}/mark-not-received")
+async def mark_not_received(item_id: int):
+    """Mark an ordered item as not received (lost package, refund, etc.)."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id, status FROM wishlist WHERE id = ? AND removed_at IS NULL",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    await db.execute(
+        """UPDATE wishlist
+           SET status = 'not_received', not_received_at = CURRENT_TIMESTAMP, is_ordered = 0
+           WHERE id = ?""",
+        (item_id,),
+    )
+    await db.commit()
+    return {"ok": True, "status": "not_received"}
+
+
+@router.get("/acquisitions/stats", response_model=AcquisitionStats)
+async def acquisition_stats(days: int = Query(365, ge=1, le=3650)):
+    """Aggregate acquired items over a time window."""
+    db = await get_db()
+
+    # Total aggregates
+    cursor = await db.execute(
+        """
+        SELECT
+            COUNT(*) AS total_acquired,
+            COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS total_spent,
+            COALESCE(SUM(
+                COALESCE(
+                    (SELECT ph.trend FROM cardmarket_products cp
+                     JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                     WHERE LOWER(cp.card_name) = LOWER(c.name)
+                     ORDER BY ph.date DESC LIMIT 1),
+                    CAST(NULLIF(c.price_eur, '') AS REAL),
+                    0
+                ) * w.quantity
+            ), 0) AS total_current_value
+        FROM wishlist w
+        LEFT JOIN cards c ON c.id = w.card_id
+        WHERE w.removed_at IS NULL
+          AND w.status = 'acquired'
+          AND w.acquired_at >= datetime('now', ? || ' days')
+        """,
+        (f"-{days}",),
+    )
+    totals = await cursor.fetchone()
+
+    # By source
+    cursor = await db.execute(
+        """
+        SELECT
+            COALESCE(w.source, 'unknown') AS source,
+            COUNT(*) AS count,
+            COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS total_spent,
+            COALESCE(SUM(
+                COALESCE(
+                    (SELECT ph.trend FROM cardmarket_products cp
+                     JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                     WHERE LOWER(cp.card_name) = LOWER(c.name)
+                     ORDER BY ph.date DESC LIMIT 1),
+                    CAST(NULLIF(c.price_eur, '') AS REAL),
+                    0
+                ) * w.quantity
+            ), 0) AS total_value
+        FROM wishlist w
+        LEFT JOIN cards c ON c.id = w.card_id
+        WHERE w.removed_at IS NULL
+          AND w.status = 'acquired'
+          AND w.acquired_at >= datetime('now', ? || ' days')
+        GROUP BY COALESCE(w.source, 'unknown')
+        ORDER BY total_spent DESC
+        """,
+        (f"-{days}",),
+    )
+    source_rows = await cursor.fetchall()
+    by_source = [
+        SourceBucket(
+            source=r["source"],
+            count=r["count"],
+            total_spent_eur=round(r["total_spent"], 2),
+            total_current_value_eur=round(r["total_value"], 2),
+        )
+        for r in source_rows
+    ]
+
+    # By month (last 12 months in window)
+    cursor = await db.execute(
+        """
+        SELECT
+            strftime('%Y-%m', w.acquired_at) AS month,
+            COUNT(*) AS count,
+            COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS spent
+        FROM wishlist w
+        WHERE w.removed_at IS NULL
+          AND w.status = 'acquired'
+          AND w.acquired_at >= datetime('now', ? || ' days')
+          AND w.acquired_at IS NOT NULL
+        GROUP BY strftime('%Y-%m', w.acquired_at)
+        ORDER BY month DESC
+        LIMIT 12
+        """,
+        (f"-{days}",),
+    )
+    month_rows = await cursor.fetchall()
+    by_month = [
+        MonthBucket(
+            month=r["month"],
+            count=r["count"],
+            spent=round(r["spent"], 2),
+        )
+        for r in month_rows
+    ]
+
+    return AcquisitionStats(
+        total_acquired=totals["total_acquired"],
+        total_spent_eur=round(totals["total_spent"], 2),
+        total_current_value_eur=round(totals["total_current_value"], 2),
+        by_source=by_source,
+        by_month=by_month,
+    )
 
 
 @router.post("/{item_id}/restore")

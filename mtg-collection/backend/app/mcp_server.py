@@ -946,6 +946,252 @@ async def analyze_deck_completeness(deck_id: int) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+async def mark_wishlist_ordered(item_id: int, expected_price_eur: float | None = None) -> str:
+    """Mark a wishlist item as ordered (bought but not yet received).
+
+    Use this when the user confirms they bought a card but it hasn't arrived yet
+    (Whatnot stream, Cardmarket order, etc).
+
+    Args:
+        item_id: ID of the wishlist item.
+        expected_price_eur: Expected price paid per copy (optional).
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT id, status, card_id FROM wishlist WHERE id = ? AND removed_at IS NULL",
+            (item_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return json.dumps({"error": f"Wishlist item {item_id} not found"})
+        if row["status"] == "acquired":
+            return json.dumps({"error": "Item is already acquired"})
+
+        await db.execute(
+            """UPDATE wishlist SET is_ordered = 1, ordered_at = CURRENT_TIMESTAMP,
+               expected_price_eur = COALESCE(?, expected_price_eur)
+               WHERE id = ?""",
+            (expected_price_eur, item_id),
+        )
+        await db.commit()
+        return json.dumps({"ok": True, "item_id": item_id, "is_ordered": True,
+                           "expected_price_eur": expected_price_eur})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def mark_wishlist_acquired(
+    item_id: int,
+    paid_price_eur: float | None = None,
+    source: str | None = None,
+) -> str:
+    """Mark a wishlist item as acquired (received and added to physical collection).
+
+    source: one of cardmarket, whatnot, booster, trade, gift, shop, other.
+    If item was ordered with expected_price_eur and paid_price_eur is None,
+    expected_price_eur is used as the paid price.
+
+    Args:
+        item_id: ID of the wishlist item.
+        paid_price_eur: Actual price paid per copy.
+        source: Acquisition source (cardmarket|whatnot|booster|trade|gift|shop|other).
+    """
+    from .database import get_db
+    try:
+        valid_sources = {"cardmarket", "whatnot", "booster", "trade", "gift", "shop", "other", None}
+        if source not in valid_sources:
+            return json.dumps({"error": f"Invalid source '{source}'. Must be one of: {', '.join(s for s in valid_sources if s)}"})
+
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT id, status, is_ordered, expected_price_eur FROM wishlist WHERE id = ? AND removed_at IS NULL",
+            (item_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return json.dumps({"error": f"Wishlist item {item_id} not found"})
+        if row["status"] == "acquired":
+            return json.dumps({"error": "Item is already acquired"})
+
+        # Fall back to expected_price_eur if ordered and no paid_price given
+        actual_paid = paid_price_eur
+        if actual_paid is None and row["is_ordered"] and row["expected_price_eur"] is not None:
+            actual_paid = row["expected_price_eur"]
+
+        await db.execute(
+            """UPDATE wishlist
+               SET status = 'acquired', acquired_at = CURRENT_TIMESTAMP,
+                   is_ordered = 0,
+                   paid_price_eur = COALESCE(?, paid_price_eur),
+                   source = COALESCE(?, source)
+               WHERE id = ?""",
+            (actual_paid, source, item_id),
+        )
+        await db.commit()
+        return json.dumps({"ok": True, "item_id": item_id, "status": "acquired",
+                           "paid_price_eur": actual_paid, "source": source})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def mark_wishlist_not_received(item_id: int) -> str:
+    """Mark a wishlist item as not received (was ordered but never arrived).
+
+    Use this for lost packages, failed Whatnot deliveries, refunds where the seller
+    never shipped.
+
+    Args:
+        item_id: ID of the wishlist item.
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT id FROM wishlist WHERE id = ? AND removed_at IS NULL",
+            (item_id,),
+        )
+        if not await cursor.fetchone():
+            return json.dumps({"error": f"Wishlist item {item_id} not found"})
+
+        await db.execute(
+            """UPDATE wishlist
+               SET status = 'not_received', not_received_at = CURRENT_TIMESTAMP, is_ordered = 0
+               WHERE id = ?""",
+            (item_id,),
+        )
+        await db.commit()
+        return json.dumps({"ok": True, "item_id": item_id, "status": "not_received"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def get_acquisition_stats(days: int = 30) -> str:
+    """Get acquisition statistics for the last N days.
+
+    Returns: total acquired, total spent, current market value, source breakdown,
+    monthly distribution. Useful for 'what did I buy this month and what's it worth'.
+
+    Args:
+        days: Number of days to look back (default 30, max 3650).
+    """
+    from .database import get_db
+    try:
+        days = max(1, min(3650, days))
+        db = await get_db()
+
+        cursor = await db.execute(
+            """
+            SELECT
+                COUNT(*) AS total_acquired,
+                COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS total_spent,
+                COALESCE(SUM(
+                    COALESCE(
+                        (SELECT ph.trend FROM cardmarket_products cp
+                         JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+                         WHERE LOWER(cp.card_name) = LOWER(c.name)
+                         ORDER BY ph.date DESC LIMIT 1),
+                        CAST(NULLIF(c.price_eur, '') AS REAL),
+                        0
+                    ) * w.quantity
+                ), 0) AS total_current_value
+            FROM wishlist w
+            LEFT JOIN cards c ON c.id = w.card_id
+            WHERE w.removed_at IS NULL
+              AND w.status = 'acquired'
+              AND w.acquired_at >= datetime('now', ? || ' days')
+            """,
+            (f"-{days}",),
+        )
+        totals = await cursor.fetchone()
+
+        cursor = await db.execute(
+            """
+            SELECT
+                COALESCE(w.source, 'unknown') AS source,
+                COUNT(*) AS count,
+                COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS total_spent
+            FROM wishlist w
+            WHERE w.removed_at IS NULL
+              AND w.status = 'acquired'
+              AND w.acquired_at >= datetime('now', ? || ' days')
+            GROUP BY COALESCE(w.source, 'unknown')
+            ORDER BY total_spent DESC
+            """,
+            (f"-{days}",),
+        )
+        by_source = [{"source": r[0], "count": r[1], "total_spent_eur": round(r[2], 2)}
+                     for r in await cursor.fetchall()]
+
+        cursor = await db.execute(
+            """
+            SELECT
+                strftime('%Y-%m', w.acquired_at) AS month,
+                COUNT(*) AS count,
+                COALESCE(SUM(COALESCE(w.paid_price_eur, 0) * w.quantity), 0) AS spent
+            FROM wishlist w
+            WHERE w.removed_at IS NULL
+              AND w.status = 'acquired'
+              AND w.acquired_at >= datetime('now', ? || ' days')
+              AND w.acquired_at IS NOT NULL
+            GROUP BY strftime('%Y-%m', w.acquired_at)
+            ORDER BY month DESC
+            LIMIT 12
+            """,
+            (f"-{days}",),
+        )
+        by_month = [{"month": r[0], "count": r[1], "spent": round(r[2], 2)}
+                    for r in await cursor.fetchall()]
+
+        return json.dumps({
+            "days": days,
+            "total_acquired": totals["total_acquired"],
+            "total_spent_eur": round(totals["total_spent"], 2),
+            "total_current_value_eur": round(totals["total_current_value"], 2),
+            "profit_loss_eur": round(totals["total_current_value"] - totals["total_spent"], 2),
+            "by_source": by_source,
+            "by_month": by_month,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def analyze_my_listings(threshold_pct: float = 15.0) -> str:
+    """Analyze Cardmarket listings vs current market trend.
+
+    Returns listings categorized as:
+    - underpriced: my price < trend - threshold_pct (suggest raising)
+    - overpriced: my price > trend + threshold_pct (won't sell, suggest lowering)
+    - fair: within threshold of trend
+
+    Args:
+        threshold_pct: Tolerance band in percent (default 15%). Listings within
+                       this band of the trend price are considered fair.
+    """
+    from .services.listing_health import analyze_listings
+    try:
+        result = await analyze_listings(threshold_pct)
+        summary = {
+            "threshold_pct": threshold_pct,
+            "underpriced_count": len(result["underpriced"]),
+            "overpriced_count": len(result["overpriced"]),
+            "fair_count": len(result["fair"]),
+            "no_match_count": len(result["no_match"]),
+            "underpriced": result["underpriced"],
+            "overpriced": result["overpriced"],
+            "fair": result["fair"],
+        }
+        return json.dumps(summary, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Resources ---
 
 @mcp.resource("mtg://collection/stats")

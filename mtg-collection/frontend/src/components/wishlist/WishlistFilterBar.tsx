@@ -21,7 +21,7 @@ const useStyles = makeStyles({
 });
 
 export interface WishlistFilters {
-  status: 'wanted' | 'acquired' | 'dropped' | 'all';
+  status: 'wanted' | 'acquired' | 'dropped' | 'not_received' | 'all';
   priority: number | null;
   deckId: number | null;
   tag: string | null;
@@ -71,6 +71,7 @@ const STATUS_OPTIONS: { value: WishlistFilters['status']; label: string }[] = [
   { value: 'wanted', label: 'wishlist.filter_wanted' },
   { value: 'acquired', label: 'wishlist.filter_acquired' },
   { value: 'dropped', label: 'wishlist.filter_dropped' },
+  { value: 'not_received', label: 'wishlist.status_not_received' },
 ];
 
 const SORT_OPTIONS: { value: WishlistFilters['sort']; label: string }[] = [

@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
+SOURCE_VALUES = Literal["cardmarket", "whatnot", "booster", "trade", "gift", "shop", "other"]
+
 
 # --- Card Models ---
 
@@ -219,7 +221,7 @@ class WishlistItemCreate(BaseModel):
     quantity: int = Field(1, ge=1, le=99)
     target_price_eur: float = Field(0, ge=0)
     priority: int = Field(3, ge=1, le=5)
-    status: Literal["wanted", "acquired", "dropped"] = "wanted"
+    status: Literal["wanted", "acquired", "dropped", "not_received"] = "wanted"
     deck_id: int | None = None
     tags: str = ""
     notes: str = ""
@@ -229,11 +231,20 @@ class WishlistItemUpdate(BaseModel):
     """All fields optional for PATCH semantics."""
     target_price_eur: float | None = Field(None, ge=0)
     priority: int | None = Field(None, ge=1, le=5)
-    status: Literal["wanted", "acquired", "dropped"] | None = None
+    status: Literal["wanted", "acquired", "dropped", "not_received"] | None = None
     deck_id: int | None = None
     tags: str | None = None
     notes: str | None = None
     quantity: int | None = Field(None, ge=1, le=99)
+
+
+class WishlistOrderRequest(BaseModel):
+    expected_price_eur: float | None = Field(None, ge=0)
+
+
+class WishlistAcquireRequest(BaseModel):
+    paid_price_eur: float | None = Field(None, ge=0)
+    source: SOURCE_VALUES | None = None
 
 
 class WishlistItemResponse(BaseModel):
@@ -257,6 +268,36 @@ class WishlistItemResponse(BaseModel):
     current_price_eur: float | None = None
     is_deal: bool = False
     image_uri: str | None = None
+    # Sprint 9: Acquisition tracking fields
+    is_ordered: bool = False
+    ordered_at: str | None = None
+    expected_price_eur: float | None = None
+    paid_price_eur: float | None = None
+    source: str | None = None
+    not_received_at: str | None = None
+    price_delta_eur: float | None = None
+    price_delta_pct: float | None = None
+
+
+class SourceBucket(BaseModel):
+    source: str
+    count: int
+    total_spent_eur: float
+    total_current_value_eur: float
+
+
+class MonthBucket(BaseModel):
+    month: str
+    count: int
+    spent: float
+
+
+class AcquisitionStats(BaseModel):
+    total_acquired: int
+    total_spent_eur: float
+    total_current_value_eur: float
+    by_source: list[SourceBucket]
+    by_month: list[MonthBucket]
 
 
 class WishlistSummary(BaseModel):

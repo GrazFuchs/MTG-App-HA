@@ -373,6 +373,32 @@ async def _migration_10(db: aiosqlite.Connection):
             await db.execute(stmt)
 
 
+async def _migration_11(db: aiosqlite.Connection):
+    """Wishlist: add acquisition tracking fields (paid_price_eur, expected_price_eur, source,
+    is_ordered, ordered_at, not_received_at)."""
+    cursor = await db.execute("PRAGMA table_info(wishlist)")
+    columns = {row[1] for row in await cursor.fetchall()}
+
+    additions = {
+        "paid_price_eur": "ALTER TABLE wishlist ADD COLUMN paid_price_eur REAL DEFAULT NULL",
+        "expected_price_eur": "ALTER TABLE wishlist ADD COLUMN expected_price_eur REAL DEFAULT NULL",
+        "source": "ALTER TABLE wishlist ADD COLUMN source TEXT DEFAULT NULL",
+        "is_ordered": "ALTER TABLE wishlist ADD COLUMN is_ordered INTEGER DEFAULT 0",
+        "ordered_at": "ALTER TABLE wishlist ADD COLUMN ordered_at TIMESTAMP DEFAULT NULL",
+        "not_received_at": "ALTER TABLE wishlist ADD COLUMN not_received_at TIMESTAMP DEFAULT NULL",
+    }
+    for col, stmt in additions.items():
+        if col not in columns:
+            await db.execute(stmt)
+
+    # Performance index for acquisition stats queries
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_wishlist_status_acquired
+        ON wishlist(status, acquired_at)
+        WHERE status = 'acquired'
+    """)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -383,6 +409,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     8: _migration_8,
     9: _migration_9,
     10: _migration_10,
+    11: _migration_11,
 }
 
 

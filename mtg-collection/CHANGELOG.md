@@ -1,3 +1,35 @@
+## 0.10.0
+
+### Added
+- **Acquisition Tracking** (Sprint 9): Wishlist items now track the full buy-lifecycle via new fields `paid_price_eur`, `expected_price_eur`, `source`, `is_ordered`, `ordered_at`, `not_received_at` (Schema Migration #11)
+- **Order Flow**: `POST /api/wishlist/{id}/order` marks an item as ordered with optional expected price; `POST /api/wishlist/{id}/unorder` cancels it. Ordered items show a 📦 badge with expected price in the Active-Tab
+- **Acquire Dialog**: "Mark as Received" opens a dialog pre-filled with `expected_price_eur`; user can adjust to actual paid price and select source (`cardmarket | whatnot | booster | trade | gift | shop | other`)
+- **Not-Received Flow**: `POST /api/wishlist/{id}/mark-not-received` sets `status=not_received` + timestamp — for lost packages and failed deliveries
+- **Acquisition Stats**: `GET /api/wishlist/acquisitions/stats?days=N` returns total acquired count, total spent, current market value, breakdown by source and by month (last 12)
+- **Wishlist Tabs**: Four tabs on the Wishlist page — Active (wanted) · History (acquired) · Lost (not_received) · Dropped — each with live item count badge; tab selection persisted to URL (`?tab=…`)
+- **History Δ-Column**: Acquired items show paid price vs current market price with color-coded Δ (green = cheaper than market, red = paid more)
+- **Listing Health**: `GET /api/cardmarket/listings/health?threshold_pct=15` compares each listing against the latest Cardmarket trend price; returns buckets: `underpriced`, `overpriced`, `fair`, `no_match`. Listings with `price=0` or no trend data go to `no_match`
+- **ListingHealthPanel**: New UI panel on the Cardmarket page with threshold slider, bucket filter chips, and suggested-price table
+- **5 new MCP Tools**: `mark_wishlist_ordered`, `mark_wishlist_acquired`, `mark_wishlist_not_received`, `get_acquisition_stats`, `analyze_my_listings`
+
+### Changed
+- `POST /api/wishlist/{id}/acquire` now accepts optional body `{paid_price_eur, source}`; falls back to `expected_price_eur` when item was previously ordered and no paid price is given
+- `GET /api/wishlist/` supports new query params `is_ordered: bool` and convenience alias `status=ordered`
+- `WishlistItemRow` actions menu extended with Order / Undo Order / Not Received items (context-sensitive)
+- Pydantic `WishlistItemCreate` / `WishlistItemUpdate` status Literal extended with `not_received`
+- i18n (EN + DE): `action_order`, `action_unorder`, `action_not_received`, `status_ordered`, `status_not_received`, tab labels
+
+### Fixed
+- `POST /api/wishlist/{id}/order` now returns 400 for already-acquired or not-received items (was silently succeeding)
+- `POST /api/wishlist/{id}/unorder` now returns 400 "Item is not ordered" if `is_ordered=0` (was missing validation)
+- Listing Health: listings with `price=0` no longer misclassified as underpriced — moved to `no_match`
+
+### Technical
+- `backend/app/services/listing_health.py` — new service (extracted from cardmarket router)
+- `idx_wishlist_status_acquired` partial index on `wishlist(status, acquired_at) WHERE status='acquired'` for stats query performance
+- `WishlistAcquireDialog.tsx`, `WishlistOrderDialog.tsx` — new frontend components
+- `ListingHealthPanel.tsx` — new cardmarket component with threshold slider
+
 ## 0.9.0
 
 ### Added

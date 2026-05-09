@@ -11,6 +11,7 @@ import { ArrowUpload24Regular, ArrowDownload24Regular, ChartMultiple24Regular } 
 import { api, CardmarketListing, PriceAlert, PriceHistoryEntry } from '../api';
 import { Sparkline } from '../components/Sparkline';
 import { CardmarketWorkflowBanner } from '../components/cardmarket/CardmarketWorkflowBanner';
+import ListingHealthPanel from '../components/cardmarket/ListingHealthPanel';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
@@ -365,6 +366,10 @@ export default function Cardmarket() {
           ))}
         </Panel>
       )}
+
+      {/* Listing Health */}
+      <SectionHeader num="03" title="Listing Health" right="vs TREND" accent={accent.oklch} />
+      <ListingHealthPanel />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import csv
 import io
 from datetime import date
 
-from fastapi import APIRouter, UploadFile, File, Query
+from fastapi import APIRouter, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -11,6 +11,7 @@ from ..database import get_db
 from ..models.schemas import CardmarketListing, CardmarketImportResult
 from ..services.cardmarket_import import import_cardmarket_csv
 from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
+from ..services.listing_health import analyze_listings
 
 router = APIRouter()
 
@@ -213,3 +214,12 @@ async def clear_all_listings():
     await db.execute("DELETE FROM cardmarket_listings")
     await db.commit()
     return {"status": "cleared"}
+
+
+@router.get("/listings/health")
+async def listing_health(threshold_pct: float = Query(15.0, ge=0, le=100)):
+    """Analyze Cardmarket listings vs current trend price.
+
+    Returns four buckets: underpriced, overpriced, fair, no_match.
+    """
+    return await analyze_listings(threshold_pct)

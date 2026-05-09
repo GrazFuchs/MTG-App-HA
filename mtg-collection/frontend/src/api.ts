@@ -144,6 +144,13 @@ export interface CollectionStats {
   cardmarket_total_value: number;
 }
 
+export type WishlistSource =
+  | 'cardmarket' | 'whatnot' | 'booster' | 'trade'
+  | 'gift' | 'shop' | 'other';
+
+export type WishlistStatus =
+  | 'wanted' | 'ordered' | 'acquired' | 'dropped' | 'not_received';
+
 export interface WishlistItem {
   id: number;
   card_id: number;
@@ -155,7 +162,7 @@ export interface WishlistItem {
   quantity: number;
   target_price_eur: number;
   priority: number;
-  status: 'wanted' | 'acquired' | 'dropped';
+  status: 'wanted' | 'acquired' | 'dropped' | 'not_received';
   deck_id: number | null;
   deck_name: string | null;
   tags: string[];
@@ -165,6 +172,15 @@ export interface WishlistItem {
   current_price_eur: number | null;
   is_deal: boolean;
   image_uri: string | null;
+  // Sprint 9: Acquisition tracking
+  is_ordered: boolean;
+  ordered_at: string | null;
+  expected_price_eur: number | null;
+  paid_price_eur: number | null;
+  source: WishlistSource | null;
+  not_received_at: string | null;
+  price_delta_eur: number | null;
+  price_delta_pct: number | null;
 }
 
 export interface WishlistSummary {
@@ -191,6 +207,39 @@ export interface CardPrinting {
   price_eur_foil: number | null;
   is_foil_available: boolean;
   is_nonfoil_available: boolean;
+}
+
+export interface AcquisitionStats {
+  total_acquired: number;
+  total_spent_eur: number;
+  total_current_value_eur: number;
+  by_source: Array<{
+    source: string;
+    count: number;
+    total_spent_eur: number;
+    total_current_value_eur: number;
+  }>;
+  by_month: Array<{
+    month: string;
+    count: number;
+    spent: number;
+  }>;
+}
+
+export interface ListingHealthBucket {
+  listing_id: number;
+  card_name: string;
+  my_price: number;
+  trend_price: number;
+  suggested_price: number;
+  delta_pct: number;
+}
+
+export interface ListingHealthResponse {
+  underpriced: ListingHealthBucket[];
+  overpriced: ListingHealthBucket[];
+  fair: ListingHealthBucket[];
+  no_match: Array<{ listing_id: number; card_name: string; my_price: number }>;
 }
 
 export interface WishlistAddPayload {
@@ -382,8 +431,22 @@ export const api = {
     request<WishlistItem>(`/api/wishlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   removeFromWishlist: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}`, { method: 'DELETE' }),
-  acquireWishlistItem: (id: number) =>
-    request<{ ok: boolean }>(`/api/wishlist/${id}/acquire`, { method: 'POST' }),
+  acquireWishlistItem: (id: number, paid_price_eur?: number, source?: WishlistSource) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/acquire`, {
+      method: 'POST',
+      body: JSON.stringify({ paid_price_eur: paid_price_eur ?? null, source: source ?? null }),
+    }),
+  markWishlistOrdered: (id: number, expected_price_eur?: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/order`, {
+      method: 'POST',
+      body: JSON.stringify({ expected_price_eur: expected_price_eur ?? null }),
+    }),
+  unorderWishlistItem: (id: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/unorder`, { method: 'POST' }),
+  markWishlistNotReceived: (id: number) =>
+    request<{ ok: boolean }>(`/api/wishlist/${id}/mark-not-received`, { method: 'POST' }),
+  getAcquisitionStats: (days = 365) =>
+    request<AcquisitionStats>(`/api/wishlist/acquisitions/stats?days=${days}`),
   restoreWishlistItem: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}/restore`, { method: 'POST' }),
   getCardPrintings: (cardName: string) =>
@@ -391,4 +454,8 @@ export const api = {
 
   // MCP Setup
   getMcpSetupInstructions: () => request<MCPSetupInstructions>('/api/mcp/setup-instructions'),
+
+  // Listing health
+  getListingHealth: (threshold_pct = 15) =>
+    request<ListingHealthResponse>(`/api/cardmarket/listings/health?threshold_pct=${threshold_pct}`),
 };
