@@ -12,7 +12,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { api, ListingHealthBucket, ListingHealthResponse } from '../../api';
 import { sothera } from '../../theme/sothera';
-import { Panel, SectionHeader } from '../sothera';
+import { Panel } from '../sothera';
 
 const useStyles = makeStyles({
   summary: {
@@ -104,8 +104,6 @@ export default function ListingHealthPanel() {
 
   return (
     <Panel>
-      <SectionHeader>Listing Health</SectionHeader>
-
       <div className={styles.thresholdRow}>
         <Field label={`Threshold: ±${threshold}%`} style={{ flex: '0 0 220px' }}>
           <Slider
