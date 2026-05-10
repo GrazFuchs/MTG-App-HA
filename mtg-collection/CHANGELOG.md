@@ -1,3 +1,23 @@
+## 0.13.0
+
+### Added
+- **Sprint 13 — Triage Polish, Categorization & Hover-Fix**
+- **CardHoverPreview Refactor**: Portal-based hover preview (`createPortal` → `document.body`), z-index 2147483000 — survives all Fluent UI dialogs; auto-hides on scroll/resize; 200 ms show delay; bounds-checked with oracle-text height
+- **Sibling-Aware Triage**: Advisor detects earlier pending events for the same card (`ae.id < current`) and factors them into sell/keep logic — prevents double-keep on batch imports
+- **Sell Price Pre-Fill**: Triage dialog pre-fills price from Cardmarket trend price (falls back to Scryfall EUR); hint text shown below field; uses `triage.sell_price_hint` i18n key
+- **Multi-Copy Sell Qty**: `sold_new` triage exposes quantity selector (1…qty_delta) when more than one copy arrived; `sell_qty` validated server-side (422 if > qty_delta)
+- **Inbox Filter Bar**: Three filter pills — All / Suggested: Sell / Suggested: Keep — URL-persistent via `useSearchParams`
+- **Inbox Color-Grouping**: Events grouped by MTG color bucket (W/U/B/R/G/M/C/L), collapsible sections, collapse state persisted in localStorage
+- **Duplicates Page Filter+Group+Sort**: Search, color dropdown, set dropdown, group-by (None/Color/Set), sort (value/extras/name/set/color) — all URL-persistent
+- **Cardmarket Listings Filter**: Color, set, source (Draft/Imported), sort dropdowns; Pending-first split renders Draft and Live sections separately; card name wrapped in `CardHoverPreview`
+- **`secret_lair` Source**: Added to `SOURCE_VALUES`, `WishlistSource`, `SourcePicker`, and `WishlistAcquireDialog`
+- **`utils/colors.ts`**: New shared `getColorBucket` utility + `BUCKET_ORDER/LABELS/EMOJI` constants
+- **i18n**: 20 new keys in EN + DE (inbox filters, color labels, triage hints, source, duplicates group-by, cardmarket sections)
+
+### Fixed
+- `TriageDecisionDialog` price hint now uses `t('triage.sell_price_hint')` instead of hardcoded English string
+- Added `CREATE INDEX idx_cards_name_lower ON cards(name COLLATE NOCASE)` for sibling query and listings JOIN performance
+
 ## 0.12.0
 
 ### Added

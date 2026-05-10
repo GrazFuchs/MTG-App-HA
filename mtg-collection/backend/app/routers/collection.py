@@ -232,6 +232,10 @@ async def remove_from_collection(entry_id: int):
 @router.get("/duplicates")
 async def list_duplicates(
     search: str = Query("", description="Search by card name"),
+    color: str = Query("", description="W/U/B/R/G/M/C/L"),
+    set_code: str = Query(""),
+    sort_by: str = Query("extras_value", description="extras, extras_value, name, set, color"),
+    sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
@@ -243,8 +247,48 @@ async def list_duplicates(
     if search:
         conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
+    if set_code:
+        conditions.append("LOWER(c.set_code) = LOWER(?)")
+        params.append(set_code)
+    if color:
+        color_upper = color.upper()
+        if color_upper in ("W", "U", "B", "R", "G"):
+            # Single color: color_identity contains exactly this letter (and no others for mono)
+            conditions.append("c.color_identity LIKE ?")
+            params.append(f'%"{color_upper}"%')
+            conditions.append("c.color_identity NOT LIKE '%,%'")
+        elif color_upper == "M":
+            conditions.append("c.color_identity LIKE '%,%'")
+        elif color_upper == "C":
+            conditions.append("c.color_identity = '[]'")
+        elif color_upper == "L":
+            conditions.append("c.type_line LIKE '%Land%'")
 
     where = " AND ".join(conditions) if conditions else "1=1"
+
+    # Sort mapping — color sort uses WUBRG ordering via CASE
+    COLOR_ORDER_SQL = """
+        CASE
+            WHEN c.type_line LIKE '%Land%' THEN 8
+            WHEN c.color_identity = '[]' THEN 7
+            WHEN c.color_identity LIKE '%,%' THEN 6
+            WHEN c.color_identity LIKE '%"W"%' THEN 1
+            WHEN c.color_identity LIKE '%"U"%' THEN 2
+            WHEN c.color_identity LIKE '%"B"%' THEN 3
+            WHEN c.color_identity LIKE '%"R"%' THEN 4
+            WHEN c.color_identity LIKE '%"G"%' THEN 5
+            ELSE 9
+        END
+    """
+    sort_col = {
+        "extras": "(SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0))",
+        "extras_value": "(CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) * (SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)))",
+        "name": "LOWER(c.name)",
+        "set": "LOWER(c.set_name)",
+        "color": COLOR_ORDER_SQL,
+    }.get(sort_by, "(CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) * (SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)))")
+    direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+
     offset = (page - 1) * page_size
 
     count_query = f"""
@@ -264,7 +308,7 @@ async def list_duplicates(
 
     query = f"""
         SELECT c.name, c.set_name, c.set_code, c.rarity, c.image_uri,
-            c.price_eur, c.price_eur_foil,
+            c.price_eur, c.price_eur_foil, c.color_identity, c.type_line,
             SUM(col.quantity) as total_qty, SUM(col.foil_quantity) as total_foil,
             COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0) as in_decks,
             c.id as card_id, c.collector_number
@@ -273,13 +317,12 @@ async def list_duplicates(
         AND c.type_line NOT LIKE '%Basic Land%'
         GROUP BY c.name
         HAVING (total_qty + total_foil) > in_decks AND (total_qty + total_foil) > 1
-        ORDER BY (CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) *
-            ((total_qty + total_foil) - in_decks)) DESC
+        ORDER BY {sort_col} {direction}
         LIMIT ? OFFSET ?
     """
-    params.extend([page_size, offset])
+    params_q = params[:] + [page_size, offset]
 
-    cursor = await db.execute(query, params)
+    cursor = await db.execute(query, params_q)
     rows = await cursor.fetchall()
 
     results = []
@@ -300,6 +343,8 @@ async def list_duplicates(
             "extras": extras,
             "card_id": r["card_id"],
             "collector_number": r["collector_number"],
+            "color_identity": json.loads(r["color_identity"] or "[]"),
+            "type_line": r["type_line"] or "",
         })
 
     return {"items": results, "total": total, "page": page, "page_size": page_size}

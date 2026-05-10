@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { makeStyles } from '@griffel/react';
 import { Button, Select, Spinner } from '@fluentui/react-components';
 import {
@@ -11,6 +12,13 @@ import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
 import { t } from '../i18n';
 import AcquisitionCard from '../components/inbox/AcquisitionCard';
+import { getColorBucket, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
+
+const FILTER_OPTIONS = [
+  { value: '', label: 'All pending' },
+  { value: 'needs_sell', label: 'Suggested: Sell' },
+  { value: 'needs_keep', label: 'Suggested: Keep' },
+] as const;
 
 const useStyles = makeStyles({
   controls: {
@@ -19,6 +27,23 @@ const useStyles = makeStyles({
     marginBottom: '16px',
     flexWrap: 'wrap',
     alignItems: 'center',
+  },
+  filterRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '12px',
+    flexWrap: 'wrap',
+  },
+  filterPill: {
+    padding: '4px 12px',
+    fontSize: '11px',
+    fontFamily: sothera.fontMono,
+    letterSpacing: '1px',
+    cursor: 'pointer',
+    border: `1px solid ${sothera.glassBorder}`,
+    borderRadius: '2px',
+    background: 'transparent',
+    color: sothera.fgMuted,
   },
   select: {
     minWidth: '140px',
@@ -54,19 +79,55 @@ const useStyles = makeStyles({
     color: sothera.fgMuted,
     letterSpacing: '0.5px',
   },
+  bucketHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 0',
+    cursor: 'pointer',
+    userSelect: 'none',
+    borderBottom: `1px solid ${sothera.rowBorder}`,
+    fontFamily: sothera.fontMono,
+    fontSize: '12px',
+    letterSpacing: '1px',
+    color: sothera.fgMuted,
+    marginBottom: '4px',
+  },
+  bucketSection: {
+    marginBottom: '16px',
+  },
 });
 
 export default function Inbox() {
   const styles = useStyles();
   const { accent } = useAccent();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<AcquisitionEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
+  const [pageSize] = useState(50);
   const [loading, setLoading] = useState(true);
   const [minValue, setMinValue] = useState(0);
   const [stats, setStats] = useState<InboxAcquisitionStats | null>(null);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
+
+  const activeFilter = searchParams.get('filter') || '';
+
+  // Collapse state — localStorage backed
+  const [openColors, setOpenColors] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('inbox.openColors');
+      return stored ? new Set(JSON.parse(stored)) : new Set(['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L']);
+    } catch {
+      return new Set(['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L']);
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('inbox.openColors', JSON.stringify([...openColors]));
+    } catch { /* ignore */ }
+  }, [openColors]);
 
   // Persist last source in sessionStorage
   const [defaultSource, setDefaultSource] = useState<string | null>(() => {
@@ -86,7 +147,7 @@ export default function Inbox() {
 
   const loadEvents = useCallback(() => {
     setLoading(true);
-    api.getPendingTriage(page, pageSize, minValue)
+    api.getPendingTriage(page, pageSize, minValue, activeFilter)
       .then(res => {
         setEvents(res.items);
         setTotal(res.total);
@@ -96,7 +157,7 @@ export default function Inbox() {
         setTotal(0);
       })
       .finally(() => setLoading(false));
-  }, [page, pageSize, minValue]);
+  }, [page, pageSize, minValue, activeFilter]);
 
   const loadStats = useCallback(() => {
     api.getInboxStats().then(setStats).catch(() => {});
@@ -111,7 +172,6 @@ export default function Inbox() {
 
   const handleDecide = async (eventId: number, payload: TriageDecisionPayload) => {
     await api.decideTriage(eventId, payload);
-    // Remove from list with animation effect (simple filter)
     setEvents(prev => prev.filter(e => e.id !== eventId));
     setTotal(prev => prev - 1);
     if (stats) {
@@ -123,8 +183,35 @@ export default function Inbox() {
     setSkipped(prev => new Set(prev).add(eventId));
   };
 
+  const setFilter = (f: string) => {
+    setPage(1);
+    if (f) {
+      setSearchParams({ filter: f });
+    } else {
+      setSearchParams({});
+    }
+  };
+
   const visibleEvents = events.filter(e => !skipped.has(e.id));
   const pendingCount = stats?.pending_count ?? total;
+
+  // Group by color bucket
+  const grouped = new Map<ColorBucket, AcquisitionEvent[]>();
+  for (const bucket of BUCKET_ORDER) grouped.set(bucket, []);
+  for (const ev of visibleEvents) {
+    const bucket = getColorBucket(ev.card);
+    grouped.get(bucket)!.push(ev);
+  }
+  const activeBuckets = BUCKET_ORDER.filter(b => (grouped.get(b)?.length || 0) > 0);
+
+  const toggleBucket = (bucket: ColorBucket) => {
+    setOpenColors(prev => {
+      const next = new Set(prev);
+      if (next.has(bucket)) next.delete(bucket);
+      else next.add(bucket);
+      return next;
+    });
+  };
 
   return (
     <div>
@@ -143,6 +230,20 @@ export default function Inbox() {
           ))}
         </div>
       )}
+
+      {/* Filter bar */}
+      <div className={styles.filterRow}>
+        {FILTER_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            className={styles.filterPill}
+            onClick={() => setFilter(opt.value)}
+            style={activeFilter === opt.value ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       <div className={styles.controls}>
         <span style={{ fontFamily: sothera.fontMono, fontSize: '10px', letterSpacing: '1px', color: sothera.fgFaint, textTransform: 'uppercase' }}>
@@ -166,16 +267,28 @@ export default function Inbox() {
         </div>
       ) : (
         <>
-          {visibleEvents.map(event => (
-            <AcquisitionCard
-              key={event.id}
-              event={event}
-              onDecide={handleDecide}
-              onSkip={handleSkip}
-              defaultSource={defaultSource}
-              onSourceChange={handleSourceChange}
-            />
-          ))}
+          {activeBuckets.map(bucket => {
+            const bucketEvents = grouped.get(bucket)!;
+            const isOpen = openColors.has(bucket);
+            return (
+              <div key={bucket} className={styles.bucketSection}>
+                <div className={styles.bucketHeader} onClick={() => toggleBucket(bucket)}>
+                  <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
+                  <span>{BUCKET_EMOJI[bucket]} {BUCKET_LABELS[bucket]} ({bucketEvents.length})</span>
+                </div>
+                {isOpen && bucketEvents.map(event => (
+                  <AcquisitionCard
+                    key={event.id}
+                    event={event}
+                    onDecide={handleDecide}
+                    onSkip={handleSkip}
+                    defaultSource={defaultSource}
+                    onSourceChange={handleSourceChange}
+                  />
+                ))}
+              </div>
+            );
+          })}
 
           {totalPages > 1 && (
             <div className={styles.pagination}>

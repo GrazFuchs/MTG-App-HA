@@ -2,7 +2,7 @@ import { makeStyles } from '@griffel/react';
 import { sothera } from '../../theme/sothera';
 import { useAccent } from '../../main';
 
-const SOURCES = ['cardmarket', 'whatnot', 'booster', 'trade', 'gift', 'shop', 'other'] as const;
+const SOURCES = ['cardmarket', 'whatnot', 'booster', 'trade', 'gift', 'shop', 'secret_lair', 'other'] as const;
 
 const useStyles = makeStyles({
   root: {

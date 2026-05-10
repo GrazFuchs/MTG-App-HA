@@ -24,6 +24,7 @@ const SOURCE_OPTIONS: { value: WishlistSource; label: string }[] = [
   { value: 'trade', label: 'Trade' },
   { value: 'gift', label: 'Gift' },
   { value: 'shop', label: 'Shop' },
+  { value: 'secret_lair', label: 'Secret Lair' },
   { value: 'other', label: 'Other' },
 ];
 

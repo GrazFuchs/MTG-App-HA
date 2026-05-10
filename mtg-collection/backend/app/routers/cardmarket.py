@@ -1,6 +1,7 @@
 """Cardmarket routes (CSV import/export, API sync, listing)."""
 import csv
 import io
+import json
 from datetime import date
 
 from fastapi import APIRouter, Query, UploadFile, File
@@ -8,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models.schemas import CardmarketListing, CardmarketImportResult
+from ..models.schemas import CardmarketListing, CardmarketImportResult, CardResponse
 from ..services.cardmarket_import import import_cardmarket_csv
 from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
 from ..services.listing_health import analyze_listings
@@ -29,30 +30,120 @@ class AddListingRequest(BaseModel):
     comments: str = ""
 
 
-@router.get("/listings", response_model=list[CardmarketListing])
+@router.get("/listings")
 async def list_cardmarket_listings(
     search: str = Query("", description="Filter by card name"),
+    color: str = Query("", description="W/U/B/R/G/M/C/L"),
+    set_code: str = Query("", description="Filter by set code"),
+    source: str = Query("", description="manual | import"),
+    sort_by: str = Query("name", description="name, price, qty, set, color, source"),
+    sort_dir: str = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
     db = await get_db()
     offset = (page - 1) * page_size
 
-    if search:
-        cursor = await db.execute(
-            """SELECT * FROM cardmarket_listings
-            WHERE card_name LIKE ? ORDER BY card_name LIMIT ? OFFSET ?""",
-            (f"%{search}%", page_size, offset),
-        )
-    else:
-        cursor = await db.execute(
-            "SELECT * FROM cardmarket_listings ORDER BY card_name LIMIT ? OFFSET ?",
-            (page_size, offset),
-        )
+    conditions = ["1=1"]
+    params: list = []
 
-    rows = await cursor.fetchall()
-    return [
-        CardmarketListing(
+    if search:
+        conditions.append("l.card_name LIKE ?")
+        params.append(f"%{search}%")
+    if set_code:
+        conditions.append("LOWER(l.set_code) = LOWER(?)")
+        params.append(set_code)
+    if source in ("manual", "import"):
+        conditions.append("l.source = ?")
+        params.append(source)
+
+    # Color filter applied in Python after fetching color_identity from JOIN
+    color_filter = color.upper() if color.upper() in ("W", "U", "B", "R", "G", "M", "C", "L") else ""
+
+    sort_map = {
+        "name": "LOWER(l.card_name)",
+        "price": "l.price",
+        "qty": "l.quantity",
+        "set": "LOWER(l.set_code)",
+        "color": "LOWER(c.color_identity)",
+        "source": "CASE WHEN l.source = 'manual' THEN 0 ELSE 1 END",
+    }
+    sort_col = sort_map.get(sort_by, "LOWER(l.card_name)")
+    direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+
+    where = " AND ".join(conditions)
+
+    base_query = f"""
+        SELECT l.*, c.id as c_id, c.scryfall_id, c.oracle_id, c.name as c_name,
+            c.mana_cost, c.cmc, c.type_line, c.oracle_text, c.colors, c.color_identity,
+            c.set_code as c_set_code, c.set_name as c_set_name, c.collector_number,
+            c.rarity as c_rarity, c.image_uri, c.image_art_crop, c.power, c.toughness,
+            c.loyalty, c.keywords, c.edhrec_rank, c.price_usd, c.price_eur,
+            c.price_usd_foil, c.price_eur_foil, c.updated_at
+        FROM cardmarket_listings l
+        LEFT JOIN cards c ON LOWER(c.name) = LOWER(l.card_name)
+            AND (l.set_code = '' OR LOWER(c.set_code) = LOWER(l.set_code))
+        WHERE {where}
+        ORDER BY {sort_col} {direction}, LOWER(l.card_name) ASC
+    """
+
+    all_rows = await (await db.execute(base_query, params)).fetchall()
+
+    def _color_bucket(row) -> str:
+        ci_raw = row["color_identity"] if row["color_identity"] is not None else "[]"
+        try:
+            ci = json.loads(ci_raw)
+        except Exception:
+            ci = []
+        type_line = row["type_line"] or ""
+        if "Land" in type_line:
+            return "L"
+        if len(ci) == 0:
+            return "C"
+        if len(ci) >= 2:
+            return "M"
+        return ci[0]
+
+    # Apply color filter in Python
+    if color_filter:
+        all_rows = [r for r in all_rows if _color_bucket(r) == color_filter]
+
+    total = len(all_rows)
+    rows = all_rows[offset:offset + page_size]
+
+    result = []
+    for r in rows:
+        card_obj: CardResponse | None = None
+        if r["c_id"] is not None:
+            card_obj = CardResponse(
+                id=r["c_id"],
+                scryfall_id=r["scryfall_id"] or "",
+                oracle_id=r["oracle_id"],
+                name=r["c_name"] or "",
+                mana_cost=r["mana_cost"] or "",
+                cmc=r["cmc"] or 0,
+                type_line=r["type_line"] or "",
+                oracle_text=r["oracle_text"] or "",
+                colors=json.loads(r["colors"] or "[]"),
+                color_identity=json.loads(r["color_identity"] or "[]"),
+                set_code=r["c_set_code"] or "",
+                set_name=r["c_set_name"] or "",
+                collector_number=r["collector_number"] or "",
+                rarity=r["c_rarity"] or "",
+                image_uri=r["image_uri"] or "",
+                image_art_crop=r["image_art_crop"] or "",
+                power=r["power"] or "",
+                toughness=r["toughness"] or "",
+                loyalty=r["loyalty"] or "",
+                keywords=json.loads(r["keywords"] or "[]"),
+                edhrec_rank=r["edhrec_rank"],
+                price_usd=r["price_usd"] or "",
+                price_eur=r["price_eur"] or "",
+                price_usd_foil=r["price_usd_foil"] or "",
+                price_eur_foil=r["price_eur_foil"] or "",
+                updated_at=r["updated_at"],
+            )
+        result.append(CardmarketListing(
             id=r["id"], card_name=r["card_name"], set_name=r["set_name"],
             set_code=r["set_code"], quantity=r["quantity"], price=r["price"],
             condition=r["condition"], language=r["language"],
@@ -66,9 +157,9 @@ async def list_cardmarket_listings(
             comments=r["comments"] or "",
             product_url=r["product_url"] or "",
             source=r["source"] if "source" in r.keys() else "import",
-        )
-        for r in rows
-    ]
+            card=card_obj,
+        ))
+    return {"items": result, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/stats")

@@ -51,6 +51,7 @@ async def list_pending(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     min_value_eur: float = Query(0, ge=0),
+    filter: str = Query("", description="needs_sell | needs_keep | empty = all pending"),
 ):
     db = await get_db()
 
@@ -61,6 +62,61 @@ async def list_pending(
         value_filter = """AND CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) >= ?"""
         count_params.append(min_value_eur)
 
+    # When a suggestion filter is applied, we must compute all items to filter post-query
+    needs_suggestion_filter = filter in ("needs_sell", "needs_keep")
+
+    if needs_suggestion_filter:
+        # Load all pending (no pagination at SQL level)
+        query_params: list = list(count_params)
+        cursor = await db.execute(
+            f"""SELECT ae.*, c.*,
+                ae.id as event_id, ae.condition as event_condition,
+                ae.language as event_language, ae.created_at as event_created_at,
+                ae.notes as event_notes
+            FROM acquisition_events ae
+            JOIN cards c ON c.id = ae.card_id
+            WHERE ae.triage_state = 'pending' {value_filter}
+            ORDER BY ae.created_at DESC""",
+            query_params,
+        )
+        all_rows = await cursor.fetchall()
+
+        all_items = []
+        for r in all_rows:
+            card = _build_card_response(r)
+            event_row = {
+                "id": r["event_id"],
+                "card_id": r["card_id"],
+                "collection_id": r["collection_id"],
+                "is_foil": bool(r["is_foil"]),
+                "qty_delta": r["qty_delta"],
+            }
+            suggestion, existing_printings, in_decks = await get_suggestion(db, event_row)
+            all_items.append(AcquisitionEventResponse(
+                id=r["event_id"],
+                created_at=r["event_created_at"],
+                qty_delta=r["qty_delta"],
+                is_foil=bool(r["is_foil"]),
+                condition=r["event_condition"],
+                language=r["event_language"],
+                triage_state=r["triage_state"],
+                card=card,
+                in_decks=in_decks,
+                existing_printings=existing_printings,
+                suggestion=suggestion,
+            ))
+
+        if filter == "needs_sell":
+            all_items = [i for i in all_items if i.suggestion.action in ("sold_new", "swap")]
+        elif filter == "needs_keep":
+            all_items = [i for i in all_items if i.suggestion.action == "keep"]
+
+        total = len(all_items)
+        offset = (page - 1) * page_size
+        items = all_items[offset:offset + page_size]
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+    # Normal (no suggestion filter): paginate at SQL level
     count_cursor = await db.execute(
         f"""SELECT COUNT(*) FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
@@ -70,9 +126,7 @@ async def list_pending(
     total = (await count_cursor.fetchone())[0]
 
     offset = (page - 1) * page_size
-    query_params: list = []
-    if min_value_eur > 0:
-        query_params.append(min_value_eur)
+    query_params = list(count_params)
     query_params.extend([page_size, offset])
 
     cursor = await db.execute(
@@ -95,6 +149,7 @@ async def list_pending(
 
         # Build event row dict for advisor
         event_row = {
+            "id": r["event_id"],
             "card_id": r["card_id"],
             "collection_id": r["collection_id"],
             "is_foil": bool(r["is_foil"]),
@@ -172,6 +227,9 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
         raise HTTPException(status_code=422, detail="source is required for keep/sold_new/swap")
     if req.action in ("sold_new", "swap") and req.listing_price_eur is None:
         raise HTTPException(status_code=422, detail="listing_price_eur is required for sold_new/swap")
+    if req.sell_qty is not None and req.action == "sold_new":
+        if req.sell_qty > event["qty_delta"]:
+            raise HTTPException(status_code=422, detail=f"sell_qty ({req.sell_qty}) exceeds qty_delta ({event['qty_delta']})")
 
     linked_listing_id = None
     triage_state = req.action
@@ -228,7 +286,7 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
                 card_to_list["name"],
                 card_to_list["set_name"] or "",
                 card_to_list["set_code"] or "",
-                req.listing_quantity or 1,
+                req.sell_qty if req.action == "sold_new" and req.sell_qty else (req.listing_quantity or 1),
                 req.listing_price_eur,
                 req.listing_condition or "NM",
                 req.listing_language or "English",

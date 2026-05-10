@@ -245,6 +245,8 @@ export default function AcquisitionCard({
         mode={dialogMode || 'sold_new'}
         cardName={event.card.name}
         estimatedPrice={event.suggestion.estimated_price_eur}
+        suggestedPrice={event.suggestion.suggested_sell_price_eur}
+        qtyDelta={event.qty_delta}
         suggestedSellId={event.suggestion.sell_collection_id}
         existingPrintings={event.existing_printings}
       />

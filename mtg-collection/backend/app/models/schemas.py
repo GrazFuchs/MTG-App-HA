@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
-SOURCE_VALUES = Literal["cardmarket", "whatnot", "booster", "trade", "gift", "shop", "other"]
+SOURCE_VALUES = Literal["cardmarket", "whatnot", "booster", "trade", "gift", "shop", "secret_lair", "other"]
 
 
 # --- Card Models ---
@@ -151,6 +151,7 @@ class CardmarketListing(BaseModel):
     comments: str = ""
     product_url: str = ""
     source: str = "import"
+    card: CardResponse | None = None  # Sprint 13: JOIN on cards for hover preview
 
 
 class CardmarketImportResult(BaseModel):
@@ -440,6 +441,7 @@ class TriageSuggestion(BaseModel):
     reason: str
     sell_collection_id: int | None = None
     estimated_price_eur: float
+    suggested_sell_price_eur: float = 0.0
 
 
 class AcquisitionEventResponse(BaseModel):
@@ -463,6 +465,7 @@ class TriageDecisionRequest(BaseModel):
     listing_condition: str | None = "NM"
     listing_language: str | None = "English"
     listing_quantity: int | None = Field(1, ge=1)
+    sell_qty: int | None = Field(None, ge=1)  # partial sell for sold_new
     sell_collection_id: int | None = None
     notes: str | None = ""
 

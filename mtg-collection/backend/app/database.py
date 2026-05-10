@@ -130,6 +130,9 @@ CREATE TABLE IF NOT EXISTS cardmarket_listings (
 
 CREATE INDEX IF NOT EXISTS idx_cm_listings_name ON cardmarket_listings(card_name);
 
+-- Sprint 13: indexes for sibling query (JOIN on cards.name) and listings JOIN (LOWER name)
+CREATE INDEX IF NOT EXISTS idx_cards_name_lower ON cards(name COLLATE NOCASE);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,

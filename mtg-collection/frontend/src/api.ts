@@ -148,7 +148,7 @@ export interface CollectionStats {
 
 export type WishlistSource =
   | 'cardmarket' | 'whatnot' | 'booster' | 'trade'
-  | 'gift' | 'shop' | 'other';
+  | 'gift' | 'shop' | 'secret_lair' | 'other';
 
 export type WishlistStatus =
   | 'wanted' | 'ordered' | 'acquired' | 'dropped' | 'not_received';
@@ -246,6 +246,7 @@ export interface TriageSuggestion {
   reason: string;
   sell_collection_id: number | null;
   estimated_price_eur: number;
+  suggested_sell_price_eur: number;
 }
 
 export interface AcquisitionEvent {
@@ -282,6 +283,7 @@ export interface TriageDecisionPayload {
   listing_condition?: string;
   listing_language?: string;
   listing_quantity?: number;
+  sell_qty?: number | null;
   sell_collection_id?: number | null;
   notes?: string;
 }
@@ -397,6 +399,7 @@ export interface CardmarketListing {
   condition: string;
   language: string;
   is_foil: boolean;
+  card: Card | null;
   article_id: string;
   expansion_code: string;
   rarity: string;
@@ -420,6 +423,8 @@ export interface DuplicateEntry {
   extras: number;
   card_id: number;
   collector_number: string;
+  color_identity: string[];
+  type_line: string;
 }
 
 export interface PaginatedDuplicates {
@@ -479,7 +484,7 @@ export const api = {
 
   // Cardmarket
   getCardmarketListings: (params?: URLSearchParams) =>
-    request<CardmarketListing[]>(`/api/cardmarket/listings?${params?.toString() ?? ''}`),
+    request<{ items: CardmarketListing[]; total: number; page: number; page_size: number }>(`/api/cardmarket/listings?${params?.toString() ?? ''}`),
   getCardmarketStats: () => request<{ unique_listings: number; total_quantity: number; total_value: number }>('/api/cardmarket/stats'),
   importCardmarketCSV: async (file: File) => {
     const form = new FormData();
@@ -598,8 +603,8 @@ export const api = {
     request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
 
   // Inbox / Acquisitions
-  getPendingTriage: (page = 1, pageSize = 20, minValue = 0) =>
-    request<PaginatedAcquisitions>(`/api/acquisitions/pending?page=${page}&page_size=${pageSize}&min_value_eur=${minValue}`),
+  getPendingTriage: (page = 1, pageSize = 20, minValue = 0, filter = '') =>
+    request<PaginatedAcquisitions>(`/api/acquisitions/pending?page=${page}&page_size=${pageSize}&min_value_eur=${minValue}${filter ? `&filter=${filter}` : ''}`),
   getInboxStats: () =>
     request<InboxAcquisitionStats>('/api/acquisitions/stats'),
   decideTriage: (eventId: number, body: TriageDecisionPayload) =>
