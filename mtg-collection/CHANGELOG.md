@@ -1,3 +1,29 @@
+## 0.12.0
+
+### Added
+- **Inbox & Triage Workflow** (Sprint 12): Triage newly acquired cards detected during Archidekt sync — keep, sell, swap, or dismiss with one click
+- **Delta Detection**: Collection sync now snapshots quantities before sync and generates acquisition events for positive deltas (skipped on first sync and full resync)
+- **Triage Advisor**: Automated keep-score engine comparing printings by price and foil status — suggests keep/swap/sell with reasoning
+- **Acquisition Events API**: 4 REST endpoints — `GET /api/acquisitions/pending` (paginated), `GET /api/acquisitions/stats`, `POST /api/acquisitions/{id}/decide`, `POST /api/acquisitions/{id}/undo`
+- **Inbox Page**: Full triage UI with value filter, pagination, source picker (sessionStorage-persistent), skip functionality, and empty state
+- **AcquisitionCard Component**: Card detail with existing printings, deck usage, suggestion display, and action buttons
+- **TriageDecisionDialog**: Modal for editing listing price/condition/language before creating Cardmarket listing
+- **Collection CM-Badge**: 🛒 badge on collection entries with active Cardmarket listings (LEFT JOIN on `cardmarket_listings`)
+- **Nav Badge**: Pending triage count in navigation with 60s polling + `visibilitychange` refresh
+- **2 new MCP Tools**: `get_pending_triage`, `decide_triage`
+
+### Changed
+- `sync_collection()` accepts `is_resync` parameter to suppress event generation during full resyncs
+- `run_full_resync()` passes `is_resync=True` through to `sync_collection()`
+- Collection API enriched with `cardmarket_listing_count` and `cardmarket_listed_qty` per entry
+
+### Technical
+- Schema Migration #13: `acquisition_events` table with 13 columns, 2 indexes (`idx_acq_pending`, `idx_acq_card`)
+- `backend/app/services/triage_advisor.py` — isolated suggestion engine (no router dependencies)
+- `backend/app/routers/acquisitions.py` — triage REST API with cross-field validation
+- `frontend/src/pages/Inbox.tsx`, `frontend/src/components/inbox/AcquisitionCard.tsx`, `TriageDecisionDialog.tsx`, `SourcePicker.tsx` — new components
+- i18n: 14 new keys per language (EN + DE) for inbox/triage and collection CM-badge
+
 ## 0.11.0
 
 ### Added

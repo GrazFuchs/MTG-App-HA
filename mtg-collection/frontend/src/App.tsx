@@ -1,14 +1,17 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 import Dashboard from './pages/Dashboard';
 import Decks from './pages/Decks';
 import DeckView from './pages/DeckView';
 import DeckCompare from './pages/DeckCompare';
 import Collection from './pages/Collection';
+import Inbox from './pages/Inbox';
 import Cardmarket from './pages/Cardmarket';
 import Settings from './pages/Settings';
 import Duplicates from './pages/Duplicates';
 import Wishlist from './pages/Wishlist';
+import { api } from './api';
 import { t } from './i18n';
 import { sothera, ACCENTS, ACCENTS_LIGHT, type AccentName } from './theme/sothera';
 import { useAccent } from './main';
@@ -149,6 +152,7 @@ const navItems = [
   { id: '/', label: t('nav.dashboard'), glyph: '◇' },
   { id: '/decks', label: t('nav.decks'), glyph: '⌬' },
   { id: '/collection', label: t('nav.collection'), glyph: '☷' },
+  { id: '/inbox', label: t('nav.inbox'), glyph: '⊕' },
   { id: '/duplicates', label: t('nav.duplicates'), glyph: '◫' },
   { id: '/cardmarket', label: t('nav.cardmarket'), glyph: '⌖' },
   { id: '/wishlist', label: t('nav.wishlist'), glyph: '✧' },
@@ -162,6 +166,32 @@ export default function App() {
   const { accent, accentName, setAccent } = useAccent();
   const { mode, setMode, isDark } = useSotheraTheme();
   const displayAccents = isDark ? ACCENTS : ACCENTS_LIGHT;
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const fetchPendingCount = useCallback(() => {
+    api.getInboxStats()
+      .then(s => setPendingCount(s.pending_count))
+      .catch(() => {});
+  }, []);
+
+  // Poll on tab switch + every 60s + on visibility change
+  useEffect(() => {
+    fetchPendingCount();
+    const interval = setInterval(fetchPendingCount, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchPendingCount();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [fetchPendingCount]);
+
+  // Refetch when navigating
+  useEffect(() => {
+    fetchPendingCount();
+  }, [location.pathname, fetchPendingCount]);
 
   const isActive = (id: string) =>
     location.pathname === id ||
@@ -205,6 +235,26 @@ export default function App() {
                     {item.glyph}
                   </span>
                   {item.label}
+                  {item.id === '/inbox' && pendingCount > 0 && (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: '16px',
+                      height: '16px',
+                      padding: '0 4px',
+                      borderRadius: '2px',
+                      backgroundColor: accent.oklch,
+                      color: '#000',
+                      fontSize: '9px',
+                      fontFamily: sothera.fontMono,
+                      fontWeight: 700,
+                      letterSpacing: 0,
+                      lineHeight: 1,
+                    }}>
+                      {pendingCount}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -249,6 +299,7 @@ export default function App() {
             <Route path="/decks/compare" element={<DeckCompare />} />
             <Route path="/decks/:id" element={<DeckView />} />
             <Route path="/collection" element={<Collection />} />
+            <Route path="/inbox" element={<Inbox />} />
             <Route path="/duplicates" element={<Duplicates />} />
             <Route path="/cardmarket" element={<Cardmarket />} />
             <Route path="/wishlist" element={<Wishlist />} />

@@ -116,6 +116,8 @@ class CollectionEntry(BaseModel):
     notes: str = ""
     added_at: datetime | None = None
     in_decks: int = 0
+    cardmarket_listing_count: int = 0
+    cardmarket_listed_qty: int = 0
 
 
 class CollectionAddRequest(BaseModel):
@@ -415,3 +417,57 @@ class CardSearchResult(BaseModel):
     owned_quantity: int = 0
     owned_foil_quantity: int = 0
     in_decks: list[str] = []
+
+
+# --- Acquisition / Inbox Triage Models ---
+
+TRIAGE_STATE = Literal["pending", "keep", "sold_new", "swapped", "dismissed"]
+
+
+class ExistingPrinting(BaseModel):
+    collection_id: int
+    set_code: str
+    set_name: str
+    is_foil: bool
+    quantity: int
+    foil_quantity: int
+    price_eur: str
+    keep_score: float
+
+
+class TriageSuggestion(BaseModel):
+    action: Literal["keep", "sold_new", "swap"]
+    reason: str
+    sell_collection_id: int | None = None
+    estimated_price_eur: float
+
+
+class AcquisitionEventResponse(BaseModel):
+    id: int
+    created_at: datetime
+    qty_delta: int
+    is_foil: bool
+    condition: str
+    language: str
+    triage_state: str
+    card: CardResponse
+    in_decks: int
+    existing_printings: list[ExistingPrinting]
+    suggestion: TriageSuggestion
+
+
+class TriageDecisionRequest(BaseModel):
+    action: Literal["keep", "sold_new", "swap", "dismiss"]
+    source: SOURCE_VALUES | None = None
+    listing_price_eur: float | None = Field(None, ge=0)
+    listing_condition: str | None = "NM"
+    listing_language: str | None = "English"
+    listing_quantity: int | None = Field(1, ge=1)
+    sell_collection_id: int | None = None
+    notes: str | None = ""
+
+
+class InboxAcquisitionStats(BaseModel):
+    pending_count: int
+    decided_last_30d: int
+    by_state_30d: dict[str, int]

@@ -19,6 +19,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
+import { t } from '../i18n';
 
 function scryfallUrl(card: { set_code: string; collector_number: string; name: string }) {
   if (card.set_code && card.collector_number) {
@@ -295,6 +296,14 @@ export default function Collection() {
                         <CardHoverPreview card={entry.card}>
                           <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                         </CardHoverPreview>
+                        {entry.cardmarket_listing_count > 0 && (
+                          <span
+                            title={t('collection.listed_on_cardmarket', { qty: String(entry.cardmarket_listed_qty) })}
+                            style={{ marginLeft: 6, fontSize: 11, cursor: 'default', color: sothera.fgFaint }}
+                          >
+                            🛒{entry.cardmarket_listed_qty > 1 ? entry.cardmarket_listed_qty : ''}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{getCopies(entry)}</div>
                       <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>
@@ -323,6 +332,14 @@ export default function Collection() {
                           <CardHoverPreview card={entry.card}>
                             <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                           </CardHoverPreview>
+                          {entry.cardmarket_listing_count > 0 && (
+                            <span
+                              title={t('collection.listed_on_cardmarket', { qty: String(entry.cardmarket_listed_qty) })}
+                              style={{ marginLeft: 6, fontSize: 11, cursor: 'default', color: sothera.fgFaint }}
+                            >
+                              🛒{entry.cardmarket_listed_qty > 1 ? entry.cardmarket_listed_qty : ''}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{getCopies(entry)}</div>
                         <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>

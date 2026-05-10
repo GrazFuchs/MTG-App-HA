@@ -93,9 +93,20 @@ async def list_collection(
         )
         SELECT c.*, col.id as col_id, col.quantity, col.foil_quantity,
         col.condition, col.language, col.archidekt_tags, col.notes, col.added_at,
-        COALESCE(du.total_in_decks, 0) as in_decks
+        COALESCE(du.total_in_decks, 0) as in_decks,
+        COALESCE(cm_match.listing_count, 0) as cardmarket_listing_count,
+        COALESCE(cm_match.listed_qty, 0) as cardmarket_listed_qty
         FROM collection col JOIN cards c ON c.id = col.card_id
         LEFT JOIN deck_usage du ON du.name = c.name
+        LEFT JOIN (
+            SELECT card_id, set_code, is_foil,
+                   COUNT(*) as listing_count, SUM(quantity) as listed_qty
+            FROM cardmarket_listings
+            WHERE card_id IS NOT NULL
+            GROUP BY card_id, set_code, is_foil
+        ) cm_match ON cm_match.card_id = c.id
+                  AND cm_match.set_code = c.set_code
+                  AND cm_match.is_foil = (col.foil_quantity > 0 AND col.quantity = 0)
         WHERE {where}
         ORDER BY {sort_col} {direction}, LOWER(c.name) ASC
         LIMIT ? OFFSET ?
@@ -130,6 +141,8 @@ async def list_collection(
             notes=r["notes"] or "",
             added_at=r["added_at"],
             in_decks=r["in_decks"],
+            cardmarket_listing_count=r["cardmarket_listing_count"],
+            cardmarket_listed_qty=r["cardmarket_listed_qty"],
         ))
 
     return {"items": results, "total": total, "page": page, "page_size": page_size}

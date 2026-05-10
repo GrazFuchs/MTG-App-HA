@@ -422,6 +422,34 @@ async def _migration_12(db: aiosqlite.Connection):
     await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_combos_partial ON deck_combos(is_partial)")
 
 
+async def _migration_13(db: aiosqlite.Connection):
+    """Add acquisition_events table for inbox triage workflow."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS acquisition_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_log_id INTEGER REFERENCES sync_log(id) ON DELETE SET NULL,
+            collection_id INTEGER REFERENCES collection(id) ON DELETE SET NULL,
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            condition TEXT NOT NULL DEFAULT 'NM',
+            language TEXT NOT NULL DEFAULT 'en',
+            is_foil INTEGER NOT NULL DEFAULT 0,
+            qty_delta INTEGER NOT NULL,
+            triage_state TEXT NOT NULL DEFAULT 'pending',
+            triage_decision_at TIMESTAMP,
+            source TEXT,
+            linked_listing_id INTEGER REFERENCES cardmarket_listings(id) ON DELETE SET NULL,
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_acq_pending ON acquisition_events(triage_state, created_at DESC)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_acq_card ON acquisition_events(card_id)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -434,6 +462,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     10: _migration_10,
     11: _migration_11,
     12: _migration_12,
+    13: _migration_13,
 }
 
 

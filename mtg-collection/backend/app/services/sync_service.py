@@ -192,16 +192,50 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
     return {"deck_id": local_deck_id, "cards_synced": cards_synced, "name": deck_data["name"]}
 
 
-async def sync_collection(user_id: int) -> int:
+async def sync_collection(user_id: int, is_resync: bool = False) -> int:
     """Sync the user's Archidekt collection to the local database.
 
     Saves incrementally per page so partial progress is preserved on failure.
+    When is_resync=False and this is not the first-ever collection sync,
+    acquisition events are generated for quantity increases.
     """
     db = await get_db()
     synced = 0
     page = 1
     sync_complete = False
     aggregated_entries: dict[tuple[int, str, str], dict[str, str | int | None]] = {}
+
+    # Determine whether to skip event generation
+    # Skip if: (1) full resync, (2) first-ever collection sync
+    should_skip_events = is_resync
+    if not should_skip_events:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM sync_log WHERE source='archidekt' AND status='completed'"
+        )
+        completed_syncs = (await cursor.fetchone())[0]
+        if completed_syncs == 0:
+            should_skip_events = True
+
+    # Snapshot current collection quantities BEFORE sync for delta detection
+    pre_sync_snapshot: dict[tuple[int, str, str], tuple[int, int]] = {}
+    if not should_skip_events:
+        cursor = await db.execute(
+            "SELECT card_id, condition, language, quantity, foil_quantity FROM collection"
+        )
+        for row in await cursor.fetchall():
+            pre_sync_snapshot[
+                (row["card_id"], str(row["condition"]), str(row["language"]))
+            ] = (row["quantity"], row["foil_quantity"])
+
+    # Get current sync_log id for linking events
+    sync_log_id = None
+    if not should_skip_events:
+        cursor = await db.execute(
+            "SELECT id FROM sync_log WHERE source='archidekt' AND status='running' ORDER BY id DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        if row:
+            sync_log_id = row["id"]
 
     # Fix legacy type mismatches: SQLite UNIQUE treats int 1 and text "1" as different.
     # Delete rows where condition/language are stored as non-text (they'll be re-synced).
@@ -330,7 +364,59 @@ async def sync_collection(user_id: int) -> int:
         else:
             logger.info("No stale collection entries found")
 
+    # Generate acquisition events for quantity increases (delta detection)
+    if not should_skip_events and sync_complete and aggregated_entries:
+        events_created = 0
+        for key, agg in aggregated_entries.items():
+            card_id, condition, language = key
+            prev_qty, prev_foil = pre_sync_snapshot.get(key, (0, 0))
+            new_qty = int(agg["quantity"])
+            new_foil = int(agg["foil_quantity"])
+            qty_delta = new_qty - prev_qty
+            foil_delta = new_foil - prev_foil
+
+            # Look up collection_id for linking
+            col_id = None
+            cursor = await db.execute(
+                "SELECT id FROM collection WHERE card_id=? AND condition=? AND language=?",
+                (card_id, condition, language),
+            )
+            col_row = await cursor.fetchone()
+            if col_row:
+                col_id = col_row["id"]
+
+            if qty_delta > 0:
+                await _create_acquisition_event(
+                    db, sync_log_id, col_id, card_id, condition, language,
+                    is_foil=False, qty_delta=qty_delta,
+                )
+                events_created += 1
+            if foil_delta > 0:
+                await _create_acquisition_event(
+                    db, sync_log_id, col_id, card_id, condition, language,
+                    is_foil=True, qty_delta=foil_delta,
+                )
+                events_created += 1
+
+        if events_created:
+            await db.commit()
+            logger.info("Created %d acquisition events for inbox triage", events_created)
+
     return synced
+
+
+async def _create_acquisition_event(
+    db, sync_log_id: int | None, collection_id: int | None,
+    card_id: int, condition: str, language: str,
+    is_foil: bool, qty_delta: int,
+):
+    """Insert a pending acquisition event for inbox triage."""
+    await db.execute(
+        """INSERT INTO acquisition_events
+        (sync_log_id, collection_id, card_id, condition, language, is_foil, qty_delta, triage_state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')""",
+        (sync_log_id, collection_id, card_id, condition, language, int(is_foil), qty_delta),
+    )
 
 
 async def run_full_sync() -> dict:
@@ -364,10 +450,10 @@ async def run_full_resync() -> dict:
         await db.execute("DELETE FROM decks")
         await db.commit()
         logger.info("Full resync: all synced data cleared, starting fresh sync")
-        return await _do_full_sync()
+        return await _do_full_sync(is_resync=True)
 
 
-async def _do_full_sync() -> dict:
+async def _do_full_sync(is_resync: bool = False) -> dict:
     """Internal sync implementation (must be called under _sync_lock)."""
     db = await get_db()
     settings = get_settings()
@@ -393,7 +479,7 @@ async def _do_full_sync() -> dict:
         # Sync collection if authenticated and user_id is set
         if archidekt.is_authenticated and settings.archidekt_user_id:
             try:
-                collection_count = await sync_collection(settings.archidekt_user_id)
+                collection_count = await sync_collection(settings.archidekt_user_id, is_resync=is_resync)
                 total_synced += collection_count
                 logger.info("Synced %d collection entries", collection_count)
             except PermissionError:

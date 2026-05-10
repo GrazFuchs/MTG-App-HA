@@ -95,6 +95,8 @@ export interface CollectionEntry {
   notes: string;
   added_at: string;
   in_decks: number;
+  cardmarket_listing_count: number;
+  cardmarket_listed_qty: number;
 }
 
 export interface PaginatedCollection {
@@ -224,6 +226,64 @@ export interface AcquisitionStats {
     count: number;
     spent: number;
   }>;
+}
+
+// --- Inbox / Triage ---
+
+export interface ExistingPrinting {
+  collection_id: number;
+  set_code: string;
+  set_name: string;
+  is_foil: boolean;
+  quantity: number;
+  foil_quantity: number;
+  price_eur: string;
+  keep_score: number;
+}
+
+export interface TriageSuggestion {
+  action: 'keep' | 'sold_new' | 'swap';
+  reason: string;
+  sell_collection_id: number | null;
+  estimated_price_eur: number;
+}
+
+export interface AcquisitionEvent {
+  id: number;
+  created_at: string;
+  qty_delta: number;
+  is_foil: boolean;
+  condition: string;
+  language: string;
+  triage_state: string;
+  card: Card;
+  in_decks: number;
+  existing_printings: ExistingPrinting[];
+  suggestion: TriageSuggestion;
+}
+
+export interface InboxAcquisitionStats {
+  pending_count: number;
+  decided_last_30d: number;
+  by_state_30d: Record<string, number>;
+}
+
+export interface PaginatedAcquisitions {
+  items: AcquisitionEvent[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface TriageDecisionPayload {
+  action: 'keep' | 'sold_new' | 'swap' | 'dismiss';
+  source?: string | null;
+  listing_price_eur?: number | null;
+  listing_condition?: string;
+  listing_language?: string;
+  listing_quantity?: number;
+  sell_collection_id?: number | null;
+  notes?: string;
 }
 
 export interface ListingHealthBucket {
@@ -536,4 +596,17 @@ export const api = {
   // Deck completeness
   getDeckCompleteness: (deckId: number) =>
     request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
+
+  // Inbox / Acquisitions
+  getPendingTriage: (page = 1, pageSize = 20, minValue = 0) =>
+    request<PaginatedAcquisitions>(`/api/acquisitions/pending?page=${page}&page_size=${pageSize}&min_value_eur=${minValue}`),
+  getInboxStats: () =>
+    request<InboxAcquisitionStats>('/api/acquisitions/stats'),
+  decideTriage: (eventId: number, body: TriageDecisionPayload) =>
+    request<{ status: string; event_id: number; triage_state: string }>(`/api/acquisitions/${eventId}/decide`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  undoTriage: (eventId: number) =>
+    request<{ status: string; event_id: number }>(`/api/acquisitions/${eventId}/undo`, { method: 'POST' }),
 };

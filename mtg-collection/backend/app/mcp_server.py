@@ -1192,6 +1192,184 @@ async def analyze_my_listings(threshold_pct: float = 15.0) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+async def get_pending_triage(limit: int = 20, min_value_eur: float = 0.0) -> str:
+    """Get pending triage decisions for newly arrived cards.
+
+    Returns events with full context: card details, existing printings owned,
+    deck usage, and the heuristic suggestion (keep/swap/sold_new).
+    Use this when the user asks "what new cards do I have to decide on?".
+
+    Args:
+        limit: max events to return (default 20)
+        min_value_eur: filter by card price (default 0 = all)
+    """
+    from .database import get_db
+    from .services.triage_advisor import get_suggestion
+    try:
+        db = await get_db()
+        limit = max(1, min(100, limit))
+
+        value_filter = ""
+        params: list = []
+        if min_value_eur > 0:
+            value_filter = "AND CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) >= ?"
+            params.append(min_value_eur)
+        params.append(limit)
+
+        cursor = await db.execute(
+            f"""SELECT ae.*, c.name as card_name, c.set_code, c.set_name,
+                c.price_eur, c.price_eur_foil, c.rarity
+            FROM acquisition_events ae
+            JOIN cards c ON c.id = ae.card_id
+            WHERE ae.triage_state = 'pending' {value_filter}
+            ORDER BY ae.created_at DESC
+            LIMIT ?""",
+            params,
+        )
+        rows = await cursor.fetchall()
+        events = []
+        for r in rows:
+            event_row = {
+                "card_id": r["card_id"],
+                "collection_id": r["collection_id"],
+                "is_foil": bool(r["is_foil"]),
+                "qty_delta": r["qty_delta"],
+            }
+            suggestion, printings, in_decks = await get_suggestion(db, event_row)
+            events.append({
+                "event_id": r["id"],
+                "card_name": r["card_name"],
+                "set_code": r["set_code"],
+                "set_name": r["set_name"],
+                "qty_delta": r["qty_delta"],
+                "is_foil": bool(r["is_foil"]),
+                "condition": r["condition"],
+                "language": r["language"],
+                "price_eur": r["price_eur"],
+                "price_eur_foil": r["price_eur_foil"],
+                "in_decks": in_decks,
+                "existing_printings": [p.model_dump() for p in printings],
+                "suggestion": suggestion.model_dump(),
+                "created_at": r["created_at"],
+            })
+        return json.dumps({"pending_count": len(events), "events": events}, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def decide_triage(
+    event_id: int,
+    action: str,
+    source: str | None = None,
+    listing_price_eur: float | None = None,
+    sell_collection_id: int | None = None,
+) -> str:
+    """Decide what to do with a newly acquired card.
+
+    - keep: keep the new copy, do nothing
+    - sold_new: list the new copy on Cardmarket
+    - swap: list a designated OLD copy on Cardmarket, keep the new one
+    - dismiss: postpone decision, no listing created
+
+    For sold_new/swap, listing_price_eur defaults to the suggestion's estimate.
+    For swap, sell_collection_id defaults to the suggestion's pick.
+
+    Args:
+        event_id: ID of the acquisition event
+        action: keep | sold_new | swap | dismiss
+        source: cardmarket | whatnot | booster | trade | gift | shop | other
+        listing_price_eur: price for the Cardmarket listing (sold_new/swap)
+        sell_collection_id: for swap: which old copy to sell
+    """
+    from .database import get_db
+    from .services.triage_advisor import get_suggestion
+    try:
+        valid_actions = {"keep", "sold_new", "swap", "dismiss"}
+        if action not in valid_actions:
+            return json.dumps({"error": f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"})
+
+        valid_sources = {"cardmarket", "whatnot", "booster", "trade", "gift", "shop", "other", None}
+        if source not in valid_sources:
+            return json.dumps({"error": f"Invalid source '{source}'"})
+
+        if action in ("keep", "sold_new", "swap") and source is None:
+            return json.dumps({"error": "source is required for keep/sold_new/swap"})
+
+        db = await get_db()
+        cursor = await db.execute("SELECT * FROM acquisition_events WHERE id = ?", (event_id,))
+        event = await cursor.fetchone()
+        if not event:
+            return json.dumps({"error": f"Event {event_id} not found"})
+        if event["triage_state"] != "pending":
+            return json.dumps({"error": "Event already decided"})
+
+        linked_listing_id = None
+        triage_state = action
+        if action == "swap":
+            triage_state = "swapped"
+
+        if action in ("sold_new", "swap"):
+            # Get suggestion for defaults
+            event_row = {
+                "card_id": event["card_id"],
+                "collection_id": event["collection_id"],
+                "is_foil": bool(event["is_foil"]),
+                "qty_delta": event["qty_delta"],
+            }
+            suggestion, _, _ = await get_suggestion(db, event_row)
+
+            price = listing_price_eur if listing_price_eur is not None else suggestion.estimated_price_eur
+
+            if action == "sold_new":
+                cursor = await db.execute("SELECT * FROM cards WHERE id = ?", (event["card_id"],))
+            else:
+                scid = sell_collection_id or suggestion.sell_collection_id
+                if not scid:
+                    return json.dumps({"error": "sell_collection_id required for swap"})
+                cursor = await db.execute(
+                    "SELECT c.* FROM collection col JOIN cards c ON c.id = col.card_id WHERE col.id = ?",
+                    (scid,),
+                )
+            card = await cursor.fetchone()
+            if not card:
+                return json.dumps({"error": "Card for listing not found"})
+
+            # Determine is_foil for the listing
+            is_foil_listing = int(event["is_foil"]) if action == "sold_new" else 0
+            if action == "swap" and scid:
+                foil_cursor = await db.execute(
+                    "SELECT quantity, foil_quantity FROM collection WHERE id = ?", (scid,)
+                )
+                foil_row = await foil_cursor.fetchone()
+                if foil_row and foil_row["foil_quantity"] > 0 and foil_row["quantity"] == 0:
+                    is_foil_listing = 1
+
+            listing_cursor = await db.execute(
+                """INSERT INTO cardmarket_listings
+                (card_name, set_name, set_code, quantity, price, condition, language, is_foil, rarity, source, card_id)
+                VALUES (?, ?, ?, 1, ?, ?, 'English', ?, ?, 'triage', ?)""",
+                (card["name"], card["set_name"] or "", card["set_code"] or "", price,
+                 event["condition"], is_foil_listing,
+                 card["rarity"] or "", card["id"]),
+            )
+            linked_listing_id = listing_cursor.lastrowid
+
+        await db.execute(
+            """UPDATE acquisition_events
+            SET triage_state = ?, triage_decision_at = CURRENT_TIMESTAMP,
+                source = ?, linked_listing_id = ?
+            WHERE id = ?""",
+            (triage_state, source, linked_listing_id, event_id),
+        )
+        await db.commit()
+        return json.dumps({"ok": True, "event_id": event_id, "triage_state": triage_state,
+                           "linked_listing_id": linked_listing_id})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Resources ---
 
 @mcp.resource("mtg://collection/stats")
