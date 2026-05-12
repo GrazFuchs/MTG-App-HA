@@ -1,3 +1,15 @@
+## 0.14.1
+
+### Fixed
+- **Inbox White-Screen Crash** (`TypeError: undefined is not an object`): `getColorBucket` now handles null/undefined cards, null/empty/JSON-array-string/concatenated-letter (`WU`) color identities without throwing. Root cause was `Map.get(undefined).push()` when a card had a malformed or missing `color_identity`.
+- **`groupByColorBucket`** pre-initialises all 8 `BucketKey` slots so `.get()` can never return `undefined`.
+- **`Duplicates.tsx`** migrated to `getColorBucketLegacy` — no type regression.
+
+### Added
+- **`ErrorBoundary` component** (`frontend/src/components/ErrorBoundary.tsx`): Class component with `getDerivedStateFromError`, `componentDidCatch`, and a `retry()` callback; wraps the Inbox list as defense-in-depth so a single render error cannot white-screen the whole page.
+- **`BucketKey` type + `BUCKET_KEYS` + `groupByColorBucket`** exported from `utils/colors.ts`.
+- **Vitest** added to frontend devDependencies (`npm test`) with 16 regression tests covering all `color_identity` edge cases — all green.
+
 ## 0.14.0
 
 ### Fixed
