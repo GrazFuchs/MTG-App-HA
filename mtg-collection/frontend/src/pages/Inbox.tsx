@@ -12,6 +12,7 @@ import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
 import { t } from '../i18n';
 import AcquisitionCard from '../components/inbox/AcquisitionCard';
+import { ErrorBanner } from '../components/ErrorBanner';
 import { getColorBucket, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
 
 const FILTER_OPTIONS = [
@@ -107,6 +108,7 @@ export default function Inbox() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [minValue, setMinValue] = useState(0);
   const [stats, setStats] = useState<InboxAcquisitionStats | null>(null);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
@@ -147,6 +149,7 @@ export default function Inbox() {
 
   const loadEvents = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     api.getPendingTriage(page, pageSize, minValue, activeFilter)
       .then(res => {
         setEvents(res.items);
@@ -155,6 +158,7 @@ export default function Inbox() {
       .catch(() => {
         setEvents([]);
         setTotal(0);
+        setLoadError(true);
       })
       .finally(() => setLoading(false));
   }, [page, pageSize, minValue, activeFilter]);
@@ -261,10 +265,22 @@ export default function Inbox() {
 
       {loading ? (
         <Spinner label="Loading inbox..." style={{ marginTop: 24 }} />
-      ) : visibleEvents.length === 0 ? (
+      ) : loadError && (stats?.pending_count ?? 0) > 0 ? (
+        <ErrorBanner
+          title={t('inbox.error.title')}
+          message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
+          action={<Button onClick={loadEvents}>{t('common.retry')}</Button>}
+        />
+      ) : visibleEvents.length === 0 && (stats?.pending_count ?? 0) === 0 ? (
         <div className={styles.empty}>
-          {t('inbox.empty')}
+          {t('inbox.empty_celebration')}
         </div>
+      ) : visibleEvents.length === 0 && (stats?.pending_count ?? 0) > 0 ? (
+        <ErrorBanner
+          title={t('inbox.error.title')}
+          message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
+          action={<Button onClick={loadEvents}>{t('common.retry')}</Button>}
+        />
       ) : (
         <>
           {activeBuckets.map(bucket => {

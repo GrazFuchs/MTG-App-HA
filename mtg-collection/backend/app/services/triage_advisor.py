@@ -1,7 +1,20 @@
 """Triage advisor: computes keep-scores and suggestions for acquisition events."""
 from __future__ import annotations
 
+import logging
+import sqlite3
+
 from ..models.schemas import ExistingPrinting, TriageSuggestion
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_SUGGESTION = TriageSuggestion(
+    action="keep",
+    reason="default — could not compute suggestion",
+    sell_collection_id=None,
+    estimated_price_eur=0.0,
+    suggested_sell_price_eur=0.0,
+)
 
 
 async def compute_keep_score(price_eur: str, is_foil: bool) -> float:
@@ -12,15 +25,15 @@ async def compute_keep_score(price_eur: str, is_foil: bool) -> float:
 async def _get_suggested_sell_price(db, card_name: str) -> float:
     """Return suggested sell price: prefer Cardmarket trend, fallback Scryfall price_eur."""
     cm_cursor = await db.execute("""
-        SELECT cph.trend_eur FROM cardmarket_price_history cph
+        SELECT cph.trend FROM cardmarket_price_history cph
         JOIN cardmarket_products cp ON cp.cm_product_id = cph.cm_product_id
         JOIN cards c ON c.id = cp.card_id
         WHERE c.name = ?
-        ORDER BY cph.snapshot_at DESC LIMIT 1
+        ORDER BY cph.date DESC LIMIT 1
     """, (card_name,))
     cm_row = await cm_cursor.fetchone()
-    if cm_row and cm_row["trend_eur"]:
-        return round(float(cm_row["trend_eur"]), 2)
+    if cm_row and cm_row["trend"]:
+        return round(float(cm_row["trend"]), 2)
 
     scry_cursor = await db.execute("SELECT price_eur FROM cards WHERE name = ? LIMIT 1", (card_name,))
     scry_row = await scry_cursor.fetchone()
@@ -30,12 +43,8 @@ async def _get_suggested_sell_price(db, card_name: str) -> float:
         return 0.0
 
 
-async def get_suggestion(db, event_row) -> tuple[TriageSuggestion, list[ExistingPrinting], int]:
-    """Return (suggestion, existing_printings, in_decks) for an acquisition event.
-
-    Sibling-aware: if other pending events for the same card_name exist (earlier by id),
-    they are treated as already-owned for the purpose of this suggestion.
-    """
+async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[ExistingPrinting], int]:
+    """Internal implementation — see get_suggestion() for docs."""
     # 1. Fetch the card
     cursor = await db.execute("SELECT * FROM cards WHERE id = ?", (event_row["card_id"],))
     new_card = await cursor.fetchone()
@@ -184,4 +193,31 @@ async def get_suggestion(db, event_row) -> tuple[TriageSuggestion, list[Existing
             ),
             printings,
             in_decks,
+        )
+
+
+async def get_suggestion(db, event_row) -> tuple[TriageSuggestion, list[ExistingPrinting], int]:
+    """Return (suggestion, existing_printings, in_decks) for an acquisition event.
+
+    Sibling-aware: if other pending events for the same card_name exist (earlier by id),
+    they are treated as already-owned for the purpose of this suggestion.
+
+    Gracefully falls back to DEFAULT_SUGGESTION on DB errors so a single schema drift
+    does not kill the entire /pending route.
+    """
+    try:
+        return await _get_suggestion_impl(db, event_row)
+    except sqlite3.OperationalError as e:
+        logger.error("get_suggestion failed for event %s: %s", event_row.get("id"), e)
+        return (
+            TriageSuggestion(**{**DEFAULT_SUGGESTION.__dict__, "reason": f"error: {type(e).__name__}"}),
+            [],
+            0,
+        )
+    except Exception as e:
+        logger.exception("get_suggestion unexpected error for event %s", event_row.get("id"))
+        return (
+            TriageSuggestion(**{**DEFAULT_SUGGESTION.__dict__, "reason": f"error: {type(e).__name__}"}),
+            [],
+            0,
         )

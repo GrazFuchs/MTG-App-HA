@@ -1,3 +1,16 @@
+## 0.14.0
+
+### Fixed
+- **Schema-Drift Fix** (`triage_advisor.py`): Column names corrected — `cph.trend_eur` → `cph.trend`, `cph.snapshot_at` → `cph.date`. Resolves `/api/acquisitions/pending` returning HTTP 500 and Inbox showing empty despite 190+ pending cards.
+
+### Added
+- **Graceful Triage Fallback**: `get_suggestion()` wrapped in `try/except` — `sqlite3.OperationalError` and unexpected exceptions are caught, logged via `logger.error/exception`, and a safe `DEFAULT_SUGGESTION` (action: `keep`) is returned. Schema drift in future sprints can no longer crash the entire `/pending` route.
+- **Inbox ErrorBanner**: Inbox page now distinguishes three states: (1) truly empty (celebration 🎉), (2) `loadError` or items/stats mismatch → `ErrorBanner` with pending count and Retry button, (3) normal items list. Prevents misleading "Inbox zero" when the backend fails.
+- **ErrorBanner Component** (`frontend/src/components/ErrorBanner.tsx`): Reusable Fluent UI `MessageBar`-based error display with title, message, and optional action slot.
+- **Acquisition Smoke Tests** (`backend/tests/test_acquisitions_smoke.py`): Two `pytest-asyncio` tests asserting `/api/acquisitions/pending` and `/api/acquisitions/stats` return HTTP 200 with correct response shapes against an in-memory SQLite DB.
+- **`requirements-dev.txt`**: New file — `pytest>=8`, `pytest-asyncio>=0.23`, `httpx>=0.27` for backend test runs.
+- **i18n**: 4 new keys per language — `inbox.empty_celebration`, `inbox.error.title`, `inbox.error.api_failed`, `common.retry` (EN + DE).
+
 ## 0.13.0
 
 ### Added
