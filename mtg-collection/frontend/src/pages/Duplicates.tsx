@@ -24,7 +24,7 @@ import { api, DuplicateEntry, CollectionSet } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader } from '../components/sothera';
-import { getColorBucket, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
+import { getColorBucketLegacy, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
 
 const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'All Colors' },
@@ -288,7 +288,7 @@ export default function Duplicates() {
       const grouped = new Map<ColorBucket, DuplicateEntry[]>();
       for (const b of BUCKET_ORDER) grouped.set(b, []);
       for (const item of items) {
-        const bucket = getColorBucket({ color_identity: item.color_identity, type_line: item.type_line });
+        const bucket = getColorBucketLegacy({ color_identity: item.color_identity, type_line: item.type_line });
         grouped.get(bucket)!.push(item);
       }
       return BUCKET_ORDER.filter(b => (grouped.get(b)?.length || 0) > 0).map(bucket => {

@@ -14,4 +14,8 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
   },
+  test: {
+    environment: 'node',
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+  },
 });

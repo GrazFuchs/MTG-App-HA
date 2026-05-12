@@ -13,7 +13,21 @@ import { PageHeader } from '../components/sothera';
 import { t } from '../i18n';
 import AcquisitionCard from '../components/inbox/AcquisitionCard';
 import { ErrorBanner } from '../components/ErrorBanner';
-import { getColorBucket, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { getColorBucket, groupByColorBucket, BUCKET_KEYS, BucketKey } from '../utils/colors';
+
+// Re-export for unit tests
+export { getColorBucket, groupByColorBucket, BUCKET_KEYS };
+export type { BucketKey };
+
+const INBOX_BUCKET_LABELS: Record<BucketKey, string> = {
+  W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green',
+  Multi: 'Multicolor', Colorless: 'Colorless', Unknown: 'Unknown',
+};
+const INBOX_BUCKET_EMOJI: Record<BucketKey, string> = {
+  W: '⚪', U: '🔵', B: '⚫', R: '🔴', G: '🟢',
+  Multi: '🌈', Colorless: '◆', Unknown: '❓',
+};
 
 const FILTER_OPTIONS = [
   { value: '', label: 'All pending' },
@@ -116,12 +130,12 @@ export default function Inbox() {
   const activeFilter = searchParams.get('filter') || '';
 
   // Collapse state — localStorage backed
-  const [openColors, setOpenColors] = useState<Set<string>>(() => {
+  const [openColors, setOpenColors] = useState<Set<BucketKey>>(() => {
     try {
       const stored = localStorage.getItem('inbox.openColors');
-      return stored ? new Set(JSON.parse(stored)) : new Set(['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L']);
+      return stored ? new Set(JSON.parse(stored)) as Set<BucketKey> : new Set(BUCKET_KEYS);
     } catch {
-      return new Set(['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L']);
+      return new Set(BUCKET_KEYS);
     }
   });
 
@@ -199,16 +213,12 @@ export default function Inbox() {
   const visibleEvents = events.filter(e => !skipped.has(e.id));
   const pendingCount = stats?.pending_count ?? total;
 
-  // Group by color bucket
-  const grouped = new Map<ColorBucket, AcquisitionEvent[]>();
-  for (const bucket of BUCKET_ORDER) grouped.set(bucket, []);
-  for (const ev of visibleEvents) {
-    const bucket = getColorBucket(ev.card);
-    grouped.get(bucket)!.push(ev);
-  }
-  const activeBuckets = BUCKET_ORDER.filter(b => (grouped.get(b)?.length || 0) > 0);
+  // Group by color bucket — pre-filled map prevents undefined.push crash
+  const grouped = groupByColorBucket(visibleEvents.map(e => ({ card: e.card, _ev: e })));
+  // activeBuckets: maintain BUCKET_KEYS order, skip empty
+  const activeBuckets = BUCKET_KEYS.filter(b => (grouped.get(b)?.length || 0) > 0);
 
-  const toggleBucket = (bucket: ColorBucket) => {
+  const toggleBucket = (bucket: BucketKey) => {
     setOpenColors(prev => {
       const next = new Set(prev);
       if (next.has(bucket)) next.delete(bucket);
@@ -282,38 +292,46 @@ export default function Inbox() {
           action={<Button onClick={loadEvents}>{t('common.retry')}</Button>}
         />
       ) : (
-        <>
-          {activeBuckets.map(bucket => {
-            const bucketEvents = grouped.get(bucket)!;
-            const isOpen = openColors.has(bucket);
-            return (
-              <div key={bucket} className={styles.bucketSection}>
-                <div className={styles.bucketHeader} onClick={() => toggleBucket(bucket)}>
-                  <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
-                  <span>{BUCKET_EMOJI[bucket]} {BUCKET_LABELS[bucket]} ({bucketEvents.length})</span>
+        <ErrorBoundary fallback={(err, retry) => (
+          <ErrorBanner
+            title="Inbox-Liste konnte nicht gerendert werden"
+            message={`Render-Fehler: ${err.message}`}
+            action={<Button onClick={retry}>{t('common.retry')}</Button>}
+          />
+        )}>
+          <>
+            {activeBuckets.map(bucket => {
+              const bucketEvents = grouped.get(bucket)!.map(item => item._ev);
+              const isOpen = openColors.has(bucket);
+              return (
+                <div key={bucket} className={styles.bucketSection}>
+                  <div className={styles.bucketHeader} onClick={() => toggleBucket(bucket)}>
+                    <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
+                    <span>{INBOX_BUCKET_EMOJI[bucket]} {INBOX_BUCKET_LABELS[bucket]} ({bucketEvents.length})</span>
+                  </div>
+                  {isOpen && bucketEvents.map(event => (
+                    <AcquisitionCard
+                      key={event.id}
+                      event={event}
+                      onDecide={handleDecide}
+                      onSkip={handleSkip}
+                      defaultSource={defaultSource}
+                      onSourceChange={handleSourceChange}
+                    />
+                  ))}
                 </div>
-                {isOpen && bucketEvents.map(event => (
-                  <AcquisitionCard
-                    key={event.id}
-                    event={event}
-                    onDecide={handleDecide}
-                    onSkip={handleSkip}
-                    defaultSource={defaultSource}
-                    onSourceChange={handleSourceChange}
-                  />
-                ))}
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {totalPages > 1 && (
-            <div className={styles.pagination}>
-              <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
-              <span className={styles.pageInfo}>Page {page} of {totalPages}</span>
-              <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} />
-            </div>
-          )}
-        </>
+            {totalPages > 1 && (
+              <div className={styles.pagination}>
+                <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
+                <span className={styles.pageInfo}>Page {page} of {totalPages}</span>
+                <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} />
+              </div>
+            )}
+          </>
+        </ErrorBoundary>
       )}
     </div>
   );
