@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
 import {
   Spinner,
@@ -178,13 +179,10 @@ export default function Duplicates() {
   const styles = useStyles();
   const { accent } = useAccent();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [items, setItems] = useState<DuplicateEntry[]>([]);
-  const [total, setTotal] = useState(0);
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
-  const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
-  const [availableSets, setAvailableSets] = useState<CollectionSet[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DuplicateEntry | null>(null);
   const [listingQty, setListingQty] = useState(1);
@@ -214,12 +212,13 @@ export default function Duplicates() {
     setPage(1);
   };
 
-  useEffect(() => {
-    api.getCollectionSets().then(setAvailableSets).catch(() => {});
-  }, []);
+  const { data: availableSets = [] } = useQuery<CollectionSet[]>({
+    queryKey: ['collection-sets'],
+    queryFn: () => api.getCollectionSets(),
+    staleTime: 5 * 60_000,
+  });
 
-  const load = useCallback((currentPage: number) => {
-    setLoading(true);
+  const duplicatesParams = useMemo(() => {
     const params = new URLSearchParams();
     const q = searchParams.get('search') || '';
     if (q) params.set('search', q);
@@ -227,15 +226,19 @@ export default function Duplicates() {
     if (setFilter) params.set('set_code', setFilter);
     params.set('sort_by', sortBy);
     params.set('sort_dir', sortDir);
-    params.set('page', String(currentPage));
+    params.set('page', String(page));
     params.set('page_size', String(pageSize));
-    api.getDuplicates(params)
-      .then(res => { setItems(res.items); setTotal(res.total); })
-      .catch(() => { setItems([]); setTotal(0); })
-      .finally(() => setLoading(false));
-  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, pageSize]);
+    return params;
+  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, page, pageSize]);
 
-  useEffect(() => { load(page); }, [load, page]);
+  const { data: duplicatesData, isLoading: loading } = useQuery({
+    queryKey: ['duplicates', duplicatesParams.toString()],
+    queryFn: () => api.getDuplicates(duplicatesParams),
+    staleTime: 60_000,
+  });
+
+  const items = duplicatesData?.items ?? [];
+  const total = duplicatesData?.total ?? 0;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -267,6 +270,8 @@ export default function Duplicates() {
         rarity: selectedCard.rarity,
       });
       setDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['cardmarket-listings'] });
+      queryClient.invalidateQueries({ queryKey: ['cardmarket-stats'] });
     } catch { /* ignore */ }
     setSubmitting(false);
   };

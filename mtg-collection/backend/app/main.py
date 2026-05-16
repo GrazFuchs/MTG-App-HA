@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
@@ -79,6 +80,7 @@ app = FastAPI(
     lifespan=lifespan,
     root_path=os.environ.get("INGRESS_ENTRY", "/"),
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS: disabled by default (same-origin via HA Ingress).
 # Enable for standalone dev with CORS_ORIGINS=http://localhost:5173

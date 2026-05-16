@@ -1,6 +1,6 @@
 """Collection API routes."""
 import json
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from ..database import get_db
 from ..models.schemas import CollectionEntry, CollectionAddRequest, CardResponse
 from ..clients.scryfall import scryfall, parse_scryfall_card
@@ -149,8 +149,9 @@ async def list_collection(
 
 
 @router.get("/sets")
-async def list_collection_sets():
+async def list_collection_sets(response: Response):
     """Return distinct set names present in the collection."""
+    response.headers["Cache-Control"] = "public, max-age=60"
     db = await get_db()
     cursor = await db.execute(
         """SELECT DISTINCT c.set_code, c.set_name

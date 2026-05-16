@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles, shorthands } from '@griffel/react';
 import { Spinner, Select, Button } from '@fluentui/react-components';
 import { api, DeckSummary } from '../api';
@@ -111,14 +112,23 @@ const useStyles = makeStyles({
 export default function Decks() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { accent } = useAccent();
-  const [decks, setDecks] = useState<DeckSummary[]>([]);
-  const [loading, setLoading] = useState(true);
   const [bracketFilter, setBracketFilter] = useState('');
 
-  useEffect(() => {
-    api.getDecks().then(setDecks).finally(() => setLoading(false));
-  }, []);
+  const { data: decks = [], isLoading: loading } = useQuery<DeckSummary[]>({
+    queryKey: ['decks'],
+    queryFn: () => api.getDecks(),
+    staleTime: 5 * 60_000,
+  });
+
+  const handleDeckHover = (id: number) => {
+    queryClient.prefetchQuery({
+      queryKey: ['deck', id],
+      queryFn: () => api.getDeck(id),
+      staleTime: 5 * 60_000,
+    });
+  };
 
   const filteredDecks = useMemo(() => {
     if (!bracketFilter) return decks;
@@ -201,6 +211,7 @@ export default function Decks() {
                 key={d.id}
                 className={styles.card}
                 onClick={() => navigate(`/decks/${d.id}`)}
+                onMouseEnter={() => handleDeckHover(d.id)}
               >
                 {d.featured_image && (
                   <div className={styles.artWrap}>

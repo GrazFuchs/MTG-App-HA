@@ -175,14 +175,17 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery<CollectionStats>({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
+    staleTime: 30_000,
   });
   const { data: alerts = [], isLoading: alertsLoading } = useQuery<PriceAlert[]>({
     queryKey: ['priceAlerts'],
     queryFn: () => api.getPriceAlerts(),
+    staleTime: 5 * 60_000,
   });
   const { data: valueHistory = [] } = useQuery<ValueSnapshot[]>({
     queryKey: ['valueHistory'],
     queryFn: () => api.getValueHistory(90),
+    staleTime: 5 * 60_000,
   });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 

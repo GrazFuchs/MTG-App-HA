@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
 import {
   Spinner,
@@ -137,49 +138,52 @@ const useStyles = makeStyles({
 export default function Collection() {
   const styles = useStyles();
   const { accent } = useAccent();
-  const [entries, setEntries] = useState<CollectionEntry[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
-  const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('added_at');
   const [sortDir, setSortDir] = useState('desc');
-  const [sets, setSets] = useState<CollectionSet[]>([]);
   const [selectedSet, setSelectedSet] = useState('');
-  const [decks, setDecks] = useState<DeckSummary[]>([]);
   const [selectedDeck, setSelectedDeck] = useState('');
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const isMobile = useMediaQuery('(max-width: 600px)');
 
-  useEffect(() => {
-    api.getCollectionSets().then(setSets).catch(() => {});
-    api.getDecks().then(setDecks).catch(() => {});
-  }, []);
+  const { data: sets = [] } = useQuery<CollectionSet[]>({
+    queryKey: ['collection-sets'],
+    queryFn: () => api.getCollectionSets(),
+    staleTime: 5 * 60_000,
+  });
 
-  const load = useCallback((q: string, currentSortBy: string, currentSortDir: string, currentPage: number) => {
-    setLoading(true);
+  const { data: decks = [] } = useQuery<DeckSummary[]>({
+    queryKey: ['decks'],
+    queryFn: () => api.getDecks(),
+    staleTime: 5 * 60_000,
+  });
+
+  const collectionParams = useMemo(() => {
     const params = new URLSearchParams();
-    if (q) params.set('search', q);
+    if (searchQuery) params.set('search', searchQuery);
     if (selectedSet) params.set('set_code', selectedSet);
     if (selectedDeck) params.set('deck_id', selectedDeck);
-    params.set('sort_by', currentSortBy);
-    params.set('sort_dir', currentSortDir);
-    params.set('page', String(currentPage));
+    params.set('sort_by', sortBy);
+    params.set('sort_dir', sortDir);
+    params.set('page', String(page));
     params.set('page_size', String(pageSize));
-    api.getCollection(params)
-      .then(res => { setEntries(res.items); setTotal(res.total); })
-      .catch(() => { setEntries([]); setTotal(0); })
-      .finally(() => setLoading(false));
-  }, [pageSize, selectedSet, selectedDeck]);
+    return params;
+  }, [searchQuery, selectedSet, selectedDeck, sortBy, sortDir, page, pageSize]);
 
-  useEffect(() => {
-    load(searchQuery, sortBy, sortDir, page);
-  }, [load, searchQuery, sortBy, sortDir, page]);
+  const { data: collectionData, isLoading: loading } = useQuery({
+    queryKey: ['collection', collectionParams.toString()],
+    queryFn: () => api.getCollection(collectionParams),
+    staleTime: 60_000,
+  });
+
+  const entries = collectionData?.items ?? [];
+  const total = collectionData?.total ?? 0;
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const handleSearch = () => { setPage(1); setSearchQuery(searchInput.trim()); };
+  const handleSearch = useCallback(() => { setPage(1); setSearchQuery(searchInput.trim()); }, [searchInput]);
   const handleSetChange = (value: string) => { setPage(1); setSelectedSet(value); };
   const handleDeckChange = (value: string) => { setPage(1); setSelectedDeck(value); };
 

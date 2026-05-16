@@ -1,12 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
 import { Button, Select, Spinner } from '@fluentui/react-components';
 import {
   ChevronLeft24Regular,
   ChevronRight24Regular,
 } from '@fluentui/react-icons';
-import { api, AcquisitionEvent, TriageDecisionPayload, InboxAcquisitionStats } from '../api';
+import { api, TriageDecisionPayload, InboxAcquisitionStats } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
@@ -116,15 +117,11 @@ const useStyles = makeStyles({
 export default function Inbox() {
   const styles = useStyles();
   const { accent } = useAccent();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [events, setEvents] = useState<AcquisitionEvent[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const [minValue, setMinValue] = useState(0);
-  const [stats, setStats] = useState<InboxAcquisitionStats | null>(null);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
 
   const activeFilter = searchParams.get('filter') || '';
@@ -161,40 +158,26 @@ export default function Inbox() {
     } catch { /* ignore */ }
   };
 
-  const loadEvents = useCallback(() => {
-    setLoading(true);
-    setLoadError(false);
-    api.getPendingTriage(page, pageSize, minValue, activeFilter)
-      .then(res => {
-        setEvents(res.items);
-        setTotal(res.total);
-      })
-      .catch(() => {
-        setEvents([]);
-        setTotal(0);
-        setLoadError(true);
-      })
-      .finally(() => setLoading(false));
-  }, [page, pageSize, minValue, activeFilter]);
+  const { data: eventsData, isLoading: loading, isError: loadError, refetch: refetchEvents } = useQuery({
+    queryKey: ['inbox-pending', page, pageSize, minValue, activeFilter],
+    queryFn: () => api.getPendingTriage(page, pageSize, minValue, activeFilter),
+    staleTime: 30_000,
+  });
 
-  const loadStats = useCallback(() => {
-    api.getInboxStats().then(setStats).catch(() => {});
-  }, []);
+  const { data: stats, refetch: refetchStats } = useQuery<InboxAcquisitionStats>({
+    queryKey: ['inbox-stats'],
+    queryFn: () => api.getInboxStats(),
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    loadEvents();
-    loadStats();
-  }, [loadEvents, loadStats]);
-
+  const events = eventsData?.items ?? [];
+  const total = eventsData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleDecide = async (eventId: number, payload: TriageDecisionPayload) => {
     await api.decideTriage(eventId, payload);
-    setEvents(prev => prev.filter(e => e.id !== eventId));
-    setTotal(prev => prev - 1);
-    if (stats) {
-      setStats({ ...stats, pending_count: stats.pending_count - 1 });
-    }
+    queryClient.invalidateQueries({ queryKey: ['inbox-pending'] });
+    queryClient.invalidateQueries({ queryKey: ['inbox-stats'] });
   };
 
   const handleSkip = (eventId: number) => {
@@ -279,7 +262,7 @@ export default function Inbox() {
         <ErrorBanner
           title={t('inbox.error.title')}
           message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
-          action={<Button onClick={loadEvents}>{t('common.retry')}</Button>}
+          action={<Button onClick={() => refetchEvents()}>{t('common.retry')}</Button>}
         />
       ) : visibleEvents.length === 0 && (stats?.pending_count ?? 0) === 0 ? (
         <div className={styles.empty}>
@@ -289,7 +272,7 @@ export default function Inbox() {
         <ErrorBanner
           title={t('inbox.error.title')}
           message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
-          action={<Button onClick={loadEvents}>{t('common.retry')}</Button>}
+          action={<Button onClick={() => refetchEvents()}>{t('common.retry')}</Button>}
         />
       ) : (
         <ErrorBoundary fallback={(err, retry) => (

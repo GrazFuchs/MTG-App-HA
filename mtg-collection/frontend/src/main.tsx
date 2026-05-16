@@ -2,14 +2,22 @@ import React, { useState, createContext, useContext } from 'react';
 import ReactDOM from 'react-dom/client';
 import { FluentProvider } from '@fluentui/react-components';
 import { BrowserRouter } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
 import App from './App';
 import { ACCENTS, ACCENTS_LIGHT, type AccentName, type AccentDef } from './theme/sothera';
 import { SotheraThemeProvider, useSotheraTheme } from './theme';
 import './index.css';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+      placeholderData: keepPreviousData,
+    },
+  },
 });
 
 // HA ingress: extract /api/hassio_ingress/<token> from the path

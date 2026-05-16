@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Spinner,
   Button,
@@ -15,58 +16,66 @@ import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
 export default function Settings() {
   const { accent } = useAccent();
-  const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [history, setHistory] = useState<SyncLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [resyncing, setResyncing] = useState(false);
+  const queryClient = useQueryClient();
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = () => {
-    setLoading(true);
-    Promise.all([api.getSyncStatus(), api.getSyncHistory()])
-      .then(([s, h]) => { setStatus(s); setHistory(h); })
-      .finally(() => setLoading(false));
-  };
+  const { data: status, isLoading: statusLoading } = useQuery<SyncStatus>({
+    queryKey: ['sync-status'],
+    queryFn: () => api.getSyncStatus(),
+    staleTime: 10_000,
+  });
+  const { data: history = [], isLoading: historyLoading } = useQuery<SyncLogEntry[]>({
+    queryKey: ['sync-history'],
+    queryFn: () => api.getSyncHistory(),
+    staleTime: 30_000,
+  });
 
-  useEffect(() => { load(); }, []);
+  const loading = statusLoading || historyLoading;
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setMsg(null);
-    try {
-      await api.triggerSync();
+  const syncMutation = useMutation({
+    mutationFn: () => api.triggerSync(),
+    onSuccess: () => {
       setMsg('Sync started. Refresh in a moment to see results.');
-      setTimeout(load, 5000);
-    } catch (e: any) {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+        queryClient.invalidateQueries({ queryKey: ['sync-history'] });
+        queryClient.invalidateQueries({ queryKey: ['stats'] });
+        queryClient.invalidateQueries({ queryKey: ['collection'] });
+        queryClient.invalidateQueries({ queryKey: ['decks'] });
+      }, 5000);
+    },
+    onError: (e: any) => {
       if (e.message?.includes('409')) {
         setMsg('A sync is already in progress. Please wait for it to finish.');
       } else {
         setMsg(`Error: ${e.message}`);
       }
-    } finally {
-      setSyncing(false);
-    }
-  };
+    },
+  });
 
-  const handleResync = async () => {
-    if (!confirm('This will delete all synced data and re-download everything from Archidekt. Continue?')) return;
-    setResyncing(true);
-    setMsg(null);
-    try {
-      await api.triggerResync();
+  const resyncMutation = useMutation({
+    mutationFn: () => api.triggerResync(),
+    onSuccess: () => {
       setMsg('Full resync started. All data will be re-downloaded. Refresh in a moment.');
-      setTimeout(load, 8000);
-    } catch (e: any) {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+        queryClient.invalidateQueries({ queryKey: ['sync-history'] });
+        queryClient.invalidateQueries({ queryKey: ['stats'] });
+        queryClient.invalidateQueries({ queryKey: ['collection'] });
+        queryClient.invalidateQueries({ queryKey: ['decks'] });
+      }, 8000);
+    },
+    onError: (e: any) => {
       if (e.message?.includes('409')) {
         setMsg('A sync is already in progress. Please wait for it to finish.');
       } else {
         setMsg(`Error: ${e.message}`);
       }
-    } finally {
-      setResyncing(false);
-    }
-  };
+    },
+  });
+
+  const syncing = syncMutation.isPending;
+  const resyncing = resyncMutation.isPending;
 
   if (loading) return <Spinner label="Loading..." />;
 
@@ -101,10 +110,14 @@ export default function Settings() {
           <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFainter, marginTop: 12, letterSpacing: 0.5 }}>Configure these options in the Home Assistant Add-on settings.</div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <Button icon={<ArrowSync24Regular />} appearance="primary" onClick={handleSync} disabled={syncing || resyncing}>
+            <Button icon={<ArrowSync24Regular />} appearance="primary" onClick={() => { setMsg(null); syncMutation.mutate(); }} disabled={syncing || resyncing}>
               {syncing ? 'Syncing...' : 'Sync Now'}
             </Button>
-            <Button icon={<DeleteRegular />} appearance="secondary" onClick={handleResync} disabled={syncing || resyncing}>
+            <Button icon={<DeleteRegular />} appearance="secondary" onClick={() => {
+              if (!confirm('This will delete all synced data and re-download everything from Archidekt. Continue?')) return;
+              setMsg(null);
+              resyncMutation.mutate();
+            }} disabled={syncing || resyncing}>
               {resyncing ? 'Resyncing...' : 'Full Resync'}
             </Button>
           </div>

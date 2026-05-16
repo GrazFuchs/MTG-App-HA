@@ -4,7 +4,7 @@ import io
 import json
 from datetime import date
 
-from fastapi import APIRouter, Query, UploadFile, File
+from fastapi import APIRouter, Query, UploadFile, File, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -163,18 +163,25 @@ async def list_cardmarket_listings(
 
 
 @router.get("/stats")
-async def cardmarket_stats():
+async def cardmarket_stats(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=30"
     db = await get_db()
     cursor = await db.execute(
-        """SELECT COUNT(*) as count, COALESCE(SUM(quantity), 0) as total_qty,
-        COALESCE(SUM(price * quantity), 0) as total_value
+        """SELECT
+            COUNT(*) as total_rows,
+            COUNT(DISTINCT card_name) as unique_cards,
+            COALESCE(SUM(quantity), 0) as total_quantity,
+            COALESCE(SUM(price * quantity), 0) as total_value
         FROM cardmarket_listings"""
     )
     row = await cursor.fetchone()
     return {
+        "unique_cards": row[1],
+        "total_rows": row[0],
+        "total_quantity": row[2],
+        "total_value": round(row[3], 2),
+        # Backward-compat: kept for HA MQTT publisher (deprecated, remove next sprint)
         "unique_listings": row[0],
-        "total_quantity": row[1],
-        "total_value": round(row[2], 2),
     }
 
 

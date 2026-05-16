@@ -1,5 +1,5 @@
 """Statistics routes."""
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from ..database import get_db
 from ..models.schemas import CollectionStats
 from ..services.queries import query_collection_stats
@@ -8,7 +8,8 @@ router = APIRouter()
 
 
 @router.get("/", response_model=CollectionStats)
-async def get_stats():
+async def get_stats(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=30"
     db = await get_db()
     stats = await query_collection_stats(db)
     return CollectionStats(**stats)

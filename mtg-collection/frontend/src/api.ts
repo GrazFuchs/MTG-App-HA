@@ -485,7 +485,14 @@ export const api = {
   // Cardmarket
   getCardmarketListings: (params?: URLSearchParams) =>
     request<{ items: CardmarketListing[]; total: number; page: number; page_size: number }>(`/api/cardmarket/listings?${params?.toString() ?? ''}`),
-  getCardmarketStats: () => request<{ unique_listings: number; total_quantity: number; total_value: number }>('/api/cardmarket/stats'),
+  getCardmarketStats: () => request<{
+    unique_cards: number;
+    total_rows: number;
+    total_quantity: number;
+    total_value: number;
+    /** @deprecated use total_rows */
+    unique_listings: number;
+  }>('/api/cardmarket/stats'),
   importCardmarketCSV: async (file: File) => {
     const form = new FormData();
     form.append('file', file);

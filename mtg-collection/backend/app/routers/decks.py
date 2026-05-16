@@ -1,6 +1,6 @@
 """Deck API routes."""
 import json
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from ..database import get_db
 from ..models.schemas import (
     DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate,
@@ -13,7 +13,8 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[DeckSummary])
-async def list_decks():
+async def list_decks(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=30"
     db = await get_db()
     decks = await query_all_decks(db)
     return [DeckSummary(**d) for d in decks]

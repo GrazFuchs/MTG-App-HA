@@ -1,3 +1,18 @@
+## 0.15.0
+
+### Performance
+- **SQLite WAL + PRAGMA tuning**: `journal_mode=WAL`, `synchronous=NORMAL`, `cache_size=-20000` (20 MB page cache), `temp_store=MEMORY` applied to every connection.
+- **Connection pool** raised from 2 → 6 concurrent DB connections.
+- **Migration 14**: 5 new indices (`idx_cards_name_nocase`, `idx_cards_set_code`, `idx_deck_cards_card_id`, `idx_collection_card_id`, `idx_cardmarket_listings_card_name`) + `ANALYZE`.
+- **GZip middleware** (`minimum_size=1000`) compresses API payloads by ~60–80%.
+- **Cache-Control headers** on hot read endpoints: `/collection/sets` (60 s), `/decks/`, `/stats/`, `/cardmarket/stats` (30 s each).
+- **React Query migration**: All 8 pages (Collection, DeckView, Decks, Cardmarket, Duplicates, Settings, Dashboard, Inbox) fully migrated to `useQuery`/`useMutation`. Zero legacy `useEffect` data-fetchers remaining. QueryClient defaults: `staleTime=30s`, `gcTime=5min`, `retry=1`, `refetchOnWindowFocus=false`, `keepPreviousData`.
+- **Deck prefetch on hover**: `Decks.tsx` prefetches deck detail on mouse-enter via `queryClient.prefetchQuery`.
+
+### Fixed
+- **Cardmarket stats**: `/api/cardmarket/stats` now correctly distinguishes `unique_cards` (`COUNT(DISTINCT card_name)`) from `total_rows` (raw listing count). Header shows "X CARDS · Y LISTINGS · Z COPIES". `unique_listings` retained as deprecated backward-compat field.
+- **Cardmarket search regression**: Each keystroke no longer fires an API request — search is committed on Enter only (`searchInput` / `committedSearch` split).
+
 ## 0.14.1
 
 ### Fixed

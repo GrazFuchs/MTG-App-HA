@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { makeStyles, shorthands } from '@griffel/react';
 import {
   Spinner,
@@ -186,20 +187,13 @@ function PriceCell({ cardName, accent }: { cardName: string; accent: string }) {
 export default function Cardmarket() {
   const styles = useStyles();
   const { accent } = useAccent();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [listings, setListings] = useState<CardmarketListing[]>([]);
-  const [listingsTotal, setListingsTotal] = useState(0);
-  const [availableSets, setAvailableSets] = useState<CollectionSet[]>([]);
-  const [stats, setStats] = useState<{ unique_listings: number; total_quantity: number; total_value: number } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [importing, setImporting] = useState(false);
+  const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
+  const [committedSearch, setCommittedSearch] = useState(searchParams.get('search') || '');
   const [exporting, setExporting] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [alerts, setAlerts] = useState<PriceAlert[]>([]);
-  const [alertsLoading, setAlertsLoading] = useState(false);
-  const [syncingPrices, setSyncingPrices] = useState(false);
   const [openAlertGroups, setOpenAlertGroups] = useState<Set<string>>(new Set());
 
   const colorFilter = searchParams.get('color') || '';
@@ -218,46 +212,72 @@ export default function Cardmarket() {
     setSearchParams(next);
   };
 
-  const load = (q = search) => {
-    setLoading(true);
+  const listingsParams = useMemo(() => {
     const params = new URLSearchParams();
-    if (q) params.set('search', q);
+    if (committedSearch) params.set('search', committedSearch);
     if (colorFilter) params.set('color', colorFilter);
     if (setCodeFilter) params.set('set_code', setCodeFilter);
     if (sourceFilter) params.set('source', sourceFilter);
     params.set('sort_by', sortBy);
     params.set('sort_dir', sortDir);
     params.set('page_size', '200');
-    Promise.all([api.getCardmarketListings(params), api.getCardmarketStats()])
-      .then(([res, s]) => { setListings(res.items); setListingsTotal(res.total); setStats(s); })
-      .finally(() => setLoading(false));
-  };
+    return params;
+  }, [committedSearch, colorFilter, setCodeFilter, sourceFilter, sortBy, sortDir]);
 
-  useEffect(() => { load(); }, [colorFilter, setCodeFilter, sourceFilter, sortParam]);
+  const { data: listingsData, isLoading: loading } = useQuery({
+    queryKey: ['cardmarket-listings', listingsParams.toString()],
+    queryFn: () => api.getCardmarketListings(listingsParams),
+    staleTime: 60_000,
+  });
 
-  useEffect(() => {
-    api.getCollectionSets().then(setAvailableSets).catch(() => {});
-  }, []);
+  const { data: stats } = useQuery({
+    queryKey: ['cardmarket-stats'],
+    queryFn: () => api.getCardmarketStats(),
+    staleTime: 60_000,
+  });
 
-  useEffect(() => {
-    setAlertsLoading(true);
-    api.getPriceAlerts().then(setAlerts).catch(() => {}).finally(() => setAlertsLoading(false));
-  }, []);
+  const { data: availableSets = [] } = useQuery<CollectionSet[]>({
+    queryKey: ['collection-sets'],
+    queryFn: () => api.getCollectionSets(),
+    staleTime: 5 * 60_000,
+  });
 
-  const handleImport = async () => {
+  const { data: alerts = [], isLoading: alertsLoading } = useQuery<PriceAlert[]>({
+    queryKey: ['price-alerts'],
+    queryFn: () => api.getPriceAlerts(),
+    staleTime: 5 * 60_000,
+  });
+
+  const listings = listingsData?.items ?? [];
+  const listingsTotal = listingsData?.total ?? 0;
+
+  const importMutation = useMutation({
+    mutationFn: (file: File) => api.importCardmarketCSV(file),
+    onSuccess: (result) => {
+      setMsg({ type: 'success', text: `Imported ${result.imported} of ${result.total_rows} listings (${result.errors} errors)` });
+      queryClient.invalidateQueries({ queryKey: ['cardmarket-listings'] });
+      queryClient.invalidateQueries({ queryKey: ['cardmarket-stats'] });
+    },
+    onError: (e: any) => setMsg({ type: 'error', text: e.message }),
+  });
+
+  const syncPricesMutation = useMutation({
+    mutationFn: () => api.syncPrices(),
+    onSuccess: (result) => {
+      setMsg({ type: 'success', text: `Price sync: ${result.products_matched} matched, ${result.prices_stored} stored` });
+      queryClient.invalidateQueries({ queryKey: ['price-alerts'] });
+    },
+    onError: (e: any) => setMsg({ type: 'error', text: e.message }),
+  });
+
+  const importing = importMutation.isPending;
+  const syncingPrices = syncPricesMutation.isPending;
+
+  const handleImport = () => {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
-    setImporting(true);
     setMsg(null);
-    try {
-      const result = await api.importCardmarketCSV(file);
-      setMsg({ type: 'success', text: `Imported ${result.imported} of ${result.total_rows} listings (${result.errors} errors)` });
-      load(search);
-    } catch (e: any) {
-      setMsg({ type: 'error', text: e.message });
-    } finally {
-      setImporting(false);
-    }
+    importMutation.mutate(file);
   };
 
   const totalValue = stats?.total_value ?? 0;
@@ -273,7 +293,7 @@ export default function Cardmarket() {
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase' }}>LISTINGS · TOTAL VALUE</div>
             <div style={{ fontFamily: sothera.fontDisplay, fontSize: 28, fontWeight: 700, color: sothera.fg, fontFeatureSettings: '"tnum"', letterSpacing: -0.8 }}>€{totalValue.toFixed(2)}</div>
-            <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: accent.oklch, letterSpacing: 1.5 }}>{totalQty} CARDS · {stats?.unique_listings ?? 0} SLOTS</div>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: accent.oklch, letterSpacing: 1.5 }}>{stats?.unique_cards ?? 0} CARDS · {stats?.total_rows ?? 0} LISTINGS · {totalQty} COPIES</div>
           </div>
         }
       />
@@ -305,10 +325,7 @@ export default function Cardmarket() {
             setExporting(true); setMsg(null);
             try { await api.exportCardmarketCSV(); setMsg({ type: 'success', text: 'CSV exported successfully' }); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setExporting(false); }
           }, disabled: exporting || listings.length === 0 },
-          { l: '↯ SYNC PRICES', primary: false, onClick: async () => {
-            setSyncingPrices(true); setMsg(null);
-            try { const result = await api.syncPrices(); setMsg({ type: 'success', text: `Price sync: ${result.products_matched} matched, ${result.prices_stored} stored` }); api.getPriceAlerts().then(setAlerts).catch(() => {}); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setSyncingPrices(false); }
-          }, disabled: syncingPrices },
+          { l: '↯ SYNC PRICES', primary: false, onClick: () => { setMsg(null); syncPricesMutation.mutate(); }, disabled: syncingPrices },
         ].map(b => (
           <div
             key={b.l}
@@ -327,9 +344,11 @@ export default function Cardmarket() {
         ))}
         <Input
           placeholder="Search..."
-          value={search}
-          onChange={(_, d) => setSearch(d.value)}
-          onKeyDown={(e) => e.key === 'Enter' && load(search)}
+          value={searchInput}
+          onChange={(_, d) => setSearchInput(d.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setCommittedSearch(searchInput.trim());
+          }}
           style={{ minWidth: 200, flex: 1, maxWidth: 300, marginLeft: 'auto' }}
         />
       </div>

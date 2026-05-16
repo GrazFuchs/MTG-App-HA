@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _pool: asyncio.Queue[aiosqlite.Connection] | None = None
 _pool_connections: list[aiosqlite.Connection] = []
 _primary: aiosqlite.Connection | None = None
-_POOL_SIZE = 2  # extra connections beyond the primary
+_POOL_SIZE = 6  # extra connections beyond the primary
 
 COLLECTION_COLUMN_MIGRATIONS = {
     "archidekt_tags": "ALTER TABLE collection ADD COLUMN archidekt_tags TEXT DEFAULT ''",
@@ -453,6 +453,16 @@ async def _migration_13(db: aiosqlite.Connection):
     )
 
 
+async def _migration_14(db: aiosqlite.Connection):
+    """Performance indices for common JOIN and search paths."""
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_cards_name_nocase ON cards(name COLLATE NOCASE)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_cards_set_code ON cards(set_code)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_cards_card_id ON deck_cards(card_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_collection_card_id ON collection(card_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_cardmarket_listings_card_name ON cardmarket_listings(card_name)")
+    await db.execute("ANALYZE")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -466,6 +476,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     11: _migration_11,
     12: _migration_12,
     13: _migration_13,
+    14: _migration_14,
 }
 
 
@@ -499,6 +510,9 @@ async def _create_connection() -> aiosqlite.Connection:
     conn = await aiosqlite.connect(settings.db_path)
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA journal_mode=WAL")
+    await conn.execute("PRAGMA synchronous=NORMAL")
+    await conn.execute("PRAGMA cache_size=-20000")   # 20 MB
+    await conn.execute("PRAGMA temp_store=MEMORY")
     await conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles, shorthands } from '@griffel/react';
 import { Spinner, Button } from '@fluentui/react-components';
 import { api, DeckDetail, DeckCardEntry } from '../api';
@@ -140,21 +141,20 @@ export default function DeckView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { accent } = useAccent();
-  const [deck, setDeck] = useState<DeckDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (id) {
-      api.getDeck(Number(id))
-        .then(setDeck)
-        .catch((e) => setError(e.message))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-      setError('No deck ID provided.');
-    }
-  }, [id]);
+  const { data: deck, isLoading: loading, error } = useQuery<DeckDetail>({
+    queryKey: ['deck', Number(id)],
+    queryFn: () => api.getDeck(Number(id)),
+    enabled: !!id,
+    staleTime: 5 * 60_000,
+  });
+
+  const errorMsg = error ? (error as Error).message : null;
+
+  const setDeck = (updated: DeckDetail) => {
+    queryClient.setQueryData(['deck', Number(id)], updated);
+  };
 
   const { mainCards, sideboardCards, commander, colorIdentity, totalValue } = useMemo(() => {
     if (!deck) return { mainCards: new Map<string, DeckCardEntry[]>(), sideboardCards: new Map<string, DeckCardEntry[]>(), commander: null, colorIdentity: [] as string[], totalValue: 0 };
@@ -189,7 +189,8 @@ export default function DeckView() {
   }, [deck]);
 
   if (loading) return <Spinner label="Loading deck..." />;
-  if (error) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>Error: {error}</div>;
+  if (!id) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>No deck ID provided.</div>;
+  if (errorMsg) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>Error: {errorMsg}</div>;
   if (!deck) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>Deck not found.</div>;
 
   const manaCurve = (() => {
