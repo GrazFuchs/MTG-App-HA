@@ -7,6 +7,7 @@ import {
   Button,
   Input,
   Select,
+  Tooltip,
   Dialog,
   DialogSurface,
   DialogTitle,
@@ -25,7 +26,6 @@ import { api, DuplicateEntry, CollectionSet } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader } from '../components/sothera';
-import { getColorBucketLegacy, BUCKET_ORDER, BUCKET_LABELS, BUCKET_EMOJI, ColorBucket } from '../utils/colors';
 
 const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'All Colors' },
@@ -47,12 +47,6 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'color_asc', label: 'Color asc' },
 ];
 
-const GROUP_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'None' },
-  { value: 'color', label: 'Color' },
-  { value: 'set', label: 'Set' },
-];
-
 const useStyles = makeStyles({
   controls: {
     display: 'flex',
@@ -70,7 +64,7 @@ const useStyles = makeStyles({
   },
   gridHeader: {
     display: 'grid',
-    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 90px 80px',
+    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 100px 80px',
     padding: '4px 0 14px',
     borderBottom: `1px solid ${sothera.headerBorder}`,
     fontFamily: sothera.fontMono,
@@ -81,7 +75,7 @@ const useStyles = makeStyles({
   },
   gridRow: {
     display: 'grid',
-    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 90px 80px',
+    gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 100px 80px',
     padding: '12px 0',
     fontSize: '13px',
     alignItems: 'center',
@@ -126,25 +120,12 @@ const useStyles = makeStyles({
     width: '100%',
     marginTop: '8px',
   },
-  groupHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 0',
-    cursor: 'pointer',
-    userSelect: 'none',
-    borderBottom: `1px solid ${sothera.rowBorder}`,
-    fontFamily: sothera.fontMono,
-    fontSize: '12px',
-    letterSpacing: '1px',
-    color: sothera.fgMuted,
-    marginBottom: '4px',
-    marginTop: '12px',
-  },
 });
 
 function DuplicateRow({ item, onSell, accent, i, total }: { item: DuplicateEntry; onSell: (item: DuplicateEntry) => void; accent: any; i: number; total: number }) {
   const styles = useStyles();
+  const price = item.is_foil ? (item.price_eur_foil || item.price_eur) : item.price_eur;
+  const extraValue = price ? (parseFloat(price) * item.extras_after_listings).toFixed(2) : null;
   return (
     <div className={styles.gridRow} style={{ borderBottom: i < total - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
       <div>{item.image_uri && <img src={item.image_uri} alt="" className={styles.cardImg} />}</div>
@@ -157,18 +138,22 @@ function DuplicateRow({ item, onSell, accent, i, total }: { item: DuplicateEntry
         >
           {item.card_name}
         </a>
+        {item.is_foil && <span style={{ marginLeft: 6, fontSize: 10, color: '#c9a227', fontWeight: 600 }}>◆ Foil</span>}
       </div>
       <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{item.set_name} ({item.set_code.toUpperCase()})</div>
       <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.total_copies}</div>
       <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{item.in_decks}</div>
       <div>
-        <span style={{ fontFamily: sothera.fontMono, fontSize: 10, padding: '2px 8px', letterSpacing: 1.5, borderWidth: 1, borderStyle: 'solid', borderColor: accent.oklch, color: accent.oklch }}>
-          {item.extras}
-        </span>
+        <Tooltip content={`Total extras: ${item.extras}${item.listed_quantity > 0 ? `, ${item.listed_quantity} already listed` : ''}`} relationship="description">
+          <span style={{ fontFamily: sothera.fontMono, fontSize: 10, padding: '2px 8px', letterSpacing: 1.5, borderWidth: 1, borderStyle: 'solid', borderColor: accent.oklch, color: accent.oklch }}>
+            {item.extras_after_listings}
+          </span>
+        </Tooltip>
+        {item.listed_quantity > 0 && <span style={{ marginLeft: 4, fontSize: 9, color: sothera.fgFaint }}>({item.listed_quantity} listed)</span>}
       </div>
-      <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.price_eur ? `€${item.price_eur}` : '—'}</div>
-      <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.price_eur ? `€${(parseFloat(item.price_eur) * item.extras).toFixed(2)}` : '—'}</div>
-      <div>
+      <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{price ? `€${price}` : '—'}</div>
+      <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"', paddingRight: 16 }}>{extraValue ? `€${extraValue}` : '—'}</div>
+      <div style={{ paddingLeft: 4 }}>
         <Button size="small" appearance="primary" onClick={() => onSell(item)}>Sell</Button>
       </div>
     </div>
@@ -190,11 +175,9 @@ export default function Duplicates() {
   const [listingCondition, setListingCondition] = useState('NM');
   const [listingLanguage, setListingLanguage] = useState('English');
   const [submitting, setSubmitting] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   const colorFilter = searchParams.get('color') || '';
   const setFilter = searchParams.get('set') || '';
-  const groupBy = searchParams.get('group') || '';
   const sortParam = searchParams.get('sort') || 'extras_value_desc';
 
   const [sortBy, sortDir] = (() => {
@@ -213,9 +196,15 @@ export default function Duplicates() {
   };
 
   const { data: availableSets = [] } = useQuery<CollectionSet[]>({
-    queryKey: ['collection-sets'],
-    queryFn: () => api.getCollectionSets(),
-    staleTime: 5 * 60_000,
+    queryKey: ['duplicate-sets', searchParams.get('search') || '', colorFilter],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      const q = searchParams.get('search') || '';
+      if (q) p.set('search', q);
+      if (colorFilter) p.set('color', colorFilter);
+      return api.getDuplicateSets(p);
+    },
+    staleTime: 60_000,
   });
 
   const duplicatesParams = useMemo(() => {
@@ -248,8 +237,8 @@ export default function Duplicates() {
 
   const openListingDialog = (card: DuplicateEntry) => {
     setSelectedCard(card);
-    setListingQty(card.extras);
-    setListingPrice(card.price_eur || '0');
+    setListingQty(card.extras_after_listings);
+    setListingPrice(card.is_foil ? (card.price_eur_foil || card.price_eur || '0') : (card.price_eur || '0'));
     setListingCondition('NM');
     setListingLanguage('English');
     setDialogOpen(true);
@@ -267,81 +256,28 @@ export default function Duplicates() {
         price: parseFloat(listingPrice) || 0,
         condition: listingCondition,
         language: listingLanguage,
+        is_foil: selectedCard.is_foil,
         rarity: selectedCard.rarity,
       });
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ['cardmarket-listings'] });
       queryClient.invalidateQueries({ queryKey: ['cardmarket-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['duplicates'] });
+      queryClient.invalidateQueries({ queryKey: ['duplicate-sets'] });
     } catch { /* ignore */ }
     setSubmitting(false);
   };
 
-  // Render items optionally grouped
   const renderItems = (itemList: DuplicateEntry[]) => (
     <>
       <div className={styles.gridHeader}>
         <div /><div>CARD</div><div>SET</div><div>OWNED</div><div>DECKS</div><div>EXTRA</div><div style={{ textAlign: 'right' }}>EUR</div><div style={{ textAlign: 'right' }}>VALUE</div><div />
       </div>
       {itemList.map((item, i) => (
-        <DuplicateRow key={i} item={item} onSell={openListingDialog} accent={accent} i={i} total={itemList.length} />
+        <DuplicateRow key={`${item.card_id}-${item.set_code}-${item.is_foil}`} item={item} onSell={openListingDialog} accent={accent} i={i} total={itemList.length} />
       ))}
     </>
   );
-
-  const renderGrouped = () => {
-    if (groupBy === 'color') {
-      const grouped = new Map<ColorBucket, DuplicateEntry[]>();
-      for (const b of BUCKET_ORDER) grouped.set(b, []);
-      for (const item of items) {
-        const bucket = getColorBucketLegacy({ color_identity: item.color_identity, type_line: item.type_line });
-        grouped.get(bucket)!.push(item);
-      }
-      return BUCKET_ORDER.filter(b => (grouped.get(b)?.length || 0) > 0).map(bucket => {
-        const bucketItems = grouped.get(bucket)!;
-        const isOpen = openGroups.has(bucket);
-        return (
-          <div key={bucket}>
-            <div className={styles.groupHeader} onClick={() => setOpenGroups(prev => {
-              const next = new Set(prev);
-              if (next.has(bucket)) next.delete(bucket); else next.add(bucket);
-              return next;
-            })}>
-              <span style={{ fontSize: 10 }}>{isOpen ? '▼' : '▶'}</span>
-              <span>{BUCKET_EMOJI[bucket]} {BUCKET_LABELS[bucket]} ({bucketItems.length})</span>
-            </div>
-            {isOpen && <Panel>{renderItems(bucketItems)}</Panel>}
-          </div>
-        );
-      });
-    }
-    if (groupBy === 'set') {
-      const setMap = new Map<string, DuplicateEntry[]>();
-      for (const item of items) {
-        const key = item.set_name || 'Unknown Set';
-        if (!setMap.has(key)) setMap.set(key, []);
-        setMap.get(key)!.push(item);
-      }
-      const sortedSets = [...setMap.keys()].sort();
-      return sortedSets.map(setName => {
-        const setItems = setMap.get(setName)!;
-        const isOpen = openGroups.has(setName);
-        return (
-          <div key={setName}>
-            <div className={styles.groupHeader} onClick={() => setOpenGroups(prev => {
-              const next = new Set(prev);
-              if (next.has(setName)) next.delete(setName); else next.add(setName);
-              return next;
-            })}>
-              <span style={{ fontSize: 10 }}>{isOpen ? '▼' : '▶'}</span>
-              <span>{setName} ({setItems.length})</span>
-            </div>
-            {isOpen && <Panel>{renderItems(setItems)}</Panel>}
-          </div>
-        );
-      });
-    }
-    return <Panel>{renderItems(items)}</Panel>;
-  };
 
   return (
     <div>
@@ -368,9 +304,6 @@ export default function Duplicates() {
           <option value="">All Sets</option>
           {availableSets.map(s => <option key={s.set_code} value={s.set_code}>{s.set_name}</option>)}
         </Select>
-        <Select value={groupBy} onChange={(_, d) => setParam('group', d.value)} className={styles.filterSelect}>
-          {GROUP_OPTIONS.map(o => <option key={o.value} value={o.value}>Group: {o.label}</option>)}
-        </Select>
         <Select value={sortParam} onChange={(_, d) => setParam('sort', d.value)} className={styles.filterSelect}>
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
         </Select>
@@ -382,7 +315,7 @@ export default function Duplicates() {
         <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>No duplicate cards found.</div>
       ) : (
         <>
-          {renderGrouped()}
+          <Panel>{renderItems(items)}</Panel>
           <div className={styles.pagination}>
             <Button icon={<ChevronDoubleLeft20Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(1)} />
             <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
@@ -395,16 +328,20 @@ export default function Duplicates() {
 
       <Dialog open={dialogOpen} onOpenChange={(_, d) => setDialogOpen(d.open)}>
         <DialogSurface>
-          <DialogTitle>Create Cardmarket Listing</DialogTitle>
+          <DialogTitle>Create Cardmarket Listing{selectedCard?.is_foil ? ' (Foil)' : ''}</DialogTitle>
           <DialogBody>
             <DialogContent>
               {selectedCard && (
                 <>
-                  <div style={{ fontWeight: 600, color: sothera.fg }}>{selectedCard.card_name} <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>— {selectedCard.set_name}</span></div>
+                  <div style={{ fontWeight: 600, color: sothera.fg }}>
+                    {selectedCard.card_name}
+                    {selectedCard.is_foil && <span style={{ marginLeft: 6, fontSize: 10, color: '#c9a227' }}>◆ Foil</span>}
+                    <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}> — {selectedCard.set_name}</span>
+                  </div>
                   <div className={styles.formRow}>
                     <div>
-                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Quantity (max {selectedCard.extras})</div>
-                      <Input type="number" min={1} max={selectedCard.extras} value={String(listingQty)} onChange={(_, d) => setListingQty(Math.min(selectedCard.extras, Math.max(1, parseInt(d.value) || 1)))} className={styles.dialogInput} />
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Quantity (max {selectedCard.extras_after_listings})</div>
+                      <Input type="number" min={1} max={selectedCard.extras_after_listings} value={String(listingQty)} onChange={(_, d) => setListingQty(Math.min(selectedCard.extras_after_listings, Math.max(1, parseInt(d.value) || 1)))} className={styles.dialogInput} />
                     </div>
                     <div>
                       <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Price (EUR)</div>

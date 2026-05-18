@@ -460,6 +460,7 @@ async def _migration_14(db: aiosqlite.Connection):
     await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_cards_card_id ON deck_cards(card_id)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_collection_card_id ON collection(card_id)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_cardmarket_listings_card_name ON cardmarket_listings(card_name)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_cm_listings_name_set_foil ON cardmarket_listings(card_name, set_code, is_foil)")
     await db.execute("ANALYZE")
 
 

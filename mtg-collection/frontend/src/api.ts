@@ -421,6 +421,9 @@ export interface DuplicateEntry {
   total_copies: number;
   in_decks: number;
   extras: number;
+  is_foil: boolean;
+  listed_quantity: number;
+  extras_after_listings: number;
   card_id: number;
   collector_number: string;
   color_identity: string[];
@@ -547,6 +550,8 @@ export const api = {
   // Duplicates
   getDuplicates: (params?: URLSearchParams) =>
     request<PaginatedDuplicates>(`/api/collection/duplicates?${params?.toString() ?? ''}`),
+  getDuplicateSets: (params?: URLSearchParams) =>
+    request<CollectionSet[]>(`/api/collection/duplicates/sets?${params?.toString() ?? ''}`),
 
   // Cardmarket add/clear
   addCardmarketListing: (data: { card_name: string; set_name?: string; set_code?: string; quantity: number; price: number; condition: string; language: string; is_foil?: boolean; rarity?: string; comments?: string }) =>

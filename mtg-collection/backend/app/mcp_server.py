@@ -402,44 +402,104 @@ async def sync_prices() -> str:
 
 
 @mcp.tool()
-async def get_duplicates(search: str = "", page: int = 1, page_size: int = 50) -> str:
-    """Get cards where you own more copies than are used in decks.
+async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_size: int = 50) -> str:
+    """Get cards where you own more copies than are used in decks (printing-level).
+
+    Returns one row per (card, set, foil) where extras_after_listings > 0.
 
     Args:
         search: Optional card name filter
+        color: Color filter (CSV: W,U,B,R,G,M,C,L)
         page: Page number (default 1)
         page_size: Items per page (default 50)
     """
     from .database import get_db
     db = await get_db()
     offset = (page - 1) * page_size
-    where = "WHERE extras > 0"
+
+    # Build conditions
+    conditions = ["c.type_line NOT LIKE '%Basic Land%'"]
     params: list[Any] = []
     if search:
-        where += " AND card_name LIKE ?"
+        conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
+    if color:
+        for clr in color.split(","):
+            clr = clr.strip().upper()
+            if clr in ("W", "U", "B", "R", "G"):
+                conditions.append("c.color_identity LIKE ?")
+                params.append(f'%"{clr}"%')
+            elif clr == "M":
+                conditions.append("c.color_identity LIKE '%,%'")
+            elif clr == "C":
+                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
+    where = " AND ".join(conditions)
+    doubled_params = params + params
+
+    cte = f"""
+        WITH deck_usage AS (
+            SELECT c2.name, SUM(dc.quantity) as in_decks
+            FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
+            GROUP BY c2.name
+        ),
+        global_owned AS (
+            SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
+            FROM collection col2 JOIN cards c3 ON c3.id = col2.card_id
+            GROUP BY c3.name
+        ),
+        printing_rows AS (
+            SELECT c.id as card_id, c.name as card_name, c.set_code, c.set_name, c.rarity,
+                   c.price_eur, 0 as is_foil,
+                   SUM(col.quantity) as total_copies,
+                   COALESCE(du.in_decks, 0) as in_decks,
+                   COALESCE(go.total_global, 0) as total_global
+            FROM collection col JOIN cards c ON c.id = col.card_id
+            LEFT JOIN deck_usage du ON du.name = c.name
+            LEFT JOIN global_owned go ON go.name = c.name
+            WHERE {where}
+            GROUP BY c.id, c.set_code
+            HAVING SUM(col.quantity) > 0
+            UNION ALL
+            SELECT c.id as card_id, c.name as card_name, c.set_code, c.set_name, c.rarity,
+                   c.price_eur_foil as price_eur, 1 as is_foil,
+                   SUM(col.foil_quantity) as total_copies,
+                   COALESCE(du.in_decks, 0) as in_decks,
+                   COALESCE(go.total_global, 0) as total_global
+            FROM collection col JOIN cards c ON c.id = col.card_id
+            LEFT JOIN deck_usage du ON du.name = c.name
+            LEFT JOIN global_owned go ON go.name = c.name
+            WHERE {where}
+            GROUP BY c.id, c.set_code
+            HAVING SUM(col.foil_quantity) > 0
+        ),
+        with_extras AS (
+            SELECT pr.*,
+                   pr.total_copies as extras,
+                   COALESCE((
+                       SELECT SUM(l.quantity) FROM cardmarket_listings l
+                       WHERE LOWER(l.card_name) = LOWER(pr.card_name)
+                         AND LOWER(COALESCE(l.set_code, l.expansion_code, '')) = LOWER(pr.set_code)
+                         AND l.is_foil = pr.is_foil
+                   ), 0) as listed_quantity
+            FROM printing_rows pr
+            WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
+        ),
+        final AS (
+            SELECT *, MAX(extras - listed_quantity, 0) as extras_after_listings
+            FROM with_extras
+        )
+    """
 
     count_cursor = await db.execute(
-        f"""WITH dups AS (
-            SELECT c.name as card_name, c.set_name, c.set_code, c.rarity,
-                   c.price_eur, co.quantity + co.foil_quantity as total_copies,
-                   COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc WHERE dc.card_id = c.id), 0) as in_decks,
-                   (co.quantity + co.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc WHERE dc.card_id = c.id), 0) as extras
-            FROM collection co JOIN cards c ON co.card_id = c.id
-            WHERE (co.quantity + co.foil_quantity) > 1
-        ) SELECT COUNT(*) FROM dups {where}""", params)
+        f"{cte} SELECT COUNT(*) FROM final WHERE extras_after_listings > 0",
+        doubled_params)
     total = (await count_cursor.fetchone())[0]
 
     cursor = await db.execute(
-        f"""WITH dups AS (
-            SELECT c.name as card_name, c.set_name, c.set_code, c.rarity,
-                   c.price_eur, co.quantity + co.foil_quantity as total_copies,
-                   COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc WHERE dc.card_id = c.id), 0) as in_decks,
-                   (co.quantity + co.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc WHERE dc.card_id = c.id), 0) as extras
-            FROM collection co JOIN cards c ON co.card_id = c.id
-            WHERE (co.quantity + co.foil_quantity) > 1
-        ) SELECT * FROM dups {where} ORDER BY extras DESC, card_name LIMIT ? OFFSET ?""",
-        params + [page_size, offset])
+        f"""{cte} SELECT * FROM final WHERE extras_after_listings > 0
+        ORDER BY CAST(COALESCE(NULLIF(price_eur, ''), '0') AS REAL) * extras_after_listings DESC, card_name
+        LIMIT ? OFFSET ?""",
+        doubled_params + [page_size, offset])
     rows = await cursor.fetchall()
     items = [dict(r) for r in rows]
     return json.dumps({"items": items, "total": total, "page": page}, indent=2)

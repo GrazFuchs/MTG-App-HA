@@ -1,3 +1,22 @@
+## 0.16.0
+
+### Changed
+- **Duplicates page: printing-level aggregation** — one row per (card + set + foil) instead of card-name grouping.
+- **Listing-aware extras** — `extras_after_listings` subtracts already-listed Cardmarket quantities; default hides fully-listed rows.
+- **Basic Land filter** — Basic Lands excluded from duplicates.
+- **Color filter (CSV)** — supports W,U,B,R,G,M,C,L with AND logic for multi-color.
+- **Scoped set filter** — new `GET /api/collection/duplicates/sets` returns only sets with actual duplicates.
+- **Foil indicator** — ◆ badge on foil printings in table and sell dialog.
+- **Sell dialog respects foil & listing cap** — quantity capped to `extras_after_listings`, `is_foil` passed to listing.
+- **MCP `get_duplicates` updated** — mirrors printing-level logic with color param.
+
+### Fixed
+- **Group dropdown crash** — removed crashing Group-by dropdown (caused black screen).
+- **CSS spacing** — added padding between Value column and Sell button.
+
+### Performance
+- **Composite index** on `cardmarket_listings(card_name, set_code, is_foil)` for JOIN performance.
+
 ## 0.15.0
 
 ### Performance

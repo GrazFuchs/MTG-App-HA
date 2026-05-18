@@ -230,19 +230,9 @@ async def remove_from_collection(entry_id: int):
     return {"status": "deleted"}
 
 
-@router.get("/duplicates")
-async def list_duplicates(
-    search: str = Query("", description="Search by card name"),
-    color: str = Query("", description="W/U/B/R/G/M/C/L"),
-    set_code: str = Query(""),
-    sort_by: str = Query("extras_value", description="extras, extras_value, name, set, color"),
-    sort_dir: str = Query("desc"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-):
-    """List cards where total owned copies exceed total copies used in decks."""
-    db = await get_db()
-    conditions = []
+def _duplicates_conditions(search: str, color: str, set_code: str):
+    """Build WHERE conditions shared by duplicates endpoints."""
+    conditions = ["c.type_line NOT LIKE '%Basic Land%'"]
     params: list = []
 
     if search:
@@ -252,96 +242,178 @@ async def list_duplicates(
         conditions.append("LOWER(c.set_code) = LOWER(?)")
         params.append(set_code)
     if color:
-        color_upper = color.upper()
-        if color_upper in ("W", "U", "B", "R", "G"):
-            # Single color: color_identity contains exactly this letter (and no others for mono)
-            conditions.append("c.color_identity LIKE ?")
-            params.append(f'%"{color_upper}"%')
-            conditions.append("c.color_identity NOT LIKE '%,%'")
-        elif color_upper == "M":
-            conditions.append("c.color_identity LIKE '%,%'")
-        elif color_upper == "C":
-            conditions.append("c.color_identity = '[]'")
-        elif color_upper == "L":
-            conditions.append("c.type_line LIKE '%Land%'")
+        for clr in color.split(","):
+            clr = clr.strip().upper()
+            if clr in ("W", "U", "B", "R", "G"):
+                conditions.append("c.color_identity LIKE ?")
+                params.append(f'%"{clr}"%')
+            elif clr == "M":
+                conditions.append("c.color_identity LIKE '%,%'")
+            elif clr == "C":
+                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
+            elif clr == "L":
+                conditions.append("c.type_line LIKE '%Land%'")
 
-    where = " AND ".join(conditions) if conditions else "1=1"
+    return " AND ".join(conditions), params
 
-    # Sort mapping — color sort uses WUBRG ordering via CASE
+
+# The core CTE used by both list_duplicates and duplicates/sets.
+# It produces one row per (card_id, set_code, is_foil) with extras computed.
+_DUPLICATES_CTE = """
+    WITH deck_usage AS (
+        SELECT c2.name, SUM(dc.quantity) as in_decks
+        FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
+        GROUP BY c2.name
+    ),
+    global_owned AS (
+        SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
+        FROM collection col2 JOIN cards c3 ON c3.id = col2.card_id
+        GROUP BY c3.name
+    ),
+    printing_rows AS (
+        SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+               c.image_uri, c.price_eur, c.price_eur_foil, c.color_identity,
+               c.type_line, c.collector_number,
+               0 as is_foil,
+               SUM(col.quantity) as total_copies,
+               COALESCE(du.in_decks, 0) as in_decks,
+               COALESCE(go.total_global, 0) as total_global
+        FROM collection col
+        JOIN cards c ON c.id = col.card_id
+        LEFT JOIN deck_usage du ON du.name = c.name
+        LEFT JOIN global_owned go ON go.name = c.name
+        WHERE {where}
+        GROUP BY c.id, c.set_code
+        HAVING SUM(col.quantity) > 0
+
+        UNION ALL
+
+        SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+               c.image_uri, c.price_eur, c.price_eur_foil, c.color_identity,
+               c.type_line, c.collector_number,
+               1 as is_foil,
+               SUM(col.foil_quantity) as total_copies,
+               COALESCE(du.in_decks, 0) as in_decks,
+               COALESCE(go.total_global, 0) as total_global
+        FROM collection col
+        JOIN cards c ON c.id = col.card_id
+        LEFT JOIN deck_usage du ON du.name = c.name
+        LEFT JOIN global_owned go ON go.name = c.name
+        WHERE {where}
+        GROUP BY c.id, c.set_code
+        HAVING SUM(col.foil_quantity) > 0
+    ),
+    with_extras AS (
+        SELECT pr.*,
+               MAX(pr.total_global - pr.in_decks, 0) as extras_global,
+               pr.total_copies as extras,
+               COALESCE((
+                   SELECT SUM(l.quantity) FROM cardmarket_listings l
+                   WHERE LOWER(l.card_name) = LOWER(pr.name)
+                     AND LOWER(COALESCE(l.set_code, l.expansion_code, '')) = LOWER(pr.set_code)
+                     AND l.is_foil = pr.is_foil
+               ), 0) as listed_quantity
+        FROM printing_rows pr
+        WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
+    )
+"""
+
+
+@router.get("/duplicates")
+async def list_duplicates(
+    search: str = Query("", description="Search by card name"),
+    color: str = Query("", description="W,U,B,R,G,M,C,L (CSV)"),
+    set_code: str = Query(""),
+    include_listed: bool = Query(False, description="Include rows fully covered by listings"),
+    sort_by: str = Query("extras_value", description="extras, extras_value, name, set, color"),
+    sort_dir: str = Query("desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """List duplicate cards at printing level (card+set+foil)."""
+    db = await get_db()
+    where, params = _duplicates_conditions(search, color, set_code)
+
+    # Build the CTE with conditions injected
+    cte = _DUPLICATES_CTE.replace("{where}", where)
+
+    # Having filter: only rows with extras_after_listings > 0 unless include_listed
+    having_filter = "" if include_listed else "WHERE extras_after_listings > 0"
+
     COLOR_ORDER_SQL = """
         CASE
-            WHEN c.type_line LIKE '%Land%' THEN 8
-            WHEN c.color_identity = '[]' THEN 7
-            WHEN c.color_identity LIKE '%,%' THEN 6
-            WHEN c.color_identity LIKE '%"W"%' THEN 1
-            WHEN c.color_identity LIKE '%"U"%' THEN 2
-            WHEN c.color_identity LIKE '%"B"%' THEN 3
-            WHEN c.color_identity LIKE '%"R"%' THEN 4
-            WHEN c.color_identity LIKE '%"G"%' THEN 5
+            WHEN type_line LIKE '%Land%' THEN 8
+            WHEN color_identity = '[]' THEN 7
+            WHEN color_identity LIKE '%,%' THEN 6
+            WHEN color_identity LIKE '%"W"%' THEN 1
+            WHEN color_identity LIKE '%"U"%' THEN 2
+            WHEN color_identity LIKE '%"B"%' THEN 3
+            WHEN color_identity LIKE '%"R"%' THEN 4
+            WHEN color_identity LIKE '%"G"%' THEN 5
             ELSE 9
         END
     """
+
     sort_col = {
-        "extras": "(SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0))",
-        "extras_value": "(CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) * (SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)))",
-        "name": "LOWER(c.name)",
-        "set": "LOWER(c.set_name)",
+        "extras": "extras_after_listings",
+        "extras_value": "extra_value",
+        "name": "LOWER(name)",
+        "set": "LOWER(set_name)",
         "color": COLOR_ORDER_SQL,
-    }.get(sort_by, "(CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) * (SUM(col.quantity + col.foil_quantity) - COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)))")
+    }.get(sort_by, "extra_value")
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
     offset = (page - 1) * page_size
 
+    # params are used twice in the CTE (once per UNION leg)
+    doubled_params = params + params
+
     count_query = f"""
+        {cte}
         SELECT COUNT(*) FROM (
-            SELECT c.name
-            FROM collection col JOIN cards c ON c.id = col.card_id
-            WHERE {where}
-            AND c.type_line NOT LIKE '%Basic Land%'
-            GROUP BY c.name
-            HAVING SUM(col.quantity + col.foil_quantity) >
-                COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0)
-                AND SUM(col.quantity + col.foil_quantity) > 1
-        )
+            SELECT *, MAX(extras - listed_quantity, 0) as extras_after_listings
+            FROM with_extras
+        ) sub {having_filter}
     """
-    count_cursor = await db.execute(count_query, params[:])
+    count_cursor = await db.execute(count_query, doubled_params)
     total = (await count_cursor.fetchone())[0]
 
-    query = f"""
-        SELECT c.name, c.set_name, c.set_code, c.rarity, c.image_uri,
-            c.price_eur, c.price_eur_foil, c.color_identity, c.type_line,
-            SUM(col.quantity) as total_qty, SUM(col.foil_quantity) as total_foil,
-            COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id WHERE c2.name = c.name), 0) as in_decks,
-            c.id as card_id, c.collector_number
-        FROM collection col JOIN cards c ON c.id = col.card_id
-        WHERE {where}
-        AND c.type_line NOT LIKE '%Basic Land%'
-        GROUP BY c.name
-        HAVING (total_qty + total_foil) > in_decks AND (total_qty + total_foil) > 1
-        ORDER BY {sort_col} {direction}
+    final_query = f"""
+        {cte},
+        final AS (
+            SELECT *,
+                MAX(extras - listed_quantity, 0) as extras_after_listings,
+                CAST(COALESCE(NULLIF(
+                    CASE WHEN is_foil THEN price_eur_foil ELSE price_eur END, ''), '0') AS REAL)
+                    * MAX(extras - listed_quantity, 0) as extra_value
+            FROM with_extras
+        )
+        SELECT * FROM final
+        {having_filter}
+        ORDER BY {sort_col} {direction}, LOWER(name) ASC
         LIMIT ? OFFSET ?
     """
-    params_q = params[:] + [page_size, offset]
 
-    cursor = await db.execute(query, params_q)
+    params_q = doubled_params + [page_size, offset]
+    cursor = await db.execute(final_query, params_q)
     rows = await cursor.fetchall()
 
     results = []
     for r in rows:
-        total_copies = r["total_qty"] + r["total_foil"]
-        in_decks = r["in_decks"]
-        extras = total_copies - in_decks
         results.append({
             "card_name": r["name"],
             "set_name": r["set_name"],
             "set_code": r["set_code"],
             "rarity": r["rarity"],
             "image_uri": r["image_uri"],
+            "is_foil": bool(r["is_foil"]),
             "price_eur": r["price_eur"] or "",
             "price_eur_foil": r["price_eur_foil"] or "",
-            "total_copies": total_copies,
-            "in_decks": in_decks,
-            "extras": extras,
+            "total_copies": r["total_copies"],
+            "in_decks": r["in_decks"],
+            "extras": r["extras"],
+            "listed_quantity": r["listed_quantity"],
+            "extras_after_listings": r["extras_after_listings"],
             "card_id": r["card_id"],
             "collector_number": r["collector_number"],
             "color_identity": json.loads(r["color_identity"] or "[]"),
@@ -349,3 +421,29 @@ async def list_duplicates(
         })
 
     return {"items": results, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/duplicates/sets")
+async def list_duplicate_sets(
+    search: str = Query(""),
+    color: str = Query(""),
+):
+    """Return distinct sets that appear in the duplicates result set."""
+    db = await get_db()
+    where, params = _duplicates_conditions(search, color, "")
+    cte = _DUPLICATES_CTE.replace("{where}", where)
+    doubled_params = params + params
+
+    query = f"""
+        {cte}
+        SELECT DISTINCT set_code, set_name
+        FROM (
+            SELECT *, MAX(extras - listed_quantity, 0) as extras_after_listings
+            FROM with_extras
+        )
+        WHERE extras_after_listings > 0
+        ORDER BY set_name
+    """
+    cursor = await db.execute(query, doubled_params)
+    rows = await cursor.fetchall()
+    return [{"set_code": r["set_code"], "set_name": r["set_name"]} for r in rows]
