@@ -1,3 +1,27 @@
+## 0.17.0
+
+### Added
+- **Cross-set selling** — Sell dialog shows per-printing breakdown (set + foil) with individual sell actions and quantity caps.
+- **Bulk-Sell** — Multi-select printings of the same card and create Cardmarket listings in one step.
+- **Column sort (Duplicates)** — Clickable table headers for name, extras, price, and set.
+- **include_listed toggle (Duplicates)** — Checkbox to show/hide rows where all extras are already listed.
+- **Multi-category deduplication (Deck View)** — Cards appear under first category only; secondary categories shown via hover badge.
+- **AI Assessment collapsible** — AIAssessmentBox is now collapsible with localStorage persistence.
+- **Color filter (Wishlist)** — W/U/B/R/G/M/C filter bar replaces accordion grouping.
+- **Group-by-Card-Name toggle (Wishlist)** — Expandable rows grouping same card across sets/conditions.
+- **Set/Version selection (Wishlist)** — Set picker when marking items as Ordered or Acquired.
+
+### Fixed
+- **Monocolor filter** — Duplicates color filter now excludes multicolor cards (cards with commas in color_identity).
+- **Extras calculation** — Subtracts Cardmarket-listed quantity aggregated by card_name (not per-printing).
+- **Combo Detection** — Fixed Spellbook API payload format (list of dicts) and response parsing (`results.included`).
+- **Wishlist all Colorless** — Added `c.color_identity` to wishlist SELECT query.
+- **Order tag styling** — Cleaned up "Bestell Tag" visual appearance.
+- **Collection tag display** — Tag badge rendered on collection entries.
+- **Branding** — Header renamed from "STELLAR·VAULT" to "MTG·Collection Manager".
+- **Cardmarket listing count** — Section header shows "LISTINGS" instead of misleading "ROWS".
+- **Inbox basic lands** — Pending acquisitions queries exclude Basic Lands via `type_line NOT LIKE '%Basic Land%'`.
+
 ## 0.16.0
 
 ### Changed

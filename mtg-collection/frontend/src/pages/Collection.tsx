@@ -308,6 +308,9 @@ export default function Collection() {
                             🛒{entry.cardmarket_listed_qty > 1 ? entry.cardmarket_listed_qty : ''}
                           </span>
                         )}
+                        {entry.archidekt_tags && (
+                          <span style={{ marginLeft: 6, fontSize: 9, fontFamily: sothera.fontMono, padding: '1px 5px', letterSpacing: 0.5, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgFaint }}>{entry.archidekt_tags}</span>
+                        )}
                       </div>
                       <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{getCopies(entry)}</div>
                       <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{group.inDecks > 0 ? group.inDecks : '—'}</div>
@@ -343,6 +346,9 @@ export default function Collection() {
                             >
                               🛒{entry.cardmarket_listed_qty > 1 ? entry.cardmarket_listed_qty : ''}
                             </span>
+                          )}
+                          {entry.archidekt_tags && (
+                            <span style={{ marginLeft: 6, fontSize: 9, fontFamily: sothera.fontMono, padding: '1px 5px', letterSpacing: 0.5, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgFaint }}>{entry.archidekt_tags}</span>
                           )}
                         </div>
                         <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg }}>{getCopies(entry)}</div>

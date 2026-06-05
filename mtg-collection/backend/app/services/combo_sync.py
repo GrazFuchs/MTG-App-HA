@@ -15,15 +15,23 @@ def _extract_combo_fields(combo: dict[str, Any], is_partial: bool) -> dict[str, 
     # Spellbook can use various field names depending on version
     combo_id = str(combo.get("id", combo.get("variant_id", "")))
     cards = combo.get("uses", combo.get("cards", []))
-    # Cards can be list of dicts or list of strings
+    # Cards can be list of dicts (nested card.name) or list of strings
     if cards and isinstance(cards[0], dict):
-        card_names = [c.get("card", {}).get("name", c.get("name", "")) for c in cards]
+        card_names = [
+            c.get("card", {}).get("name", "") if isinstance(c.get("card"), dict)
+            else c.get("card", c.get("name", ""))
+            for c in cards
+        ]
     else:
         card_names = [str(c) for c in cards]
 
     results = combo.get("produces", combo.get("results", combo.get("result", [])))
     if results and isinstance(results[0], dict):
-        result_list = [r.get("feature", {}).get("name", r.get("name", str(r))) for r in results]
+        result_list = [
+            r.get("feature", {}).get("name", "") if isinstance(r.get("feature"), dict)
+            else r.get("name", str(r))
+            for r in results
+        ]
     elif isinstance(results, str):
         result_list = [results]
     else:
@@ -44,7 +52,11 @@ def _extract_combo_fields(combo: dict[str, Any], is_partial: bool) -> dict[str, 
     if is_partial:
         missing = combo.get("missingCards", combo.get("missing_cards", []))
         if missing and isinstance(missing[0], dict):
-            missing_cards = [m.get("card", {}).get("name", m.get("name", "")) for m in missing]
+            missing_cards = [
+                m.get("card", {}).get("name", "") if isinstance(m.get("card"), dict)
+                else m.get("name", str(m))
+                for m in missing
+            ]
         else:
             missing_cards = [str(m) for m in missing]
 

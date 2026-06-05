@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles, shorthands } from '@griffel/react';
-import { Spinner, Button } from '@fluentui/react-components';
+import { Spinner, Button, Tooltip } from '@fluentui/react-components';
 import { api, DeckDetail, DeckCardEntry } from '../api';
 import { ManaCost, ManaSymbol } from '../components/ManaSymbol';
 import { CardHoverPreview } from '../components/CardHoverPreview';
@@ -156,27 +156,33 @@ export default function DeckView() {
     queryClient.setQueryData(['deck', Number(id)], updated);
   };
 
-  const { mainCards, sideboardCards, commander, colorIdentity, totalValue } = useMemo(() => {
-    if (!deck) return { mainCards: new Map<string, DeckCardEntry[]>(), sideboardCards: new Map<string, DeckCardEntry[]>(), commander: null, colorIdentity: [] as string[], totalValue: 0 };
+  const { mainCards, sideboardCards, commander, colorIdentity, totalValue, extraCategories } = useMemo(() => {
+    if (!deck) return { mainCards: new Map<string, DeckCardEntry[]>(), sideboardCards: new Map<string, DeckCardEntry[]>(), commander: null, colorIdentity: [] as string[], totalValue: 0, extraCategories: new Map<number, string[]>() };
     const main = new Map<string, DeckCardEntry[]>();
     const side = new Map<string, DeckCardEntry[]>();
+    const extras = new Map<number, string[]>(); // card_id -> additional categories
     let cmd: DeckCardEntry | null = null;
     const colors = new Set<string>();
     let value = 0;
 
     for (const entry of deck.cards) {
       if (entry.is_commander) cmd = entry;
-      const cat = entry.category || 'Other';
+      const rawCat = entry.category || 'Other';
+      const categories = rawCat.split(',').map(c => c.trim()).filter(Boolean);
+      const primaryCat = categories[0] || 'Other';
+      if (categories.length > 1) {
+        extras.set(entry.card.id, categories.slice(1));
+      }
       (entry.card.color_identity || []).forEach(c => colors.add(c));
       const price = parseFloat(entry.card.price_eur) || 0;
       value += price * entry.quantity;
 
-      if (SIDEBOARD_CATEGORIES.has(cat)) {
-        if (!side.has(cat)) side.set(cat, []);
-        side.get(cat)!.push(entry);
+      if (SIDEBOARD_CATEGORIES.has(primaryCat)) {
+        if (!side.has(primaryCat)) side.set(primaryCat, []);
+        side.get(primaryCat)!.push(entry);
       } else {
-        if (!main.has(cat)) main.set(cat, []);
-        main.get(cat)!.push(entry);
+        if (!main.has(primaryCat)) main.set(primaryCat, []);
+        main.get(primaryCat)!.push(entry);
       }
     }
     return {
@@ -185,6 +191,7 @@ export default function DeckView() {
       commander: cmd,
       colorIdentity: Array.from(colors),
       totalValue: value,
+      extraCategories: extras,
     };
   }, [deck]);
 
@@ -344,11 +351,13 @@ export default function DeckView() {
         <div key={cat} style={{ marginBottom: 26 }}>
           <SectionHeader num={String(idx + 1).padStart(2, '0')} title={cat} right={`${cards.reduce((s: number, c: DeckCardEntry) => s + c.quantity, 0)} ENTRIES`} accent={accent.oklch} />
           <Panel>
-            {cards.map((entry, i) => (
+            {cards.map((entry, i) => {
+              const extras = extraCategories.get(entry.card.id);
+              return (
               <CardHoverPreview key={i} card={entry.card}>
                 <div className={styles.cardRow} style={{ borderBottom: i < cards.length - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
                   <div style={{ fontFamily: sothera.fontMono, fontSize: 11, letterSpacing: 1, color: sothera.fgFaint }}>×{entry.quantity}</div>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <a
                       href={scryfallUrl(entry.card)}
                       target="_blank"
@@ -359,6 +368,11 @@ export default function DeckView() {
                       {entry.card.name}
                       {entry.is_commander && ' ⭐'}
                     </a>
+                    {extras && (
+                      <Tooltip content={extras.join(', ')} relationship="description">
+                        <span style={{ fontSize: 9, fontFamily: sothera.fontMono, padding: '1px 5px', letterSpacing: 1, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgFaint, cursor: 'default' }}>+{extras.length}</span>
+                      </Tooltip>
+                    )}
                   </div>
                   <div><ManaCost cost={entry.card.mana_cost} size={14} /></div>
                   <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{entry.card.type_line}</div>
@@ -367,7 +381,8 @@ export default function DeckView() {
                   </div>
                 </div>
               </CardHoverPreview>
-            ))}
+              );
+            })}
           </Panel>
         </div>
       ))}

@@ -205,7 +205,7 @@ export default function App() {
           <div className={styles.brand}>
             <Sigil size={18} color={accent.oklch} />
             <div className={styles.brandName}>
-              STELLAR<span style={{ color: accent.oklch }}>·</span>VAULT
+              MTG<span style={{ color: accent.oklch }}>·</span>Collection Manager
             </div>
           </div>
 

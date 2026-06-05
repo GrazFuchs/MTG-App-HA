@@ -1,4 +1,5 @@
 """Wishlist API routes — extended with set/foil/priority/status/deck/tags/acquisition."""
+import json
 import logging
 from datetime import date
 from typing import Optional
@@ -73,6 +74,7 @@ def _build_item_response(row, current_price: float | None) -> WishlistItemRespon
         current_price_eur=current_price,
         is_deal=is_deal,
         image_uri=row["image_uri"],
+        color_identity=json.loads(row["color_identity"] or "[]") if "color_identity" in row.keys() else [],
         is_ordered=bool(row["is_ordered"]) if "is_ordered" in row.keys() else False,
         ordered_at=row["ordered_at"] if "ordered_at" in row.keys() else None,
         expected_price_eur=_safe_float(row["expected_price_eur"]) if "expected_price_eur" in row.keys() else None,
@@ -102,6 +104,7 @@ _BASE_SELECT = """
            w.paid_price_eur, w.source, w.not_received_at,
            c.name AS card_name, c.scryfall_id, c.image_uri,
            c.set_name, c.price_eur, c.price_eur_foil,
+           c.color_identity,
            d.name AS deck_name,
            (SELECT ph.trend FROM cardmarket_products cp
             JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
@@ -216,6 +219,7 @@ async def list_wishlist(
     priority: int | None = Query(None, ge=1, le=5, description="Filter by priority"),
     deck_id: int | None = Query(None, description="Filter by deck"),
     tag: str | None = Query(None, description="Filter by tag"),
+    color: str = Query("", description="Filter by color: W,U,B,R,G,M,C (CSV)"),
     is_deal_only: bool = Query(False, description="Only items where current <= target"),
     is_ordered: Optional[bool] = Query(None, description="Filter by ordered flag"),
     sort: str = Query("priority", description="Sort field: priority|added_at|target_price|current_price|delta_eur"),
@@ -253,6 +257,19 @@ async def list_wishlist(
     if tag:
         conditions.append("(',' || w.tags || ',') LIKE ?")
         params.append(f"%,{tag.strip()},%")
+
+    if color:
+        for clr in color.split(","):
+            clr = clr.strip().upper()
+            if clr in ("W", "U", "B", "R", "G"):
+                conditions.append(
+                    "(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')"
+                )
+                params.append(f'%"{clr}"%')
+            elif clr == "M":
+                conditions.append("c.color_identity LIKE '%,%'")
+            elif clr == "C":
+                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
 
     where_clause = " AND ".join(conditions)
 
@@ -504,11 +521,15 @@ async def order_wishlist_item(item_id: int, body: WishlistOrderRequest | None = 
         raise HTTPException(status_code=400, detail="Cannot order an item marked as not received")
 
     expected = body.expected_price_eur if body else None
+    set_code = body.set_code if body else None
+    is_foil = body.is_foil if body else None
     await db.execute(
         """UPDATE wishlist SET is_ordered = 1, ordered_at = CURRENT_TIMESTAMP,
-           expected_price_eur = COALESCE(?, expected_price_eur)
+           expected_price_eur = COALESCE(?, expected_price_eur),
+           set_code = COALESCE(?, set_code),
+           is_foil = COALESCE(?, is_foil)
            WHERE id = ?""",
-        (expected, item_id),
+        (expected, set_code, is_foil, item_id),
     )
     await db.commit()
     return {"ok": True, "is_ordered": True}
@@ -552,9 +573,13 @@ async def acquire_wishlist_item(item_id: int, body: WishlistAcquireRequest | Non
 
     paid_price = None
     source = None
+    set_code = None
+    is_foil = None
     if body:
         paid_price = body.paid_price_eur
         source = body.source
+        set_code = body.set_code
+        is_foil = body.is_foil
     # If was ordered and no paid_price given, use expected_price as paid_price
     if paid_price is None and row["is_ordered"] and row["expected_price_eur"] is not None:
         paid_price = row["expected_price_eur"]
@@ -563,9 +588,11 @@ async def acquire_wishlist_item(item_id: int, body: WishlistAcquireRequest | Non
         """UPDATE wishlist
            SET status = 'acquired', acquired_at = CURRENT_TIMESTAMP,
                is_ordered = 0, paid_price_eur = COALESCE(?, paid_price_eur),
-               source = COALESCE(?, source)
+               source = COALESCE(?, source),
+               set_code = COALESCE(?, set_code),
+               is_foil = COALESCE(?, is_foil)
            WHERE id = ?""",
-        (paid_price, source, item_id),
+        (paid_price, source, set_code, is_foil, item_id),
     )
     await db.commit()
 

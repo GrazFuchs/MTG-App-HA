@@ -75,7 +75,9 @@ async def list_pending(
                 ae.notes as event_notes
             FROM acquisition_events ae
             JOIN cards c ON c.id = ae.card_id
-            WHERE ae.triage_state = 'pending' {value_filter}
+            WHERE ae.triage_state = 'pending'
+              AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
+              {value_filter}
             ORDER BY ae.created_at DESC""",
             query_params,
         )
@@ -120,7 +122,9 @@ async def list_pending(
     count_cursor = await db.execute(
         f"""SELECT COUNT(*) FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
-        WHERE ae.triage_state = 'pending' {value_filter}""",
+        WHERE ae.triage_state = 'pending'
+          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
+          {value_filter}""",
         count_params,
     )
     total = (await count_cursor.fetchone())[0]
@@ -136,7 +140,9 @@ async def list_pending(
             ae.notes as event_notes
         FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
-        WHERE ae.triage_state = 'pending' {value_filter}
+        WHERE ae.triage_state = 'pending'
+          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
+          {value_filter}
         ORDER BY ae.created_at DESC
         LIMIT ? OFFSET ?""",
         query_params,
@@ -178,9 +184,12 @@ async def list_pending(
 async def acquisition_stats():
     db = await get_db()
 
-    # Pending count
+    # Pending count (exclude basic lands)
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM acquisition_events WHERE triage_state = 'pending'"
+        """SELECT COUNT(*) FROM acquisition_events ae
+        JOIN cards c ON c.id = ae.card_id
+        WHERE ae.triage_state = 'pending'
+          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'"""
     )
     pending_count = (await cursor.fetchone())[0]
 

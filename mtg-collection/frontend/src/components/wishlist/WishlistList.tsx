@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Spinner, Body1, Button, makeStyles } from '@fluentui/react-components';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Spinner, Body1, Button, makeStyles, Checkbox } from '@fluentui/react-components';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { t } from '../../i18n';
@@ -57,6 +57,8 @@ export default function WishlistList({ defaultStatus }: WishlistListProps) {
   const [editItem, setEditItem] = useState<WishlistItem | null>(null);
   const [acquireItem, setAcquireItem] = useState<WishlistItem | null>(null);
   const [orderItem, setOrderItem] = useState<WishlistItem | null>(null);
+  const [groupByName, setGroupByName] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Persist filters to URL (scoped: don't leak tab-specific filters up)
@@ -131,13 +133,40 @@ export default function WishlistList({ defaultStatus }: WishlistListProps) {
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const pagedItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // Group by card name
+  const groupedItems = useMemo(() => {
+    if (!groupByName) return null;
+    const map = new Map<string, WishlistItem[]>();
+    for (const item of pagedItems) {
+      const key = item.card_name;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return map;
+  }, [groupByName, pagedItems]);
+
+  const toggleGroupExpand = (name: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
   return (
     <div>
       {summary && filters.status === 'wanted' && <WishlistSummaryHeader summary={summary} />}
 
       <div className={styles.topRow}>
         <WishlistFilterBar filters={filters} onChange={handleFilterChange} decks={decks} />
-        <WishlistExportButton />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <Checkbox
+            label="Group by name"
+            checked={groupByName}
+            onChange={(_, d) => setGroupByName(!!d.checked)}
+          />
+          <WishlistExportButton />
+        </div>
       </div>
 
       {isLoading ? (
@@ -147,23 +176,66 @@ export default function WishlistList({ defaultStatus }: WishlistListProps) {
       ) : (
         <>
           <div className={styles.list}>
-            {pagedItems.map(item => (
-              <WishlistItemRow
-                key={item.id}
-                item={item}
-                onEdit={setEditItem}
-                onAcquire={id => {
-                  // Quick acquire without dialog if item has expected_price_eur
-                  const found = items.find(i => i.id === id);
-                  if (found) setAcquireItem(found);
-                }}
-                onOrder={item => setOrderItem(item)}
-                onUnorder={id => unorderMutation.mutate(id)}
-                onNotReceived={id => notReceivedMutation.mutate(id)}
-                onDrop={id => dropMutation.mutate(id)}
-                onDelete={id => deleteMutation.mutate(id)}
-              />
-            ))}
+            {groupByName && groupedItems ? (
+              Array.from(groupedItems.entries()).map(([name, groupItems]) => (
+                <div key={name}>
+                  {groupItems.length > 1 ? (
+                    <>
+                      <div
+                        onClick={() => toggleGroupExpand(name)}
+                        style={{ cursor: 'pointer', padding: '8px 12px', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--colorNeutralStroke2)' }}
+                      >
+                        <span style={{ transition: 'transform 0.15s', display: 'inline-block', transform: expandedGroups.has(name) ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
+                        {name}
+                        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.6 }}>({groupItems.length} printings)</span>
+                      </div>
+                      {expandedGroups.has(name) && groupItems.map(item => (
+                        <WishlistItemRow
+                          key={item.id}
+                          item={item}
+                          onEdit={setEditItem}
+                          onAcquire={id => { const found = items.find(i => i.id === id); if (found) setAcquireItem(found); }}
+                          onOrder={item => setOrderItem(item)}
+                          onUnorder={id => unorderMutation.mutate(id)}
+                          onNotReceived={id => notReceivedMutation.mutate(id)}
+                          onDrop={id => dropMutation.mutate(id)}
+                          onDelete={id => deleteMutation.mutate(id)}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <WishlistItemRow
+                      key={groupItems[0].id}
+                      item={groupItems[0]}
+                      onEdit={setEditItem}
+                      onAcquire={id => { const found = items.find(i => i.id === id); if (found) setAcquireItem(found); }}
+                      onOrder={item => setOrderItem(item)}
+                      onUnorder={id => unorderMutation.mutate(id)}
+                      onNotReceived={id => notReceivedMutation.mutate(id)}
+                      onDrop={id => dropMutation.mutate(id)}
+                      onDelete={id => deleteMutation.mutate(id)}
+                    />
+                  )}
+                </div>
+              ))
+            ) : (
+              pagedItems.map(item => (
+                <WishlistItemRow
+                  key={item.id}
+                  item={item}
+                  onEdit={setEditItem}
+                  onAcquire={id => {
+                    const found = items.find(i => i.id === id);
+                    if (found) setAcquireItem(found);
+                  }}
+                  onOrder={item => setOrderItem(item)}
+                  onUnorder={id => unorderMutation.mutate(id)}
+                  onNotReceived={id => notReceivedMutation.mutate(id)}
+                  onDrop={id => dropMutation.mutate(id)}
+                  onDelete={id => deleteMutation.mutate(id)}
+                />
+              ))
+            )}
           </div>
 
           {totalPages > 1 && (

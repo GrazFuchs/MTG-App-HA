@@ -174,6 +174,7 @@ export interface WishlistItem {
   current_price_eur: number | null;
   is_deal: boolean;
   image_uri: string | null;
+  color_identity: string[];
   // Sprint 9: Acquisition tracking
   is_ordered: boolean;
   ordered_at: string | null;
@@ -437,6 +438,23 @@ export interface PaginatedDuplicates {
   page_size: number;
 }
 
+export interface DuplicatePrinting {
+  card_name: string;
+  set_name: string;
+  set_code: string;
+  rarity: string;
+  image_uri: string;
+  is_foil: boolean;
+  price_eur: string;
+  price_eur_foil: string;
+  total_copies: number;
+  in_decks: number;
+  total_global: number;
+  listed_for_printing: number;
+  card_id: number;
+  collector_number: string;
+}
+
 export interface SyncLogEntry {
   id: number;
   source: string;
@@ -552,6 +570,8 @@ export const api = {
     request<PaginatedDuplicates>(`/api/collection/duplicates?${params?.toString() ?? ''}`),
   getDuplicateSets: (params?: URLSearchParams) =>
     request<CollectionSet[]>(`/api/collection/duplicates/sets?${params?.toString() ?? ''}`),
+  getDuplicatePrintings: (cardName: string) =>
+    request<DuplicatePrinting[]>(`/api/collection/duplicates/printings?card_name=${encodeURIComponent(cardName)}`),
 
   // Cardmarket add/clear
   addCardmarketListing: (data: { card_name: string; set_name?: string; set_code?: string; quantity: number; price: number; condition: string; language: string; is_foil?: boolean; rarity?: string; comments?: string }) =>
@@ -572,15 +592,15 @@ export const api = {
     request<WishlistItem>(`/api/wishlist/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   removeFromWishlist: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}`, { method: 'DELETE' }),
-  acquireWishlistItem: (id: number, paid_price_eur?: number, source?: WishlistSource) =>
+  acquireWishlistItem: (id: number, paid_price_eur?: number, source?: WishlistSource, set_code?: string, is_foil?: boolean) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}/acquire`, {
       method: 'POST',
-      body: JSON.stringify({ paid_price_eur: paid_price_eur ?? null, source: source ?? null }),
+      body: JSON.stringify({ paid_price_eur: paid_price_eur ?? null, source: source ?? null, set_code: set_code ?? null, is_foil: is_foil ?? null }),
     }),
-  markWishlistOrdered: (id: number, expected_price_eur?: number) =>
+  markWishlistOrdered: (id: number, expected_price_eur?: number, set_code?: string, is_foil?: boolean) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}/order`, {
       method: 'POST',
-      body: JSON.stringify({ expected_price_eur: expected_price_eur ?? null }),
+      body: JSON.stringify({ expected_price_eur: expected_price_eur ?? null, set_code: set_code ?? null, is_foil: is_foil ?? null }),
     }),
   unorderWishlistItem: (id: number) =>
     request<{ ok: boolean }>(`/api/wishlist/${id}/unorder`, { method: 'POST' }),

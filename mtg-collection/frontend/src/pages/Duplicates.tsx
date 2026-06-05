@@ -14,6 +14,7 @@ import {
   DialogBody,
   DialogActions,
   DialogContent,
+  Checkbox,
 } from '@fluentui/react-components';
 import {
   Search24Regular,
@@ -21,8 +22,10 @@ import {
   ChevronRight24Regular,
   ChevronDoubleLeft20Regular,
   ChevronDoubleRight20Regular,
+  ArrowUp16Regular,
+  ArrowDown16Regular,
 } from '@fluentui/react-icons';
-import { api, DuplicateEntry, CollectionSet } from '../api';
+import { api, DuplicateEntry, DuplicatePrinting, CollectionSet } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader } from '../components/sothera';
@@ -73,6 +76,16 @@ const useStyles = makeStyles({
     color: sothera.fgFaint,
     textTransform: 'uppercase',
   },
+  sortableHeader: {
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '2px',
+    ':hover': {
+      color: sothera.fg,
+    },
+  },
   gridRow: {
     display: 'grid',
     gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 100px 80px',
@@ -119,6 +132,26 @@ const useStyles = makeStyles({
   dialogInput: {
     width: '100%',
     marginTop: '8px',
+  },
+  printingRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 80px 80px 80px 120px',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 0',
+    borderBottom: `1px solid ${sothera.rowBorder}`,
+    fontSize: '12px',
+  },
+  printingHeader: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 80px 80px 80px 120px',
+    gap: '8px',
+    padding: '4px 0 8px',
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '1.5px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
   },
 });
 
@@ -170,11 +203,13 @@ export default function Duplicates() {
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<DuplicateEntry | null>(null);
-  const [listingQty, setListingQty] = useState(1);
-  const [listingPrice, setListingPrice] = useState('');
+  const [printings, setPrintings] = useState<DuplicatePrinting[]>([]);
+  const [printingsLoading, setPrintingsLoading] = useState(false);
+  const [bulkEntries, setBulkEntries] = useState<{ printing: DuplicatePrinting; qty: number; price: string }[]>([]);
   const [listingCondition, setListingCondition] = useState('NM');
   const [listingLanguage, setListingLanguage] = useState('English');
   const [submitting, setSubmitting] = useState(false);
+  const [includeListed, setIncludeListed] = useState(false);
 
   const colorFilter = searchParams.get('color') || '';
   const setFilter = searchParams.get('set') || '';
@@ -193,6 +228,17 @@ export default function Duplicates() {
     next.delete('page');
     setSearchParams(next);
     setPage(1);
+  };
+
+  const toggleSort = (col: string) => {
+    const current = sortParam;
+    const newDir = current === `${col}_desc` ? 'asc' : 'desc';
+    setParam('sort', `${col}_${newDir}`);
+  };
+
+  const SortIcon = ({ col }: { col: string }) => {
+    if (sortBy !== col) return null;
+    return sortDir === 'desc' ? <ArrowDown16Regular /> : <ArrowUp16Regular />;
   };
 
   const { data: availableSets = [] } = useQuery<CollectionSet[]>({
@@ -217,8 +263,9 @@ export default function Duplicates() {
     params.set('sort_dir', sortDir);
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
+    if (includeListed) params.set('include_listed', 'true');
     return params;
-  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, page, pageSize]);
+  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, page, pageSize, includeListed]);
 
   const { data: duplicatesData, isLoading: loading } = useQuery({
     queryKey: ['duplicates', duplicatesParams.toString()],
@@ -235,30 +282,51 @@ export default function Duplicates() {
     setParam('search', searchInput.trim());
   };
 
-  const openListingDialog = (card: DuplicateEntry) => {
+  const openListingDialog = async (card: DuplicateEntry) => {
     setSelectedCard(card);
-    setListingQty(card.extras_after_listings);
-    setListingPrice(card.is_foil ? (card.price_eur_foil || card.price_eur || '0') : (card.price_eur || '0'));
-    setListingCondition('NM');
-    setListingLanguage('English');
     setDialogOpen(true);
+    setPrintingsLoading(true);
+    try {
+      const data = await api.getDuplicatePrintings(card.card_name);
+      setPrintings(data);
+      setBulkEntries(data.map(p => ({
+        printing: p,
+        qty: 0,
+        price: p.is_foil ? (p.price_eur_foil || p.price_eur || '0') : (p.price_eur || '0'),
+      })));
+    } catch {
+      setPrintings([]);
+      setBulkEntries([]);
+    }
+    setPrintingsLoading(false);
   };
 
-  const createListing = async () => {
-    if (!selectedCard) return;
+  const updateBulkQty = (idx: number, qty: number) => {
+    setBulkEntries(prev => prev.map((e, i) => i === idx ? { ...e, qty } : e));
+  };
+
+  const updateBulkPrice = (idx: number, price: string) => {
+    setBulkEntries(prev => prev.map((e, i) => i === idx ? { ...e, price } : e));
+  };
+
+  const createBulkListings = async () => {
+    const toCreate = bulkEntries.filter(e => e.qty > 0);
+    if (toCreate.length === 0) return;
     setSubmitting(true);
     try {
-      await api.addCardmarketListing({
-        card_name: selectedCard.card_name,
-        set_name: selectedCard.set_name,
-        set_code: selectedCard.set_code,
-        quantity: listingQty,
-        price: parseFloat(listingPrice) || 0,
-        condition: listingCondition,
-        language: listingLanguage,
-        is_foil: selectedCard.is_foil,
-        rarity: selectedCard.rarity,
-      });
+      for (const entry of toCreate) {
+        await api.addCardmarketListing({
+          card_name: entry.printing.card_name,
+          set_name: entry.printing.set_name,
+          set_code: entry.printing.set_code,
+          quantity: entry.qty,
+          price: parseFloat(entry.price) || 0,
+          condition: listingCondition,
+          language: listingLanguage,
+          is_foil: entry.printing.is_foil,
+          rarity: entry.printing.rarity,
+        });
+      }
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ['cardmarket-listings'] });
       queryClient.invalidateQueries({ queryKey: ['cardmarket-stats'] });
@@ -271,13 +339,23 @@ export default function Duplicates() {
   const renderItems = (itemList: DuplicateEntry[]) => (
     <>
       <div className={styles.gridHeader}>
-        <div /><div>CARD</div><div>SET</div><div>OWNED</div><div>DECKS</div><div>EXTRA</div><div style={{ textAlign: 'right' }}>EUR</div><div style={{ textAlign: 'right' }}>VALUE</div><div />
+        <div />
+        <div className={styles.sortableHeader} onClick={() => toggleSort('name')}>CARD <SortIcon col="name" /></div>
+        <div className={styles.sortableHeader} onClick={() => toggleSort('set')}>SET <SortIcon col="set" /></div>
+        <div>OWNED</div>
+        <div>DECKS</div>
+        <div className={styles.sortableHeader} onClick={() => toggleSort('extras')}>EXTRA <SortIcon col="extras" /></div>
+        <div className={styles.sortableHeader} onClick={() => toggleSort('extras_value')} style={{ textAlign: 'right' }}>EUR <SortIcon col="extras_value" /></div>
+        <div style={{ textAlign: 'right' }}>VALUE</div>
+        <div />
       </div>
       {itemList.map((item, i) => (
         <DuplicateRow key={`${item.card_id}-${item.set_code}-${item.is_foil}`} item={item} onSell={openListingDialog} accent={accent} i={i} total={itemList.length} />
       ))}
     </>
   );
+
+  const totalBulkQty = bulkEntries.reduce((s, e) => s + e.qty, 0);
 
   return (
     <div>
@@ -307,6 +385,11 @@ export default function Duplicates() {
         <Select value={sortParam} onChange={(_, d) => setParam('sort', d.value)} className={styles.filterSelect}>
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
         </Select>
+        <Checkbox
+          checked={includeListed}
+          onChange={(_, d) => { setIncludeListed(!!d.checked); setPage(1); }}
+          label="Show fully listed"
+        />
       </div>
 
       {loading ? (
@@ -327,28 +410,59 @@ export default function Duplicates() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={(_, d) => setDialogOpen(d.open)}>
-        <DialogSurface>
-          <DialogTitle>Create Cardmarket Listing{selectedCard?.is_foil ? ' (Foil)' : ''}</DialogTitle>
+        <DialogSurface style={{ maxWidth: 680 }}>
+          <DialogTitle>Sell: {selectedCard?.card_name}</DialogTitle>
           <DialogBody>
             <DialogContent>
-              {selectedCard && (
+              {printingsLoading ? (
+                <Spinner label="Loading printings..." size="small" />
+              ) : (
                 <>
-                  <div style={{ fontWeight: 600, color: sothera.fg }}>
-                    {selectedCard.card_name}
-                    {selectedCard.is_foil && <span style={{ marginLeft: 6, fontSize: 10, color: '#c9a227' }}>◆ Foil</span>}
-                    <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}> — {selectedCard.set_name}</span>
+                  <div style={{ marginBottom: 12, fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, letterSpacing: 1.5 }}>
+                    SELECT PRINTINGS TO LIST ({printings.length} available)
                   </div>
-                  <div className={styles.formRow}>
-                    <div>
-                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Quantity (max {selectedCard.extras_after_listings})</div>
-                      <Input type="number" min={1} max={selectedCard.extras_after_listings} value={String(listingQty)} onChange={(_, d) => setListingQty(Math.min(selectedCard.extras_after_listings, Math.max(1, parseInt(d.value) || 1)))} className={styles.dialogInput} />
-                    </div>
-                    <div>
-                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Price (EUR)</div>
-                      <Input value={listingPrice} onChange={(_, d) => setListingPrice(d.value)} className={styles.dialogInput} />
-                    </div>
+                  <div className={styles.printingHeader}>
+                    <div>PRINTING</div>
+                    <div>COPIES</div>
+                    <div>LISTED</div>
+                    <div>QTY</div>
+                    <div>PRICE €</div>
                   </div>
-                  <div className={styles.formRow}>
+                  {bulkEntries.map((entry, idx) => {
+                    const p = entry.printing;
+                    const maxQty = Math.max(p.total_copies - p.listed_for_printing, 0);
+                    return (
+                      <div key={`${p.card_id}-${p.set_code}-${p.is_foil}`} className={styles.printingRow}>
+                        <div>
+                          <span style={{ fontWeight: 500 }}>{p.set_name}</span>
+                          <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgMuted, marginLeft: 6 }}>({p.set_code.toUpperCase()})</span>
+                          {p.is_foil && <span style={{ marginLeft: 6, fontSize: 10, color: '#c9a227', fontWeight: 600 }}>◆ Foil</span>}
+                        </div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 12 }}>{p.total_copies}</div>
+                        <div style={{ fontFamily: sothera.fontMono, fontSize: 12, color: sothera.fgMuted }}>{p.listed_for_printing}</div>
+                        <div>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={maxQty}
+                            value={String(entry.qty)}
+                            onChange={(_, d) => updateBulkQty(idx, Math.min(maxQty, Math.max(0, parseInt(d.value) || 0)))}
+                            style={{ width: 60 }}
+                            size="small"
+                          />
+                        </div>
+                        <div>
+                          <Input
+                            value={entry.price}
+                            onChange={(_, d) => updateBulkPrice(idx, d.value)}
+                            style={{ width: 80 }}
+                            size="small"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className={styles.formRow} style={{ marginTop: 16 }}>
                     <div>
                       <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Condition</div>
                       <Select value={listingCondition} onChange={(_, d) => setListingCondition(d.value)} className={styles.dialogInput}>
@@ -383,7 +497,9 @@ export default function Duplicates() {
           </DialogBody>
           <DialogActions>
             <Button appearance="secondary" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button appearance="primary" onClick={createListing} disabled={submitting}>{submitting ? 'Creating...' : 'Create Listing'}</Button>
+            <Button appearance="primary" onClick={createBulkListings} disabled={submitting || totalBulkQty === 0}>
+              {submitting ? 'Creating...' : `Create ${totalBulkQty} Listing${totalBulkQty !== 1 ? 's' : ''}`}
+            </Button>
           </DialogActions>
         </DialogSurface>
       </Dialog>

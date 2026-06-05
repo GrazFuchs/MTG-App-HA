@@ -428,7 +428,7 @@ export default function Cardmarket() {
       )}
 
       {/* Listings table */}
-      <SectionHeader num="02" title="Active Listings" right={`${listingsTotal} ROWS`} accent={accent.oklch} />
+      <SectionHeader num="02" title="Active Listings" right={`${listingsTotal} LISTINGS`} accent={accent.oklch} />
       {loading ? (
         <Spinner label="Loading..." style={{ marginTop: 24 }} />
       ) : listings.length === 0 ? (

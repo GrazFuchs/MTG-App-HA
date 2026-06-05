@@ -25,6 +25,7 @@ export interface WishlistFilters {
   priority: number | null;
   deckId: number | null;
   tag: string | null;
+  color: string | null;
   isDealOnly: boolean;
   sort: 'priority' | 'added_at' | 'target_price' | 'current_price' | 'delta_eur';
 }
@@ -34,6 +35,7 @@ export const DEFAULT_FILTERS: WishlistFilters = {
   priority: null,
   deckId: null,
   tag: null,
+  color: null,
   isDealOnly: false,
   sort: 'priority',
 };
@@ -44,6 +46,7 @@ export function filtersToParams(f: WishlistFilters): URLSearchParams {
   if (f.priority != null) p.set('priority', String(f.priority));
   if (f.deckId != null) p.set('deck_id', String(f.deckId));
   if (f.tag) p.set('tag', f.tag);
+  if (f.color) p.set('color', f.color);
   if (f.isDealOnly) p.set('deals_only', 'true');
   p.set('sort', f.sort);
   return p;
@@ -55,6 +58,7 @@ export function filtersFromSearchParams(sp: URLSearchParams): WishlistFilters {
     priority: sp.has('priority') ? parseInt(sp.get('priority')!) : null,
     deckId: sp.has('deck_id') ? parseInt(sp.get('deck_id')!) : null,
     tag: sp.get('tag') || null,
+    color: sp.get('color') || null,
     isDealOnly: sp.get('deals_only') === 'true',
     sort: (sp.get('sort') as WishlistFilters['sort']) || 'priority',
   };
@@ -80,6 +84,17 @@ const SORT_OPTIONS: { value: WishlistFilters['sort']; label: string }[] = [
   { value: 'target_price', label: 'wishlist.sort_target' },
   { value: 'current_price', label: 'wishlist.sort_current' },
   { value: 'delta_eur', label: 'wishlist.sort_delta' },
+];
+
+const COLOR_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'All Colors' },
+  { value: 'W', label: '⚪ White' },
+  { value: 'U', label: '🔵 Blue' },
+  { value: 'B', label: '⚫ Black' },
+  { value: 'R', label: '🔴 Red' },
+  { value: 'G', label: '🟢 Green' },
+  { value: 'M', label: '🌈 Multi' },
+  { value: 'C', label: '◆ Colorless' },
 ];
 
 export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
@@ -130,6 +145,17 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
         onChange={(_, d) => update({ tag: d.value || null })}
         style={{ width: '130px' }}
       />
+
+      <Dropdown
+        placeholder="Color"
+        value={COLOR_OPTIONS.find(o => o.value === (filters.color || ''))?.label || 'All Colors'}
+        onOptionSelect={(_, d) => update({ color: d.optionValue || null })}
+        style={{ minWidth: '120px' }}
+      >
+        {COLOR_OPTIONS.map(o => (
+          <Option key={o.value} value={o.value}>{o.label}</Option>
+        ))}
+      </Dropdown>
 
       <Checkbox
         label={t('wishlist.deals_only')}

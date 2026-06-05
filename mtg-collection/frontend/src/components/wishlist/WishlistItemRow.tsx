@@ -127,21 +127,20 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
 }
 
 function StatusBadge({ item }: { item: WishlistItem }) {
-  const styles = useStyles();
   const colorMap = { wanted: 'informative', acquired: 'success', dropped: 'danger', not_received: 'warning' } as const;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
       <Badge appearance="filled" color={colorMap[item.status] || 'informative'}>
         {t(`wishlist.status_${item.status}`)}
       </Badge>
       {item.is_ordered && item.status === 'wanted' && (
-        <Badge appearance="tint" color="brand" size="small" className={styles.orderedBadge}>
+        <Badge appearance="outline" color="brand" size="small" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
           📦 {t('wishlist.status_ordered')}
           {item.expected_price_eur != null && ` · €${item.expected_price_eur.toFixed(2)}`}
         </Badge>
       )}
       {item.source && (
-        <Caption1 className={styles.sourceBadge}>{item.source}</Caption1>
+        <Caption1 style={{ fontSize: 10, color: tokens.colorNeutralForeground3 }}>{item.source}</Caption1>
       )}
     </div>
   );

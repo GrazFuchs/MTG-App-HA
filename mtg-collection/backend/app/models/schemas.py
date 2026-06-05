@@ -243,11 +243,15 @@ class WishlistItemUpdate(BaseModel):
 
 class WishlistOrderRequest(BaseModel):
     expected_price_eur: float | None = Field(None, ge=0)
+    set_code: str | None = None
+    is_foil: bool | None = None
 
 
 class WishlistAcquireRequest(BaseModel):
     paid_price_eur: float | None = Field(None, ge=0)
     source: SOURCE_VALUES | None = None
+    set_code: str | None = None
+    is_foil: bool | None = None
 
 
 class WishlistItemResponse(BaseModel):
@@ -271,6 +275,7 @@ class WishlistItemResponse(BaseModel):
     current_price_eur: float | None = None
     is_deal: bool = False
     image_uri: str | None = None
+    color_identity: list[str] = []
     # Sprint 9: Acquisition tracking fields
     is_ordered: bool = False
     ordered_at: str | None = None

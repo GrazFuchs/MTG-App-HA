@@ -36,20 +36,31 @@ class SpellbookClient:
             }
         """
         client = await self._get_client()
-        decklist = "\n".join(f"1 {n}" for n in card_names)
+        main_list = [{"card": name, "quantity": 1} for name in card_names]
+        commanders_list = []
         if commander_name:
-            decklist += f"\n\nCommander\n1 {commander_name}"
+            commanders_list = [{"card": commander_name, "quantity": 1}]
 
-        resp = await client.post("/find-my-combos/", json={"main": decklist})
+        payload: dict[str, Any] = {"main": main_list}
+        if commanders_list:
+            payload["commanders"] = commanders_list
+
+        logger.debug("Spellbook request: %d cards, commander=%s", len(card_names), commander_name)
+        resp = await client.post("/find-my-combos/", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        # Normalize response: Spellbook may return results or included/almost_included
-        if "results" in data and "included" not in data:
-            return {"included": data.get("results", []), "almost_included": []}
-        return {
-            "included": data.get("included", data.get("results", [])),
-            "almost_included": data.get("almost_included", data.get("almostIncluded", [])),
-        }
+
+        # API nests combos under results.included / results.almost_included
+        results = data.get("results", data)
+        if isinstance(results, dict):
+            included = results.get("included", [])
+            almost = results.get("almost_included", results.get("almostIncluded", []))
+        else:
+            included = []
+            almost = []
+
+        logger.info("Spellbook returned %d included, %d almost_included combos", len(included), len(almost))
+        return {"included": included, "almost_included": almost}
 
     async def get_combo_detail(self, combo_id: str) -> dict[str, Any]:
         """Fetch full details for a specific combo."""

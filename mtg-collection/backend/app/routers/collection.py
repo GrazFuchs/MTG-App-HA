@@ -232,7 +232,7 @@ async def remove_from_collection(entry_id: int):
 
 def _duplicates_conditions(search: str, color: str, set_code: str):
     """Build WHERE conditions shared by duplicates endpoints."""
-    conditions = ["c.type_line NOT LIKE '%Basic Land%'"]
+    conditions = ["COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'"]
     params: list = []
 
     if search:
@@ -245,7 +245,10 @@ def _duplicates_conditions(search: str, color: str, set_code: str):
         for clr in color.split(","):
             clr = clr.strip().upper()
             if clr in ("W", "U", "B", "R", "G"):
-                conditions.append("c.color_identity LIKE ?")
+                # Match monocolor only: must contain the color AND not be multicolor
+                conditions.append(
+                    "(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')"
+                )
                 params.append(f'%"{clr}"%')
             elif clr == "M":
                 conditions.append("c.color_identity LIKE '%,%'")
@@ -310,8 +313,6 @@ _DUPLICATES_CTE = """
                COALESCE((
                    SELECT SUM(l.quantity) FROM cardmarket_listings l
                    WHERE LOWER(l.card_name) = LOWER(pr.name)
-                     AND LOWER(COALESCE(l.set_code, l.expansion_code, '')) = LOWER(pr.set_code)
-                     AND l.is_foil = pr.is_foil
                ), 0) as listed_quantity
         FROM printing_rows pr
         WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
@@ -447,3 +448,85 @@ async def list_duplicate_sets(
     cursor = await db.execute(query, doubled_params)
     rows = await cursor.fetchall()
     return [{"set_code": r["set_code"], "set_name": r["set_name"]} for r in rows]
+
+
+@router.get("/duplicates/printings")
+async def list_card_printings(
+    card_name: str = Query(..., description="Exact card name to find printings for"),
+):
+    """Return all printings of a card with extras info for cross-set selling."""
+    db = await get_db()
+
+    cursor = await db.execute(
+        """
+        WITH deck_usage AS (
+            SELECT c2.name, SUM(dc.quantity) as in_decks
+            FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
+            GROUP BY c2.name
+        ),
+        global_owned AS (
+            SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
+            FROM collection col2 JOIN cards c3 ON c3.id = col2.card_id
+            GROUP BY c3.name
+        ),
+        non_foil AS (
+            SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+                   c.image_uri, c.price_eur, c.price_eur_foil, c.collector_number,
+                   0 as is_foil,
+                   SUM(col.quantity) as total_copies
+            FROM collection col JOIN cards c ON c.id = col.card_id
+            WHERE LOWER(c.name) = LOWER(?)
+            GROUP BY c.id, c.set_code
+            HAVING SUM(col.quantity) > 0
+        ),
+        foil AS (
+            SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+                   c.image_uri, c.price_eur, c.price_eur_foil, c.collector_number,
+                   1 as is_foil,
+                   SUM(col.foil_quantity) as total_copies
+            FROM collection col JOIN cards c ON c.id = col.card_id
+            WHERE LOWER(c.name) = LOWER(?)
+            GROUP BY c.id, c.set_code
+            HAVING SUM(col.foil_quantity) > 0
+        ),
+        all_printings AS (
+            SELECT * FROM non_foil UNION ALL SELECT * FROM foil
+        )
+        SELECT ap.*,
+               COALESCE(du.in_decks, 0) as in_decks,
+               COALESCE(go.total_global, 0) as total_global,
+               COALESCE((
+                   SELECT SUM(l.quantity) FROM cardmarket_listings l
+                   WHERE LOWER(l.card_name) = LOWER(ap.name)
+                     AND LOWER(COALESCE(l.set_code, l.expansion_code, '')) = LOWER(ap.set_code)
+                     AND l.is_foil = ap.is_foil
+               ), 0) as listed_for_printing
+        FROM all_printings ap
+        LEFT JOIN deck_usage du ON du.name = ap.name
+        LEFT JOIN global_owned go ON go.name = ap.name
+        ORDER BY ap.set_name, ap.is_foil
+        """,
+        (card_name, card_name),
+    )
+    rows = await cursor.fetchall()
+
+    results = []
+    for r in rows:
+        results.append({
+            "card_name": r["name"],
+            "set_name": r["set_name"],
+            "set_code": r["set_code"],
+            "rarity": r["rarity"],
+            "image_uri": r["image_uri"],
+            "is_foil": bool(r["is_foil"]),
+            "price_eur": r["price_eur"] or "",
+            "price_eur_foil": r["price_eur_foil"] or "",
+            "total_copies": r["total_copies"],
+            "in_decks": r["in_decks"],
+            "total_global": r["total_global"],
+            "listed_for_printing": r["listed_for_printing"],
+            "card_id": r["card_id"],
+            "collector_number": r["collector_number"],
+        })
+
+    return results
