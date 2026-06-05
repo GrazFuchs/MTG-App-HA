@@ -1,3 +1,9 @@
+## 0.17.3
+
+### Fixed
+- **Cardmarket listings duplicated rows** — The LEFT JOIN to the `cards` table matched ALL printings of a card name, multiplying listing rows. Replaced with a scalar subquery that picks exactly one card per listing (preferring matching set_code, then most recent).
+- **Cardmarket SET column empty** — Frontend now displays `set_name` (expansion) from the listing instead of the always-empty `set_code`.
+
 ## 0.17.2
 
 ### Fixed

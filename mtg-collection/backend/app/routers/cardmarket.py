@@ -83,8 +83,14 @@ async def list_cardmarket_listings(
             c.loyalty, c.keywords, c.edhrec_rank, c.price_usd, c.price_eur,
             c.price_usd_foil, c.price_eur_foil, c.updated_at
         FROM cardmarket_listings l
-        LEFT JOIN cards c ON LOWER(c.name) = LOWER(l.card_name)
-            AND (l.set_code = '' OR LOWER(c.set_code) = LOWER(l.set_code))
+        LEFT JOIN cards c ON c.id = (
+            SELECT c2.id FROM cards c2
+            WHERE LOWER(c2.name) = LOWER(l.card_name)
+            ORDER BY
+                CASE WHEN l.set_code != '' AND LOWER(c2.set_code) = LOWER(l.set_code) THEN 0 ELSE 1 END,
+                c2.updated_at DESC
+            LIMIT 1
+        )
         WHERE {where}
         ORDER BY {sort_col} {direction}, LOWER(l.card_name) ASC
     """

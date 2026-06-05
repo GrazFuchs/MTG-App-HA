@@ -454,7 +454,7 @@ export default function Cardmarket() {
                 <PriceCell cardName={l.card_name} accent={accent.oklch} />
               )}
             </div>
-            <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{l.set_code?.toUpperCase() || '—'}</div>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{l.set_name || l.set_code?.toUpperCase() || '—'}</div>
             <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{l.quantity}</div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{l.condition || '—'}</div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{l.language}</div>
