@@ -38,7 +38,7 @@ async def compare_decks(ids: str = Query(..., description="Comma-separated deck 
 
     for did in deck_ids:
         cursor = await db.execute(
-            """SELECT d.*, (SELECT COUNT(*) FROM deck_cards WHERE deck_id=d.id) as card_count
+            """SELECT d.*, (SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id=d.id) as card_count
             FROM decks d WHERE d.id=?""", (did,)
         )
         row = await cursor.fetchone()

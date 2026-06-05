@@ -32,11 +32,28 @@ async def import_cardmarket_csv(file_content: str | bytes) -> dict[str, Any]:
     db = await get_db()
 
     if isinstance(file_content, bytes):
+        logger.info("Cardmarket CSV import: received %d bytes", len(file_content))
         file_content = file_content.decode("utf-8-sig")
+    else:
+        logger.info("Cardmarket CSV import: received %d chars (string)", len(file_content))
 
-    # Detect format
+    if not file_content or not file_content.strip():
+        logger.error("Cardmarket CSV import: file content is empty")
+        return {
+            "total_rows": 0,
+            "imported": 0,
+            "errors": 1,
+            "error_details": ["File is empty. Please select a valid Cardmarket CSV export."],
+        }
+
+    # Detect format — strip whitespace from header names for resilience
     reader = csv.DictReader(io.StringIO(file_content), delimiter=";")
-    headers = set(reader.fieldnames or [])
+    raw_fieldnames = reader.fieldnames or []
+    # Normalize: strip whitespace from fieldnames (Cardmarket sometimes adds trailing spaces)
+    clean_fieldnames = [h.strip() for h in raw_fieldnames]
+    reader.fieldnames = clean_fieldnames
+    headers = {h for h in clean_fieldnames if h}
+    logger.info("Cardmarket CSV import: detected %d columns: %s", len(headers), sorted(headers))
 
     is_new_format = NEW_FORMAT_HEADERS.issubset(headers)
     is_legacy_format = LEGACY_FORMAT_HEADERS.issubset(headers)
@@ -44,7 +61,9 @@ async def import_cardmarket_csv(file_content: str | bytes) -> dict[str, Any]:
     if not is_new_format and not is_legacy_format:
         # Try comma delimiter
         alt_reader = csv.DictReader(io.StringIO(file_content), delimiter=",")
-        alt_headers = set(alt_reader.fieldnames or [])
+        alt_fieldnames = [h.strip() for h in (alt_reader.fieldnames or [])]
+        alt_reader.fieldnames = alt_fieldnames
+        alt_headers = {h for h in alt_fieldnames if h}
         if NEW_FORMAT_HEADERS.issubset(alt_headers):
             reader = alt_reader
             is_new_format = True
@@ -52,14 +71,17 @@ async def import_cardmarket_csv(file_content: str | bytes) -> dict[str, Any]:
             reader = alt_reader
             is_legacy_format = True
         else:
+            msg = (
+                f"Unrecognized CSV format. Found columns: {sorted(headers)}. "
+                f"Expected columns (new): {sorted(NEW_FORMAT_HEADERS)} or "
+                f"(legacy): {sorted(LEGACY_FORMAT_HEADERS)}"
+            )
+            logger.error("Cardmarket CSV import failed: %s", msg)
             return {
                 "total_rows": 0,
                 "imported": 0,
                 "errors": 1,
-                "error_details": [
-                    f"Unrecognized CSV format. Found columns: {headers}. "
-                    f"Expected Cardmarket stock export columns."
-                ],
+                "error_details": [msg],
             }
 
     # Clear previous imported entries (preserve manual ones)

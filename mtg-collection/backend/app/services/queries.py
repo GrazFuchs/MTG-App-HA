@@ -104,7 +104,7 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     """List all decks with card counts."""
     cursor = await db.execute(
         """SELECT d.id, d.archidekt_id, d.name, d.format, d.commander_name,
-        d.featured_image, d.last_synced, COUNT(dc.id) as card_count,
+        d.featured_image, d.last_synced, COALESCE(SUM(dc.quantity), 0) as card_count,
         d.folder_name, d.bracket
         FROM decks d LEFT JOIN deck_cards dc ON dc.deck_id = d.id
         GROUP BY d.id ORDER BY d.name"""

@@ -1,3 +1,9 @@
+## 0.17.1
+
+### Fixed
+- **Cardmarket CSV import** — Added diagnostic logging and empty-file guard; header detection now strips whitespace for resilience against format changes; frontend shows `error_details` on failed imports.
+- **Deck card count** — Card count now uses `SUM(quantity)` instead of `COUNT(rows)`, correctly reflecting total cards including multiples.
+
 ## 0.17.0
 
 ### Added

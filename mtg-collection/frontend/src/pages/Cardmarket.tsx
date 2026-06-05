@@ -254,7 +254,9 @@ export default function Cardmarket() {
   const importMutation = useMutation({
     mutationFn: (file: File) => api.importCardmarketCSV(file),
     onSuccess: (result) => {
-      setMsg({ type: 'success', text: `Imported ${result.imported} of ${result.total_rows} listings (${result.errors} errors)` });
+      const details = result.error_details?.length ? `\n${result.error_details[0]}` : '';
+      const msgType = result.errors > 0 && result.imported === 0 ? 'error' : 'success';
+      setMsg({ type: msgType, text: `Imported ${result.imported} of ${result.total_rows} listings (${result.errors} errors)${details}` });
       queryClient.invalidateQueries({ queryKey: ['cardmarket-listings'] });
       queryClient.invalidateQueries({ queryKey: ['cardmarket-stats'] });
     },

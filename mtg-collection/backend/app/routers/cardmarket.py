@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Query, UploadFile, File, Response
@@ -14,6 +15,7 @@ from ..services.cardmarket_import import import_cardmarket_csv
 from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
 from ..services.listing_health import analyze_listings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -188,6 +190,16 @@ async def cardmarket_stats(response: Response):
 @router.post("/import", response_model=CardmarketImportResult)
 async def upload_cardmarket_csv(file: UploadFile = File(...)):
     content = await file.read()
+    logger.info(
+        "Cardmarket CSV upload: filename=%r, content_type=%r, size=%d bytes",
+        file.filename, file.content_type, len(content),
+    )
+    if not content:
+        logger.error("Cardmarket CSV upload: received empty file body")
+        return CardmarketImportResult(
+            total_rows=0, imported=0, errors=1,
+            error_details=["Upload received empty file. This may be a Home Assistant Ingress issue — try reloading the page."],
+        )
     result = await import_cardmarket_csv(content)
     return CardmarketImportResult(**result)
 
