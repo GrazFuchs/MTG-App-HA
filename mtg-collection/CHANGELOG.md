@@ -1,3 +1,9 @@
+## 0.17.2
+
+### Fixed
+- **Deck sync card loss (foil/non-foil)** — Changed `INSERT OR REPLACE` to `ON CONFLICT DO UPDATE SET quantity += excluded.quantity` so duplicate keys (same card_id + modifier) sum quantities instead of silently discarding the first entry. Fixes 5-card loss when same basic land exists as both Normal and Foil.
+- **DeckView hero text in light mode** — Hero title and meta text now always use light colors (`#EDEDF5`) since the overlay is always dark, regardless of theme mode.
+
 ## 0.17.1
 
 ### Fixed

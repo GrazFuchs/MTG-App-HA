@@ -142,7 +142,7 @@ async def query_deck_detail(db: aiosqlite.Connection, deck_id: int) -> dict[str,
         "name": deck["name"], "format": deck["format"],
         "commander": deck["commander_name"],
         "bracket": deck["bracket"] if "bracket" in deck.keys() else 0,
-        "card_count": len(cards), "cards": cards,
+        "card_count": sum(c["quantity"] for c in cards), "cards": cards,
     }
 
 

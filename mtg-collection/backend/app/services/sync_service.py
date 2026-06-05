@@ -155,9 +155,14 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
             card_id = await upsert_card(db, parsed["card"])
 
             await db.execute(
-                """INSERT OR REPLACE INTO deck_cards
+                """INSERT INTO deck_cards
                 (deck_id, card_id, quantity, category, is_commander, is_companion, modifier)
-                VALUES (?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(deck_id, card_id, modifier) DO UPDATE SET
+                    quantity = deck_cards.quantity + excluded.quantity,
+                    category = CASE WHEN excluded.category != '' THEN excluded.category ELSE deck_cards.category END,
+                    is_commander = excluded.is_commander OR deck_cards.is_commander,
+                    is_companion = excluded.is_companion OR deck_cards.is_companion""",
                 (
                     local_deck_id,
                     card_id,

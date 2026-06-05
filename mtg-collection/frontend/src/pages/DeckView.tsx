@@ -77,6 +77,8 @@ const useStyles = makeStyles({
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-end',
+    // Always light text — hero overlay is always dark regardless of theme
+    color: '#EDEDF5',
   },
   heroTitle: {
     fontFamily: sothera.fontDisplay,
@@ -84,7 +86,7 @@ const useStyles = makeStyles({
     fontWeight: 700,
     letterSpacing: '-1.6px',
     lineHeight: 1,
-    color: sothera.fg,
+    color: '#EDEDF5',
     '@media (max-width: 768px)': {
       fontSize: '28px',
     },
@@ -259,11 +261,11 @@ export default function DeckView() {
                 )}
               </div>
             )}
-            <span style={{ fontFamily: sothera.fontMono, fontSize: 12, color: sothera.fgMuted, letterSpacing: 1 }}>· {mainCount} CARDS ·</span>
+            <span style={{ fontFamily: sothera.fontMono, fontSize: 12, color: '#9A9AB0', letterSpacing: 1 }}>· {mainCount} CARDS ·</span>
             <span style={{ fontFamily: sothera.fontDisplay, fontSize: 20, fontWeight: 600, color: accent.oklch, letterSpacing: -0.5 }}>€{totalValue.toFixed(2)}</span>
             {deck.archidekt_id && (
               <a href={`https://archidekt.com/decks/${deck.archidekt_id}`} target="_blank" rel="noopener noreferrer">
-                <Button appearance="subtle" size="small" style={{ color: sothera.fgFaint }}>Archidekt ↗</Button>
+                <Button appearance="subtle" size="small" style={{ color: '#9A9AB0' }}>Archidekt ↗</Button>
               </a>
             )}
             {deck.commander_name && (
@@ -272,7 +274,7 @@ export default function DeckView() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Button appearance="subtle" size="small" style={{ color: sothera.fgFaint }}>EDHREC ↗</Button>
+                <Button appearance="subtle" size="small" style={{ color: '#9A9AB0' }}>EDHREC ↗</Button>
               </a>
             )}
           </div>
