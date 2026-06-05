@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.9.0 |
+| App version | 0.17.2 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -60,10 +60,16 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
   - Robust sync: stale-entry cleanup only on a complete sync
 - **Scryfall Integration**: Card search, USD/EUR prices, autocomplete, direct Scryfall links
 - **EDHREC Integration**: Commander recommendations and combo suggestions
+- **Commander Spellbook**: Infinite combo detection per deck (full + partial combos)
 - **Cardmarket**: CSV import for listings, price data sync, price-spike detection
   - Daily price sync via Cardmarket JSON feeds (owned cards only)
   - 30-day price sparklines on card name hover
   - Automatic price-spike alerts with sell recommendations for unused copies
+  - Listing health analysis (underpriced / overpriced / fair vs trend)
+- **Inbox / Acquisition Triage**: Review new card acquisitions with keep/sell scoring
+  - AI-powered triage advisor (Cardmarket trend price, deck usage)
+  - Undo support for triage decisions
+- **Voice Integration**: HA Assist endpoints for natural-language card queries ("How many Sol Ring do I have?", "Any active deals?")
 - **MCP Server**: Streamable HTTP endpoint for AI assistants (Claude, etc.)
   - 27 tools, 3 resources, 2 prompts — price alerts, price history, deck usage, duplicates, wishlist, deck completeness, sell advisor, AI deck assessment
   - MCP setup wizard in Settings (download, config snippet, step-by-step guide)
@@ -190,15 +196,18 @@ mtg-collection-ha/                     # GitHub repository root
     │       ├── config.py        # Pydantic settings (from options.json)
     │       ├── database.py      # SQLite schema, init, migrations, connection
     │       ├── scheduler.py     # APScheduler for daily sync
-    │       ├── version.py       # VERSION = "0.7.0"
+    │       ├── version.py       # VERSION = "0.17.2"
     │       ├── mcp_server.py    # MCP server (27 tools, 3 resources, 2 prompts)
+    │       ├── logging_config.py # Structured JSON logging to stdout
     │       ├── clients/
     │       │   ├── archidekt.py # Archidekt API client (auth, decks, collection)
     │       │   ├── scryfall.py  # Scryfall API client (search, prices)
-    │       │   └── edhrec.py    # EDHREC JSON client (recommendations, combos)
+    │       │   ├── edhrec.py    # EDHREC JSON client (recommendations, combos)
+    │       │   └── spellbook.py # Commander Spellbook client (combo detection)
     │       ├── models/
     │       │   └── schemas.py   # Pydantic models (request/response)
     │       ├── routers/
+    │       │   ├── acquisitions.py # /api/acquisitions/* (inbox triage)
     │       │   ├── backup.py    # /api/backup/* (backup, restore)
     │       │   ├── cards.py     # /api/cards/* (Scryfall proxy, EDHREC)
     │       │   ├── cardmarket.py# /api/cardmarket/* (CSV, sync, listings)
@@ -207,15 +216,20 @@ mtg-collection-ha/                     # GitHub repository root
     │       │   ├── mcp_setup.py # /api/mcp/* (proxy download, setup instructions)
     │       │   ├── stats.py     # /api/stats/ (collection statistics)
     │       │   ├── sync.py      # /api/sync/* (trigger, status, history)
+    │       │   ├── voice.py     # /api/voice/* (HA Assist integration)
     │       │   └── wishlist.py  # /api/wishlist/* (CRUD, acquire, export)
     │       └── services/
+    │           ├── card_resolver.py     # Find-or-fetch card by name/ID
     │           ├── cardmarket_import.py # Cardmarket CSV import
     │           ├── cardmarket_prices.py # Cardmarket price sync and alerts
+    │           ├── combo_sync.py        # Commander Spellbook combo sync
     │           ├── ha_publisher.py      # MQTT sensor discovery and publishing
+    │           ├── listing_health.py    # Listing vs trend health analysis
     │           ├── notifications.py     # Price-spike notifications
     │           ├── queries.py           # Shared DB query helpers
     │           ├── sell_advisor.py      # Sell recommendation logic
-    │           └── sync_service.py      # Archidekt → DB sync logic
+    │           ├── sync_service.py      # Archidekt → DB sync logic
+    │           └── triage_advisor.py    # Keep/sell scoring for acquisitions
     ├── frontend/
     │   ├── package.json         # React 18, Fluent UI, React Router, Vite
     │   ├── vite.config.ts       # Vite build config
@@ -265,6 +279,7 @@ The backend server starts via `run.sh`, which queries the Supervisor API to dete
 | Scryfall | `clients/scryfall.py` | `https://api.scryfall.com` | 100 ms between requests |
 | EDHREC | `clients/edhrec.py` | `https://json.edhrec.com/pages` | 24 h in-memory cache |
 | Cardmarket | `clients/cardmarket.py` | `https://www.cardmarket.com` | 1.5 s between pages |
+| Spellbook | `clients/spellbook.py` | `https://backend.commanderspellbook.com` | On-demand, cached per deck |
 
 #### Sync Service
 
@@ -288,11 +303,13 @@ The SPA is built in the multi-stage Docker build with Node.js 20 and served as s
 |---|---|---|
 | Dashboard | `/` | Stats cards (total cards, value, decks) + price-spike alerts |
 | Decks | `/decks` | Collapsible folders, bracket badges, Commander, format |
-| Deck Detail | `/decks/:id` | Commander header, mana curve, card table, sideboard separation |
+| Deck Detail | `/decks/:id` | Commander header, mana curve, card table, combos, AI assessment |
+| Deck Compare | `/decks/compare` | Side-by-side deck comparison matrix |
 | Collection | `/collection` | Set filter, grouping by card name, in-decks column, Scryfall links |
-| Cardmarket | `/cardmarket` | Listings, CSV import/export, price sync, sparklines, alerts |
+| Cardmarket | `/cardmarket` | Listings, CSV import/export, price sync, sparklines, alerts, listing health |
 | Duplicates | `/duplicates` | Duplicate cards with sell-to-Cardmarket dialog |
-| Wishlist | `/wishlist` | Wishlist with priorities, status tracking, CSV export |
+| Inbox | `/inbox` | Acquisition triage with keep/sell scoring |
+| Wishlist | `/wishlist` | Wishlist with priorities, color filter, group-by-card, status tracking |
 | Settings | `/settings` | Sync config, manual trigger, sync history, MCP setup |
 
 #### Ingress Handling
@@ -412,6 +429,22 @@ Base URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 |---|---|---|
 | `GET` | `/api/backup/backup` | Download the SQLite database as a file |
 | `POST` | `/api/backup/restore` | Upload a `.db` file to restore the database |
+
+### Acquisitions (Inbox Triage)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/acquisitions/pending` | List pending acquisition events (paginated, filterable) |
+| `GET` | `/api/acquisitions/stats` | Inbox overview stats |
+| `POST` | `/api/acquisitions/{event_id}/decide` | Submit keep/sell triage decision |
+| `POST` | `/api/acquisitions/{event_id}/undo` | Undo a triage decision |
+
+### Voice (HA Assist)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/voice/card-count?name=` | How many copies of a card the user owns |
+| `GET` | `/api/voice/active-deals` | Wishlist items where current price ≤ target |
 
 ### MCP Setup
 
@@ -553,6 +586,7 @@ Claude Desktop ↔ stdio ↔ mcp-proxy.mjs ↔ HTTP ↔ HA Ingress ↔ Add-on /m
 | [Archidekt](https://archidekt.com) | Deck sync, collection sync | Optional: username/password (JWT) |
 | [Scryfall](https://scryfall.com/docs/api) | Card search, prices, images | None (public API, 100 ms rate limit) |
 | [EDHREC](https://edhrec.com) | Commander recommendations, combos | None (unofficial JSON endpoints, 24 h cache) |
+| [Commander Spellbook](https://commanderspellbook.com) | Infinite combo detection | None (public API) |
 | [Cardmarket](https://cardmarket.com) | Offer listings, price data | CSV import + official JSON price feeds |
 
 ---
@@ -621,6 +655,7 @@ Configuration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
 ## 📚 Detailed Guides
 
+- [Home Assistant Integration](docs/ha-integration.md) — MQTT sensors, voice integration, automations, dashboard cards
 - [MCP Setup für Claude Desktop](docs/mcp-setup.md) — How to connect this add-on to Claude Desktop
 - [Cardmarket Workflow](docs/cardmarket-workflow.md) — CSV-based listing management
 
@@ -628,121 +663,4 @@ Configuration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
 ## Changelog
 
-### 0.7.0
-
-#### Added
-- **Wishlist**: Full wishlist management with add form, priorities, status tracking, filters, and CSV export
-- **Deck Header Features**: User bracket (editable 1–5), gameplan field (500 chars), AI assessment (Markdown, MCP-write-only)
-- **MCP Setup UX**: Settings section with proxy download, config snippet (copy-to-clipboard), OS-specific paths
-- **Cardmarket Workflow Banner**: 5-step CSV roundtrip guide on the Cardmarket page (dismissible)
-- **AI Assessment Markdown**: react-markdown + remark-gfm for safe Markdown rendering
-- **MCP Tool**: `set_deck_ai_assessment` — AI can write deck assessments
-- **API Endpoints**: `GET /api/mcp/proxy.mjs`, `GET /api/mcp/setup-instructions`, `PUT /api/decks/{id}/user-fields`
-- **Documentation**: [MCP Setup Guide](docs/mcp-setup.md), [Cardmarket Workflow Guide](docs/cardmarket-workflow.md)
-
-#### Changed
-- Deck detail header now shows Archidekt bracket and editable user bracket side by side
-- Schema migration #10: 4 new columns on the `decks` table
-
-### 0.6.0
-
-#### Added
-- **Duplicates tab**: New tab shows all cards with excess copies (owned > in decks)
-  - Sell dialog: create Cardmarket listings directly from duplicates (price, condition, language, quantity)
-  - Pagination and search
-- **Dashboard price alerts**: Price-spike alerts now shown on the dashboard (instead of sync status)
-  - Grouped by price tier with collapsible groups
-- **Collection deck filter**: Dropdown to filter the collection by deck
-- **EDHREC link**: Deck detail view shows EDHREC link for the Commander
-- **Cardmarket source tracking**: Listings distinguish between CSV-import and manually created entries
-  - Manual entries highlighted in the listings table
-  - CSV re-import merges manual entries when card name matches
-- **Clear Listings button**: Settings page has a button to delete all Cardmarket listings
-- **MCP Server**: 3 new tools (`get_duplicates`, `add_cardmarket_listing`, `clear_cardmarket_listings`)
-
-#### Changed
-- Dashboard no longer shows a sync-status card (moved to Settings)
-- Cardmarket CSV import preserves manual entries on re-import
-
-### 0.4.2
-
-#### Added
-- **Collection pagination**: Server-side pagination (100 per page) instead of loading 6 000+ entries at once
-- **Price alert tier grouping**: Alerts grouped by price tier with collapsible groups
-
-### 0.4.1
-
-#### Fixed
-- **Collection performance**: CTE with LEFT JOIN instead of a correlated O(n²) subquery for in-decks count
-- **Cardmarket price sync**: HTTP 403 is treated as end of page list (not only 404)
-
-### 0.4.0
-
-#### Added
-- **Cardmarket price data sync**: Daily automatic sync via Cardmarket JSON feeds
-  - Only owned cards are matched and stored
-  - Price history (avg, low, trend, avg1/7/30) in a new `cardmarket_price_history` table
-  - 30-day sparkline graphs on card name hover in the Cardmarket tab
-  - "Sync Prices" button for a manual price sync
-- **Price spike detection**: Automatic alerts when trend > 30% above the 30-day average
-  - Sell recommendations for unused copies (not in any deck)
-  - Alert section on the Cardmarket page
-- **Deck bracket**: Bracket value extracted from Archidekt and displayed
-- **Collapsible deck folders**: Folders on the Decks page collapsed by default
-- **Deck detail redesign**: Commander image as header, bracket badge, color-identity pips, total value, Archidekt link, compact card table without images
-- **Sideboard/Maybeboard separation**: Non-deck categories shown as a dimmed section at the bottom
-- **Scryfall links**: Clicking a card name opens Scryfall in a new tab (Decks and Collection)
-- **Collection set filter**: Dropdown to filter by set
-- **Collection grouping**: Cards grouped by name, collapsible
-- **In-decks column**: "In Decks" column in the Collection view
-- **Oracle text on hover**: Card text shown below the preview image
-- **MCP Server**: 5 new tools (`get_price_alerts`, `get_price_history`, `get_deck_usage`, `sync_prices`)
-- **Cardmarket product table**: DB table for matched products with card foreign key
-
-#### Fixed
-- **Collection data loss on sync**: Stale-entry cleanup only on a complete sync (`sync_complete` flag)
-- **Collection display empty**: `page_size` limit raised to 5 000 (was 1 000; frontend requested 5 000)
-
-### 0.3.0
-
-#### Added
-- Archidekt authentication (login for private decks and collection)
-- Collection sync directly via Archidekt Collection API
-- Cardmarket CSV import and price data sync
-- MCP server with 11 tools and 2 prompts (Streamable HTTP)
-- Card hover preview with Scryfall images
-- Mana symbol rendering via Scryfall SVG API
-
-#### Changed
-- Collection is now read directly from Archidekt (no longer built from deck cards)
-- Deck sync no longer automatically adds cards to the collection
-
-#### Fixed
-- Rate limiting (429) with exponential backoff
-- Incremental commit during collection sync
-- API base URL correctly extracted from ingress path
-
-### 0.2.0
-
-#### Fixed
-- Docker: replaced HA base image with `python:3.12-alpine` (s6-overlay PID 1 crash)
-- `run.sh`: removed bashio dependency, uses plain `sh` with Supervisor API
-- Frontend: API base URL extracted dynamically from ingress path
-- MCP server import/mount made fault-tolerant
-
-#### Added
-- `CHANGELOG.md` for Home Assistant add-on updates
-- Centralized version in `version.py`
-
-### 0.1.0
-
-#### Added
-- Initial release
-- Archidekt deck sync with configurable schedule
-- Scryfall card search and price lookup
-- EDHREC Commander recommendations and combos
-- Collection management with SQLite
-- Cardmarket CSV import
-- MCP server (Streamable HTTP)
-- Fluent UI React frontend
-- Home Assistant Ingress integration
+See [mtg-collection/CHANGELOG.md](mtg-collection/CHANGELOG.md) for the full version history.
