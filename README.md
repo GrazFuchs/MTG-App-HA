@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.17.2 |
+| App version | 0.22.0 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -69,6 +69,12 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 - **Inbox / Acquisition Triage**: Review new card acquisitions with keep/sell scoring
   - AI-powered triage advisor (Cardmarket trend price, deck usage)
   - Undo support for triage decisions
+  - Colour grouping/filter, name search, and sort by colour/set/newest
+  - "Fix colors" backfill re-enriches cards with missing colour identity from Scryfall
+  - Basic lands excluded by name (covers snow-covered and un-enriched cards)
+- **Deck Performance Tracker**: Log how each game went and review per-deck stats
+  - Per game: result (win/loss/draw), date, on-the-play, pod size, mulligans, missed land drops, turns, opponents, and "what worked / what didn't / notes"
+  - Aggregates: win rate, W/L/D, recent form, on-play win rate, and averages
 - **Voice Integration**: HA Assist endpoints for natural-language card queries ("How many Sol Ring do I have?", "Any active deals?")
 - **MCP Server**: Streamable HTTP endpoint for AI assistants (Claude, etc.)
   - 27 tools, 3 resources, 2 prompts — price alerts, price history, deck usage, duplicates, wishlist, deck completeness, sell advisor, AI deck assessment
@@ -78,11 +84,11 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
   - **Accent system**: 6 oklch accent families (Sothera / Nebula / Endstone / Stellar / Drift / Ember) — swappable from the topbar, persisted to localStorage
   - Dashboard: stats overview cards + price-spike alerts
   - Decks: collapsible folders, bracket badges, deck previews
-  - Deck Detail: Commander header, user bracket, gameplan, AI assessment (Markdown), mana curve
-  - Collection: set filter, deck filter, grouping by card name, in-decks column
-  - Duplicates: duplicate view with sell dialog for Cardmarket listings
+  - Deck Detail: Commander header, user bracket, gameplan, AI assessment (Markdown), mana curve, performance tracker
+  - Collection: set filter, deck filter, collection-tag filter, grouping by card name, in-decks column
+  - Duplicates: duplicate view (incl. "includes colour" + Monocolor filter) with sell dialog for Cardmarket listings
   - Cardmarket: price alerts, sparkline graphs, CSV import/export, workflow banner
-  - Wishlist: add form, priorities, status tracking, CSV export
+  - Wishlist: add form, priorities, status tracking, set/version + foil editing, CSV export
   - Card hover: Scryfall preview image + oracle text
 - **Home Assistant Ingress**: seamless integration into the HA panel
 
@@ -196,7 +202,7 @@ mtg-collection-ha/                     # GitHub repository root
     │       ├── config.py        # Pydantic settings (from options.json)
     │       ├── database.py      # SQLite schema, init, migrations, connection
     │       ├── scheduler.py     # APScheduler for daily sync
-    │       ├── version.py       # VERSION = "0.17.2"
+    │       ├── version.py       # VERSION = "0.22.0"
     │       ├── mcp_server.py    # MCP server (27 tools, 3 resources, 2 prompts)
     │       ├── logging_config.py # Structured JSON logging to stdout
     │       ├── clients/
@@ -223,10 +229,11 @@ mtg-collection-ha/                     # GitHub repository root
     │           ├── cardmarket_import.py # Cardmarket CSV import
     │           ├── cardmarket_prices.py # Cardmarket price sync and alerts
     │           ├── combo_sync.py        # Commander Spellbook combo sync
+    │           ├── deck_performance.py  # Deck game-result aggregation
     │           ├── ha_publisher.py      # MQTT sensor discovery and publishing
     │           ├── listing_health.py    # Listing vs trend health analysis
     │           ├── notifications.py     # Price-spike notifications
-    │           ├── queries.py           # Shared DB query helpers
+    │           ├── queries.py           # Shared DB query helpers (incl. basic-land exclusion)
     │           ├── sell_advisor.py      # Sell recommendation logic
     │           ├── sync_service.py      # Archidekt → DB sync logic
     │           └── triage_advisor.py    # Keep/sell scoring for acquisitions
@@ -244,8 +251,9 @@ mtg-collection-ha/                     # GitHub repository root
     │       │   ├── Collection.tsx  # Card collection with search and filters
     │       │   ├── Dashboard.tsx   # Stats overview, price alerts
     │       │   ├── Decks.tsx       # Deck grid with folder navigation
-    │       │   ├── DeckView.tsx    # Deck detail with mana curve
+    │       │   ├── DeckView.tsx    # Deck detail with mana curve + performance tracker
     │       │   ├── Duplicates.tsx  # Duplicates with sell dialog
+    │       │   ├── Inbox.tsx       # Acquisition triage (colour groups, search, sort)
     │       │   ├── Settings.tsx    # Sync config, history, MCP setup
     │       │   └── Wishlist.tsx    # Wishlist management
     │       └── components/
@@ -303,7 +311,7 @@ The SPA is built in the multi-stage Docker build with Node.js 20 and served as s
 |---|---|---|
 | Dashboard | `/` | Stats cards (total cards, value, decks) + price-spike alerts |
 | Decks | `/decks` | Collapsible folders, bracket badges, Commander, format |
-| Deck Detail | `/decks/:id` | Commander header, mana curve, card table, combos, AI assessment |
+| Deck Detail | `/decks/:id` | Commander header, mana curve, card table, combos, AI assessment, performance tracker |
 | Deck Compare | `/decks/compare` | Side-by-side deck comparison matrix |
 | Collection | `/collection` | Set filter, grouping by card name, in-decks column, Scryfall links |
 | Cardmarket | `/cardmarket` | Listings, CSV import/export, price sync, sparklines, alerts, listing health |
@@ -330,6 +338,7 @@ SQLite with WAL mode and foreign keys enabled. Schema:
 | `cards` | All cards (Scryfall ID, name, mana cost, prices, …) |
 | `decks` | Deck metadata (name, format, Commander, bracket, user bracket, gameplan, AI assessment) |
 | `deck_cards` | Card-to-deck mapping (quantity, category, Commander flag) |
+| `deck_games` | Per-game performance log (result, mulligans, missed land drops, turns, notes) |
 | `collection` | Personal collection (quantity, foil, condition, language) |
 | `cardmarket_listings` | Cardmarket offer listings |
 | `cardmarket_products` | Cardmarket products matched to owned cards |
@@ -354,14 +363,20 @@ Base URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 | `GET` | `/api/decks/` | List all decks |
 | `GET` | `/api/decks/{id}` | Deck detail with all cards |
 | `PUT` | `/api/decks/{id}/user-fields` | Update user bracket (1–5) and/or gameplan (body: `user_bracket`, `gameplan`) |
+| `GET` | `/api/decks/{id}/games` | List logged games for a deck (newest first) |
+| `POST` | `/api/decks/{id}/games` | Log a game (result, mulligans, missed land drops, notes, …) |
+| `PATCH` | `/api/decks/{id}/games/{game_id}` | Update a logged game (partial) |
+| `DELETE` | `/api/decks/{id}/games/{game_id}` | Delete a logged game |
+| `GET` | `/api/decks/{id}/performance` | Aggregate performance stats (win rate, averages, …) |
 
 ### Collection
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/collection/` | List collection (filters: `search`, `color`, `rarity`, `set_code`, `deck_id`; pagination) |
+| `GET` | `/api/collection/` | List collection (filters: `search`, `color`, `rarity`, `set_code`, `collection_tag`, `deck_id`; pagination) |
 | `GET` | `/api/collection/sets` | Sets present in the collection |
-| `GET` | `/api/collection/duplicates` | List duplicates (cards with excess copies) |
+| `GET` | `/api/collection/tags` | Distinct collection (Archidekt) tags present in the collection |
+| `GET` | `/api/collection/duplicates` | List duplicates (filters: `search`, `color` incl. `MONO`, `set_code`) |
 | `POST` | `/api/collection/` | Add card to collection (body: `scryfall_id`, `quantity`, …) |
 | `DELETE` | `/api/collection/{id}` | Remove card from collection |
 
@@ -380,7 +395,7 @@ Base URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/cardmarket/listings` | List listings (filter: `search`; pagination) |
+| `GET` | `/api/cardmarket/listings` | List listings (filters: `search`, `color`, `set_code`, `source`, `sort_by`; pagination) |
 | `GET` | `/api/cardmarket/stats` | Stats (count, total value) |
 | `POST` | `/api/cardmarket/import` | Upload and import a CSV file |
 | `GET` | `/api/cardmarket/export` | Export listings as CSV |
@@ -434,8 +449,9 @@ Base URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/acquisitions/pending` | List pending acquisition events (paginated, filterable) |
+| `GET` | `/api/acquisitions/pending` | List pending acquisition events (filters: `search`, `color`, `sort`, `min_value_eur`; paginated) |
 | `GET` | `/api/acquisitions/stats` | Inbox overview stats |
+| `POST` | `/api/acquisitions/backfill-colors` | Re-fetch missing colour identity from Scryfall for pending cards |
 | `POST` | `/api/acquisitions/{event_id}/decide` | Submit keep/sell triage decision |
 | `POST` | `/api/acquisitions/{event_id}/undo` | Undo a triage decision |
 
