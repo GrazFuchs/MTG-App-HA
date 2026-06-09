@@ -1,3 +1,14 @@
+## 0.19.0
+
+### Added
+- **Inbox name search** — Search pending acquisitions by card name.
+- **Inbox sort** — Sort the inbox by Newest, Color, Set, or Name.
+- **Inbox color filter** — Dropdown to show only one colour bucket (W/U/B/R/G/Multicolor/Colorless) across all pages, complementing the existing colour headers.
+- **"Fix colors" backfill** — `POST /api/acquisitions/backfill-colors` re-fetches colour data from Scryfall for pending cards whose `color_identity` is empty (Archidekt sometimes returns a thin card), so the colour groups/filter stop classifying everything as Colorless. Exposed as a button in the Inbox.
+
+### Fixed
+- **Basic lands in Inbox** — Inbox now excludes basic lands by name (shared with Duplicates), covering snow-covered basics and cards with an empty `type_line`.
+
 ## 0.18.0
 
 ### Fixed

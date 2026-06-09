@@ -3,6 +3,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, Query
 
+from ..clients.scryfall import parse_scryfall_card, scryfall
 from ..database import get_db
 from ..models.schemas import (
     AcquisitionEventResponse,
@@ -10,9 +11,56 @@ from ..models.schemas import (
     InboxAcquisitionStats,
     TriageDecisionRequest,
 )
+from ..services.queries import basic_land_exclusion_sql
+from ..services.sync_service import upsert_card
 from ..services.triage_advisor import get_suggestion
 
 router = APIRouter()
+
+
+# Colour-bucket ordering used for the "color" sort, mirroring the Inbox headers.
+_COLOR_ORDER_SQL = """
+    CASE
+        WHEN COALESCE(c.color_identity, '[]') IN ('[]', '') THEN 7
+        WHEN c.color_identity LIKE '%,%' THEN 6
+        WHEN c.color_identity LIKE '%"W"%' THEN 1
+        WHEN c.color_identity LIKE '%"U"%' THEN 2
+        WHEN c.color_identity LIKE '%"B"%' THEN 3
+        WHEN c.color_identity LIKE '%"R"%' THEN 4
+        WHEN c.color_identity LIKE '%"G"%' THEN 5
+        ELSE 8
+    END
+"""
+
+
+def _pending_filter_conditions(search: str, color: str) -> tuple[list[str], list]:
+    """Build optional name-search / colour-bucket conditions for /pending."""
+    conditions: list[str] = []
+    params: list = []
+    if search:
+        conditions.append("c.name LIKE ?")
+        params.append(f"%{search}%")
+    clr = color.strip()
+    if clr in ("W", "U", "B", "R", "G"):
+        # Mono of this colour (matches the single-colour Inbox header buckets).
+        conditions.append("(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')")
+        params.append(f'%"{clr}"%')
+    elif clr == "Multi":
+        conditions.append("c.color_identity LIKE '%,%'")
+    elif clr == "Colorless":
+        conditions.append("COALESCE(c.color_identity, '[]') IN ('[]', '')")
+    return conditions, params
+
+
+def _pending_order_by(sort: str) -> str:
+    """Map a sort key to an ORDER BY clause for /pending."""
+    if sort == "set":
+        return "LOWER(c.set_name) ASC, LOWER(c.name) ASC"
+    if sort == "name":
+        return "LOWER(c.name) ASC"
+    if sort == "color":
+        return f"{_COLOR_ORDER_SQL} ASC, LOWER(c.name) ASC"
+    return "ae.created_at DESC"
 
 
 def _build_card_response(r) -> CardResponse:
@@ -52,22 +100,34 @@ async def list_pending(
     page_size: int = Query(20, ge=1, le=100),
     min_value_eur: float = Query(0, ge=0),
     filter: str = Query("", description="needs_sell | needs_keep | empty = all pending"),
+    search: str = Query("", description="Filter by card name"),
+    color: str = Query("", description="Colour bucket: W/U/B/R/G/Multi/Colorless"),
+    sort: str = Query("newest", description="newest | set | name | color"),
 ):
     db = await get_db()
 
-    # Count total pending
-    count_params: list = []
+    # Shared WHERE/ORDER built from basic-land exclusion + optional filters.
     value_filter = ""
+    value_params: list = []
     if min_value_eur > 0:
-        value_filter = """AND CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) >= ?"""
-        count_params.append(min_value_eur)
+        value_filter = " AND CAST(COALESCE(NULLIF(c.price_eur, ''), '0') AS REAL) >= ?"
+        value_params.append(min_value_eur)
+
+    extra_conditions, extra_params = _pending_filter_conditions(search, color)
+    extra_sql = "".join(f" AND {c}" for c in extra_conditions)
+    order_by = _pending_order_by(sort)
+
+    where_clause = (
+        "WHERE ae.triage_state = 'pending' "
+        f"AND {basic_land_exclusion_sql('c')}{value_filter}{extra_sql}"
+    )
+    filter_params: list = value_params + extra_params
 
     # When a suggestion filter is applied, we must compute all items to filter post-query
     needs_suggestion_filter = filter in ("needs_sell", "needs_keep")
 
     if needs_suggestion_filter:
         # Load all pending (no pagination at SQL level)
-        query_params: list = list(count_params)
         cursor = await db.execute(
             f"""SELECT ae.*, c.*,
                 ae.id as event_id, ae.condition as event_condition,
@@ -75,11 +135,9 @@ async def list_pending(
                 ae.notes as event_notes
             FROM acquisition_events ae
             JOIN cards c ON c.id = ae.card_id
-            WHERE ae.triage_state = 'pending'
-              AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
-              {value_filter}
-            ORDER BY ae.created_at DESC""",
-            query_params,
+            {where_clause}
+            ORDER BY {order_by}""",
+            list(filter_params),
         )
         all_rows = await cursor.fetchall()
 
@@ -122,15 +180,13 @@ async def list_pending(
     count_cursor = await db.execute(
         f"""SELECT COUNT(*) FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
-        WHERE ae.triage_state = 'pending'
-          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
-          {value_filter}""",
-        count_params,
+        {where_clause}""",
+        list(filter_params),
     )
     total = (await count_cursor.fetchone())[0]
 
     offset = (page - 1) * page_size
-    query_params = list(count_params)
+    query_params = list(filter_params)
     query_params.extend([page_size, offset])
 
     cursor = await db.execute(
@@ -140,10 +196,8 @@ async def list_pending(
             ae.notes as event_notes
         FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
-        WHERE ae.triage_state = 'pending'
-          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'
-          {value_filter}
-        ORDER BY ae.created_at DESC
+        {where_clause}
+        ORDER BY {order_by}
         LIMIT ? OFFSET ?""",
         query_params,
     )
@@ -186,10 +240,10 @@ async def acquisition_stats():
 
     # Pending count (exclude basic lands)
     cursor = await db.execute(
-        """SELECT COUNT(*) FROM acquisition_events ae
+        f"""SELECT COUNT(*) FROM acquisition_events ae
         JOIN cards c ON c.id = ae.card_id
         WHERE ae.triage_state = 'pending'
-          AND COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'"""
+          AND {basic_land_exclusion_sql('c')}"""
     )
     pending_count = (await cursor.fetchone())[0]
 
@@ -215,6 +269,38 @@ async def acquisition_stats():
         decided_last_30d=decided_last_30d,
         by_state_30d=by_state_30d,
     )
+
+
+@router.post("/backfill-colors")
+async def backfill_colors():
+    """Re-fetch colour data from Scryfall for pending-inbox cards that lack it.
+
+    Archidekt occasionally returns a thin card without an oracleCard, leaving
+    `color_identity` empty — which makes every card fall into the Colorless
+    bucket in the Inbox. This enriches those cards from Scryfall by id.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        f"""SELECT DISTINCT c.id, c.scryfall_id FROM acquisition_events ae
+        JOIN cards c ON c.id = ae.card_id
+        WHERE ae.triage_state = 'pending'
+          AND COALESCE(c.color_identity, '[]') IN ('[]', '')
+          AND COALESCE(c.scryfall_id, '') != ''
+          AND {basic_land_exclusion_sql('c')}"""
+    )
+    candidates = await cursor.fetchall()
+
+    enriched = 0
+    failed = 0
+    for row in candidates:
+        try:
+            data = await scryfall.get_card_by_id(row["scryfall_id"])
+            await upsert_card(db, parse_scryfall_card(data))
+            enriched += 1
+        except Exception:
+            failed += 1
+    await db.commit()
+    return {"candidates": len(candidates), "enriched": enriched, "failed": failed}
 
 
 @router.post("/{event_id}/decide")

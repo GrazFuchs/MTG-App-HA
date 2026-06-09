@@ -635,10 +635,17 @@ export const api = {
     request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
 
   // Inbox / Acquisitions
-  getPendingTriage: (page = 1, pageSize = 20, minValue = 0, filter = '') =>
-    request<PaginatedAcquisitions>(`/api/acquisitions/pending?page=${page}&page_size=${pageSize}&min_value_eur=${minValue}${filter ? `&filter=${filter}` : ''}`),
+  getPendingTriage: (page = 1, pageSize = 20, minValue = 0, filter = '', search = '', color = '', sort = 'newest') => {
+    const p = new URLSearchParams({ page: String(page), page_size: String(pageSize), min_value_eur: String(minValue), sort });
+    if (filter) p.set('filter', filter);
+    if (search) p.set('search', search);
+    if (color) p.set('color', color);
+    return request<PaginatedAcquisitions>(`/api/acquisitions/pending?${p.toString()}`);
+  },
   getInboxStats: () =>
     request<InboxAcquisitionStats>('/api/acquisitions/stats'),
+  backfillInboxColors: () =>
+    request<{ candidates: number; enriched: number; failed: number }>('/api/acquisitions/backfill-colors', { method: 'POST' }),
   decideTriage: (eventId: number, body: TriageDecisionPayload) =>
     request<{ status: string; event_id: number; triage_state: string }>(`/api/acquisitions/${eventId}/decide`, {
       method: 'POST',
