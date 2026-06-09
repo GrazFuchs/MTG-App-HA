@@ -548,6 +548,7 @@ export const api = {
 
   // Collection sets
   getCollectionSets: () => request<CollectionSet[]>('/api/collection/sets'),
+  getCollectionTags: () => request<string[]>('/api/collection/tags'),
 
   // Cardmarket price data
   getPriceHistory: (cmProductId: number, days?: number) =>

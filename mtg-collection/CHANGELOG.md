@@ -1,3 +1,12 @@
+## 0.20.0
+
+### Added
+- **Collection Tag filter** — A real filter dropdown for collection (Archidekt) tags, backed by a new `GET /api/collection/tags` endpoint that returns the distinct individual tags. (The tag badge was already shown; previously only a *sort* existed.)
+- **Wishlist set/version editing anytime** — The Edit dialog now has a Set/Version picker and a Foil toggle, editable for any status (wanted/ordered/acquired). `WishlistItemUpdate` (PATCH) accepts `set_code` + `is_foil`, and choosing a set now repoints the item to that printing so the displayed set name, image and price follow the choice (also applied on Order/Acquire).
+
+### Changed
+- **Wishlist order badge** — The "Ordered" badge now uses a cleaner soft (tint) rounded style.
+
 ## 0.19.0
 
 ### Added

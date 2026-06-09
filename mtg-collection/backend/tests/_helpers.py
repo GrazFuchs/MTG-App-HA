@@ -66,6 +66,24 @@ async def add_collection(
     return cursor.lastrowid
 
 
+async def add_wishlist(
+    db: aiosqlite.Connection,
+    card_id: int,
+    *,
+    set_code: str | None = None,
+    is_foil: int = 0,
+    status: str = "wanted",
+    quantity: int = 1,
+) -> int:
+    cursor = await db.execute(
+        """INSERT INTO wishlist (card_id, set_code, is_foil, status, quantity)
+        VALUES (?,?,?,?,?)""",
+        (card_id, set_code, is_foil, status, quantity),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
 async def add_acquisition_event(
     db: aiosqlite.Connection,
     card_id: int,

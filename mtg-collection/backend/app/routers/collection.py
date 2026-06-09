@@ -16,6 +16,7 @@ async def list_collection(
     color: str = Query("", description="Filter by color (W,U,B,R,G)"),
     rarity: str = Query("", description="Filter by rarity"),
     set_code: str = Query("", description="Filter by set code"),
+    collection_tag: str = Query("", description="Filter by collection (Archidekt) tag"),
     deck_id: int = Query(0, description="Filter by deck ID (cards used in this deck)"),
     sort_by: str = Query("name", description="Sort field"),
     sort_dir: str = Query("asc", description="Sort direction"),
@@ -39,6 +40,9 @@ async def list_collection(
     if set_code:
         conditions.append("c.set_code = ?")
         params.append(set_code.lower())
+    if collection_tag:
+        conditions.append("col.archidekt_tags LIKE ?")
+        params.append(f"%{collection_tag}%")
     if deck_id:
         conditions.append("""c.name IN (
             SELECT c3.name FROM deck_cards dc3
@@ -162,6 +166,29 @@ async def list_collection_sets(response: Response):
     )
     rows = await cursor.fetchall()
     return [{"set_code": r[0], "set_name": r[1]} for r in rows]
+
+
+@router.get("/tags")
+async def list_collection_tags(response: Response):
+    """Return distinct collection (Archidekt) tags present in the collection.
+
+    `archidekt_tags` is a comma-separated list per entry, so split into
+    individual tags for a clean filter dropdown.
+    """
+    response.headers["Cache-Control"] = "public, max-age=60"
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT DISTINCT archidekt_tags FROM collection "
+        "WHERE COALESCE(archidekt_tags, '') != ''"
+    )
+    rows = await cursor.fetchall()
+    tags: set[str] = set()
+    for r in rows:
+        for tag in (r[0] or "").split(","):
+            cleaned = tag.strip()
+            if cleaned:
+                tags.add(cleaned)
+    return sorted(tags, key=str.lower)
 
 
 @router.post("/", response_model=CollectionEntry)

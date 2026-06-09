@@ -134,9 +134,14 @@ function StatusBadge({ item }: { item: WishlistItem }) {
         {t(`wishlist.status_${item.status}`)}
       </Badge>
       {item.is_ordered && item.status === 'wanted' && (
-        <Badge appearance="outline" color="brand" size="small" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>
-          📦 {t('wishlist.status_ordered')}
-          {item.expected_price_eur != null && ` · €${item.expected_price_eur.toFixed(2)}`}
+        <Badge
+          appearance="tint"
+          color="brand"
+          size="small"
+          shape="rounded"
+          style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}
+        >
+          📦 {t('wishlist.status_ordered')}{item.expected_price_eur != null ? ` · €${item.expected_price_eur.toFixed(2)}` : ''}
         </Badge>
       )}
       {item.source && (

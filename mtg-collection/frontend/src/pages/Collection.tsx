@@ -146,12 +146,19 @@ export default function Collection() {
   const [sortDir, setSortDir] = useState('desc');
   const [selectedSet, setSelectedSet] = useState('');
   const [selectedDeck, setSelectedDeck] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const isMobile = useMediaQuery('(max-width: 600px)');
 
   const { data: sets = [] } = useQuery<CollectionSet[]>({
     queryKey: ['collection-sets'],
     queryFn: () => api.getCollectionSets(),
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: tags = [] } = useQuery<string[]>({
+    queryKey: ['collection-tags'],
+    queryFn: () => api.getCollectionTags(),
     staleTime: 5 * 60_000,
   });
 
@@ -166,12 +173,13 @@ export default function Collection() {
     if (searchQuery) params.set('search', searchQuery);
     if (selectedSet) params.set('set_code', selectedSet);
     if (selectedDeck) params.set('deck_id', selectedDeck);
+    if (selectedTag) params.set('collection_tag', selectedTag);
     params.set('sort_by', sortBy);
     params.set('sort_dir', sortDir);
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
     return params;
-  }, [searchQuery, selectedSet, selectedDeck, sortBy, sortDir, page, pageSize]);
+  }, [searchQuery, selectedSet, selectedDeck, selectedTag, sortBy, sortDir, page, pageSize]);
 
   const { data: collectionData, isLoading: loading } = useQuery({
     queryKey: ['collection', collectionParams.toString()],
@@ -186,6 +194,7 @@ export default function Collection() {
   const handleSearch = useCallback(() => { setPage(1); setSearchQuery(searchInput.trim()); }, [searchInput]);
   const handleSetChange = (value: string) => { setPage(1); setSelectedSet(value); };
   const handleDeckChange = (value: string) => { setPage(1); setSelectedDeck(value); };
+  const handleTagChange = (value: string) => { setPage(1); setSelectedTag(value); };
 
   const groups = useMemo(() => {
     const map = new Map<string, CardGroup>();
@@ -247,6 +256,14 @@ export default function Collection() {
             <option key={d.id} value={String(d.id)}>{d.name}</option>
           ))}
         </Select>
+        {tags.length > 0 && (
+          <Select value={selectedTag} onChange={(_, d) => handleTagChange(d.value)} className={styles.select} aria-label="Collection tag filter">
+            <option value="">All Tags</option>
+            {tags.map(tag => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </Select>
+        )}
         <Select value={sortBy} onChange={(_, d) => { setPage(1); setSortBy(d.value); }} className={styles.select}>
           <option value="added_at">Date Added</option>
           <option value="price_eur">Price</option>

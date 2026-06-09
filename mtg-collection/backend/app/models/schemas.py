@@ -239,6 +239,8 @@ class WishlistItemUpdate(BaseModel):
     tags: str | None = None
     notes: str | None = None
     quantity: int | None = Field(None, ge=1, le=99)
+    set_code: str | None = None
+    is_foil: bool | None = None
 
 
 class WishlistOrderRequest(BaseModel):
