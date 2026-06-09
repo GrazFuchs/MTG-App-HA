@@ -1,3 +1,12 @@
+## 0.18.0
+
+### Fixed
+- **Basic lands shown in Duplicates** — Filtering relied on `type_line NOT LIKE '%Basic Land%'`, which let through Snow-Covered basics (`Basic Snow Land — …`) and any card with an empty `type_line` (e.g. Cardmarket-imported cards). Replaced with a deterministic **name-based** exclusion (`Plains/Island/Swamp/Mountain/Forest/Wastes` + Snow-Covered variants), shared via `services/queries.basic_land_exclusion_sql()` and reused by the MCP `get_duplicates` tool.
+- **Duplicates color filter (monocolor)** — Selecting a single color now matches every card whose colour identity **includes** that colour (mono **and** multicolor), and a new **Monocolor** option lists all single-colour cards.
+
+### Changed
+- **Test harness** — Tests now initialise an isolated, file-backed SQLite database per test (lifespan isn't run under `ASGITransport`), fixing the previously-failing acquisitions smoke tests and enabling seeded API tests.
+
 ## 0.17.3
 
 ### Fixed

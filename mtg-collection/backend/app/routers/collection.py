@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from ..database import get_db
 from ..models.schemas import CollectionEntry, CollectionAddRequest, CardResponse
 from ..clients.scryfall import scryfall, parse_scryfall_card
+from ..services.queries import basic_land_exclusion_sql
 from ..services.sync_service import upsert_card
 
 router = APIRouter()
@@ -232,7 +233,7 @@ async def remove_from_collection(entry_id: int):
 
 def _duplicates_conditions(search: str, color: str, set_code: str):
     """Build WHERE conditions shared by duplicates endpoints."""
-    conditions = ["COALESCE(c.type_line, '') NOT LIKE '%Basic Land%'"]
+    conditions = [basic_land_exclusion_sql("c")]
     params: list = []
 
     if search:
@@ -245,11 +246,16 @@ def _duplicates_conditions(search: str, color: str, set_code: str):
         for clr in color.split(","):
             clr = clr.strip().upper()
             if clr in ("W", "U", "B", "R", "G"):
-                # Match monocolor only: must contain the color AND not be multicolor
-                conditions.append(
-                    "(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')"
-                )
+                # Match any card whose color identity INCLUDES this color
+                # (monocolor of this color AND multicolor cards containing it).
+                conditions.append("c.color_identity LIKE ?")
                 params.append(f'%"{clr}"%')
+            elif clr == "MONO":
+                # Exactly one color: no comma in the identity array, and not colorless.
+                conditions.append(
+                    "(c.color_identity NOT LIKE '%,%' "
+                    "AND COALESCE(c.color_identity, '[]') != '[]')"
+                )
             elif clr == "M":
                 conditions.append("c.color_identity LIKE '%,%'")
             elif clr == "C":

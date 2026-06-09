@@ -414,11 +414,12 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
         page_size: Items per page (default 50)
     """
     from .database import get_db
+    from .services.queries import basic_land_exclusion_sql
     db = await get_db()
     offset = (page - 1) * page_size
 
     # Build conditions
-    conditions = ["c.type_line NOT LIKE '%Basic Land%'"]
+    conditions = [basic_land_exclusion_sql("c")]
     params: list[Any] = []
     if search:
         conditions.append("c.name LIKE ?")

@@ -4,6 +4,30 @@ from typing import Any
 import aiosqlite
 
 # ---------------------------------------------------------------------------
+# Basic-land exclusion
+#
+# Several views (Duplicates, Inbox) must hide basic lands. Filtering on
+# `type_line NOT LIKE '%Basic Land%'` is unreliable because:
+#   - Snow-Covered basics have type "Basic Snow Land — …" (no "Basic Land")
+#   - Cards imported via Cardmarket CSV may have an EMPTY type_line and so slip
+#     through the type-line filter entirely.
+# A name-based exclusion is deterministic regardless of how the card was added.
+# ---------------------------------------------------------------------------
+_BASIC_LAND_ROOTS = ["Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"]
+BASIC_LAND_NAMES: list[str] = _BASIC_LAND_ROOTS + [
+    f"Snow-Covered {name}" for name in _BASIC_LAND_ROOTS
+]
+
+
+def basic_land_exclusion_sql(alias: str = "c") -> str:
+    """Return a SQL boolean excluding basic lands by name.
+
+    The names are fixed constants (no user input), so inlining them is safe.
+    """
+    names = ", ".join(f"'{n}'" for n in BASIC_LAND_NAMES)
+    return f"{alias}.name NOT IN ({names})"
+
+# ---------------------------------------------------------------------------
 # Canonical definitions (used everywhere — keep these in sync with the UI labels)
 #
 #   "Total Cards"         = SUM(quantity + foil_quantity) across all collection entries
