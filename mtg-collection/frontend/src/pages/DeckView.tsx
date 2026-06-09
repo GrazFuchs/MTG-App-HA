@@ -11,6 +11,7 @@ import { GameplanBox } from '../components/deck/GameplanBox';
 import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 import { DeckCombosSection } from '../components/deck/DeckCombosSection';
 import { DeckCompletenessSection } from '../components/deck/DeckCompletenessSection';
+import { DeckPerformanceSection } from '../components/deck/DeckPerformanceSection';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, SectionHeader, CornerTicks } from '../components/sothera';
@@ -291,6 +292,7 @@ export default function DeckView() {
       {/* Combos & Completeness */}
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />
+      <DeckPerformanceSection deckId={deck.id} />
 
       {/* Charts row */}
       <div className={styles.chartGrid}>
@@ -356,20 +358,23 @@ export default function DeckView() {
             {cards.map((entry, i) => {
               const extras = extraCategories.get(entry.card.id);
               return (
-              <CardHoverPreview key={i} card={entry.card}>
-                <div className={styles.cardRow} style={{ borderBottom: i < cards.length - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
+                <div key={i} className={styles.cardRow} style={{ borderBottom: i < cards.length - 1 ? `1px solid ${sothera.rowBorder}` : 'none' }}>
                   <div style={{ fontFamily: sothera.fontMono, fontSize: 11, letterSpacing: 1, color: sothera.fgFaint }}>×{entry.quantity}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <a
-                      href={scryfallUrl(entry.card)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.cardLink}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {entry.card.name}
-                      {entry.is_commander && ' ⭐'}
-                    </a>
+                    {/* Hover preview is scoped to the name only, so it no longer
+                        overlaps the adjacent "+N" category tooltip. */}
+                    <CardHoverPreview card={entry.card}>
+                      <a
+                        href={scryfallUrl(entry.card)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.cardLink}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {entry.card.name}
+                        {entry.is_commander && ' ⭐'}
+                      </a>
+                    </CardHoverPreview>
                     {extras && (
                       <Tooltip content={extras.join(', ')} relationship="description">
                         <span style={{ fontSize: 9, fontFamily: sothera.fontMono, padding: '1px 5px', letterSpacing: 1, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgFaint, cursor: 'default' }}>+{extras.length}</span>
@@ -382,7 +387,6 @@ export default function DeckView() {
                     {entry.card.price_eur ? `€${entry.card.price_eur}` : ''}
                   </div>
                 </div>
-              </CardHoverPreview>
               );
             })}
           </Panel>

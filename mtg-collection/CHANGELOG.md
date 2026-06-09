@@ -1,3 +1,11 @@
+## 0.22.0
+
+### Added
+- **Deck Performance Tracker** — Log how each game went and see aggregate stats per deck. Each game records result (win/loss/draw), date, on-the-play, pod size, mulligans, missed land drops, turns, opponents/commanders, and free-text "what worked / what didn't / notes". A new section on the deck page shows win rate, W/L/D, recent form, on-play win rate, and averages, plus a list of recent games. Backed by a new `deck_games` table (migration 15) and `GET/POST/PATCH/DELETE /api/decks/{id}/games` + `GET /api/decks/{id}/performance`.
+
+### Fixed
+- **Deck view hover/category overlap** — The card hover-preview is now scoped to the card name only, so it no longer overlaps the adjacent "+N" extra-category tooltip when both were triggered.
+
 ## 0.21.0
 
 ### Fixed

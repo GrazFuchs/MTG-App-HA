@@ -84,6 +84,43 @@ export interface DeckDetail {
   cards: DeckCardEntry[];
 }
 
+export type GameResult = 'win' | 'loss' | 'draw';
+
+export interface DeckGame {
+  id: number;
+  deck_id: number;
+  played_at: string;
+  result: GameResult;
+  opponents: string;
+  pod_size: number;
+  on_play: boolean;
+  mulligans: number;
+  missed_land_drops: number;
+  turns: number;
+  what_worked: string;
+  what_didnt: string;
+  notes: string;
+  created_at?: string | null;
+}
+
+export type DeckGamePayload = Partial<Omit<DeckGame, 'id' | 'deck_id' | 'created_at'>>;
+
+export interface DeckPerformanceStats {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number;
+  on_play_games: number;
+  on_play_wins: number;
+  on_play_win_rate: number;
+  avg_mulligans: number;
+  avg_missed_land_drops: number;
+  avg_turns: number;
+  last_played_at: string | null;
+  last_result: GameResult | null;
+}
+
 export interface CollectionEntry {
   id: number;
   card: Card;
@@ -491,6 +528,16 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(fields),
     }),
+
+  // Deck performance tracker
+  getDeckGames: (deckId: number) => request<DeckGame[]>(`/api/decks/${deckId}/games`),
+  getDeckPerformance: (deckId: number) => request<DeckPerformanceStats>(`/api/decks/${deckId}/performance`),
+  addDeckGame: (deckId: number, data: DeckGamePayload) =>
+    request<DeckGame>(`/api/decks/${deckId}/games`, { method: 'POST', body: JSON.stringify(data) }),
+  updateDeckGame: (deckId: number, gameId: number, data: DeckGamePayload) =>
+    request<DeckGame>(`/api/decks/${deckId}/games/${gameId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteDeckGame: (deckId: number, gameId: number) =>
+    request<{ ok: boolean }>(`/api/decks/${deckId}/games/${gameId}`, { method: 'DELETE' }),
 
   // Collection
   getCollection: (params?: URLSearchParams) =>

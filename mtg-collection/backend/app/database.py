@@ -464,6 +464,31 @@ async def _migration_14(db: aiosqlite.Connection):
     await db.execute("ANALYZE")
 
 
+async def _migration_15(db: aiosqlite.Connection):
+    """Add deck_games table for the Deck Performance Tracker."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS deck_games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+            played_at TEXT NOT NULL DEFAULT (date('now')),
+            result TEXT NOT NULL DEFAULT 'win',
+            opponents TEXT DEFAULT '',
+            pod_size INTEGER DEFAULT 4,
+            on_play INTEGER DEFAULT 0,
+            mulligans INTEGER DEFAULT 0,
+            missed_land_drops INTEGER DEFAULT 0,
+            turns INTEGER DEFAULT 0,
+            what_worked TEXT DEFAULT '',
+            what_didnt TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deck_games_deck ON deck_games(deck_id, played_at DESC)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -478,6 +503,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     12: _migration_12,
     13: _migration_13,
     14: _migration_14,
+    15: _migration_15,
 }
 
 

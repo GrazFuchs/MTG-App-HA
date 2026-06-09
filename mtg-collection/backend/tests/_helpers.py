@@ -84,6 +84,12 @@ async def add_wishlist(
     return cursor.lastrowid
 
 
+async def insert_deck(db: aiosqlite.Connection, name: str = "Test Deck") -> int:
+    cursor = await db.execute("INSERT INTO decks (name) VALUES (?)", (name,))
+    await db.commit()
+    return cursor.lastrowid
+
+
 async def add_listing(
     db: aiosqlite.Connection,
     card_name: str,
