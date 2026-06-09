@@ -84,6 +84,43 @@ export interface DeckDetail {
   cards: DeckCardEntry[];
 }
 
+export type GameResult = 'win' | 'loss' | 'draw';
+
+export interface DeckGame {
+  id: number;
+  deck_id: number;
+  played_at: string;
+  result: GameResult;
+  opponents: string;
+  pod_size: number;
+  on_play: boolean;
+  mulligans: number;
+  missed_land_drops: number;
+  turns: number;
+  what_worked: string;
+  what_didnt: string;
+  notes: string;
+  created_at?: string | null;
+}
+
+export type DeckGamePayload = Partial<Omit<DeckGame, 'id' | 'deck_id' | 'created_at'>>;
+
+export interface DeckPerformanceStats {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number;
+  on_play_games: number;
+  on_play_wins: number;
+  on_play_win_rate: number;
+  avg_mulligans: number;
+  avg_missed_land_drops: number;
+  avg_turns: number;
+  last_played_at: string | null;
+  last_result: GameResult | null;
+}
+
 export interface CollectionEntry {
   id: number;
   card: Card;
@@ -492,6 +529,16 @@ export const api = {
       body: JSON.stringify(fields),
     }),
 
+  // Deck performance tracker
+  getDeckGames: (deckId: number) => request<DeckGame[]>(`/api/decks/${deckId}/games`),
+  getDeckPerformance: (deckId: number) => request<DeckPerformanceStats>(`/api/decks/${deckId}/performance`),
+  addDeckGame: (deckId: number, data: DeckGamePayload) =>
+    request<DeckGame>(`/api/decks/${deckId}/games`, { method: 'POST', body: JSON.stringify(data) }),
+  updateDeckGame: (deckId: number, gameId: number, data: DeckGamePayload) =>
+    request<DeckGame>(`/api/decks/${deckId}/games/${gameId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteDeckGame: (deckId: number, gameId: number) =>
+    request<{ ok: boolean }>(`/api/decks/${deckId}/games/${gameId}`, { method: 'DELETE' }),
+
   // Collection
   getCollection: (params?: URLSearchParams) =>
     request<PaginatedCollection>(`/api/collection/?${params?.toString() ?? ''}`),
@@ -548,6 +595,7 @@ export const api = {
 
   // Collection sets
   getCollectionSets: () => request<CollectionSet[]>('/api/collection/sets'),
+  getCollectionTags: () => request<string[]>('/api/collection/tags'),
 
   // Cardmarket price data
   getPriceHistory: (cmProductId: number, days?: number) =>
@@ -635,10 +683,17 @@ export const api = {
     request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
 
   // Inbox / Acquisitions
-  getPendingTriage: (page = 1, pageSize = 20, minValue = 0, filter = '') =>
-    request<PaginatedAcquisitions>(`/api/acquisitions/pending?page=${page}&page_size=${pageSize}&min_value_eur=${minValue}${filter ? `&filter=${filter}` : ''}`),
+  getPendingTriage: (page = 1, pageSize = 20, minValue = 0, filter = '', search = '', color = '', sort = 'newest') => {
+    const p = new URLSearchParams({ page: String(page), page_size: String(pageSize), min_value_eur: String(minValue), sort });
+    if (filter) p.set('filter', filter);
+    if (search) p.set('search', search);
+    if (color) p.set('color', color);
+    return request<PaginatedAcquisitions>(`/api/acquisitions/pending?${p.toString()}`);
+  },
   getInboxStats: () =>
     request<InboxAcquisitionStats>('/api/acquisitions/stats'),
+  backfillInboxColors: () =>
+    request<{ candidates: number; enriched: number; failed: number }>('/api/acquisitions/backfill-colors', { method: 'POST' }),
   decideTriage: (eventId: number, body: TriageDecisionPayload) =>
     request<{ status: string; event_id: number; triage_state: string }>(`/api/acquisitions/${eventId}/decide`, {
       method: 'POST',

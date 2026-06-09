@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -13,11 +13,12 @@ import {
   Option,
   Field,
   Spinner,
+  Checkbox,
   MessageBar,
   MessageBarBody,
 } from '@fluentui/react-components';
 import { t } from '../../i18n';
-import { api, WishlistItem, DeckSummary } from '../../api';
+import { api, WishlistItem, DeckSummary, CardPrinting } from '../../api';
 import PrioritySelector from './PrioritySelector';
 
 interface Props {
@@ -34,8 +35,17 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
   const [deckId, setDeckId] = useState<number | null>(item.deck_id);
   const [tags, setTags] = useState(item.tags.join(', '));
   const [notes, setNotes] = useState(item.notes);
+  const [printings, setPrintings] = useState<CardPrinting[]>([]);
+  const [selectedSetCode, setSelectedSetCode] = useState<string | null>(item.set_code || null);
+  const [isFoil, setIsFoil] = useState(item.is_foil);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (item.card_name) {
+      api.getCardPrintings(item.card_name).then(setPrintings).catch(() => {});
+    }
+  }, [item.card_name]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -47,6 +57,8 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
         deck_id: deckId || undefined,
         tags: tags.trim(),
         notes: notes.trim(),
+        set_code: selectedSetCode || undefined,
+        is_foil: isFoil,
       });
       // Status change via separate endpoints if needed
       if (status !== item.status) {
@@ -86,6 +98,27 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
             <Field label={t('wishlist.priority_label')}>
               <PrioritySelector value={priority} onChange={setPriority} />
             </Field>
+
+            {printings.length > 0 && (
+              <Field label="Set / Version">
+                <Dropdown
+                  placeholder="Any printing"
+                  value={printings.find(p => p.set_code === selectedSetCode)
+                    ? `${printings.find(p => p.set_code === selectedSetCode)!.set_name} (${selectedSetCode?.toUpperCase()})`
+                    : selectedSetCode?.toUpperCase() || 'Any printing'}
+                  onOptionSelect={(_, d) => setSelectedSetCode(d.optionValue === '__any__' ? null : d.optionValue as string)}
+                >
+                  <Option value="__any__">Any printing</Option>
+                  {printings.map(p => (
+                    <Option key={p.set_code} value={p.set_code} text={`${p.set_name} (${p.set_code.toUpperCase()})`}>
+                      {p.set_name} ({p.set_code.toUpperCase()})
+                    </Option>
+                  ))}
+                </Dropdown>
+              </Field>
+            )}
+
+            <Checkbox label="Foil" checked={isFoil} onChange={(_, d) => setIsFoil(!!d.checked)} />
 
             <Field label={t('wishlist.status_label')}>
               <Dropdown

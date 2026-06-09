@@ -409,6 +409,36 @@ async def add_to_wishlist(item: WishlistItemCreate):
     return {"item": resp, "warning": warning}
 
 
+async def _card_id_for_printing(db, card_name: str, set_code: str | None) -> int | None:
+    """Find a local card row matching a name + set_code (case-insensitive)."""
+    if not set_code:
+        return None
+    cursor = await db.execute(
+        "SELECT id FROM cards WHERE LOWER(name) = LOWER(?) AND LOWER(set_code) = LOWER(?) "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (card_name, set_code),
+    )
+    row = await cursor.fetchone()
+    return row["id"] if row else None
+
+
+async def _repoint_card_to_set(db, item_id: int, set_code: str | None) -> None:
+    """Repoint a wishlist item's card_id to the chosen set's printing, if it
+    exists locally, so the displayed set/version/image/price follow the choice."""
+    if not set_code:
+        return
+    cursor = await db.execute(
+        "SELECT c.name FROM wishlist w JOIN cards c ON c.id = w.card_id WHERE w.id = ?",
+        (item_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return
+    new_id = await _card_id_for_printing(db, row["name"], set_code)
+    if new_id:
+        await db.execute("UPDATE wishlist SET card_id = ? WHERE id = ?", (new_id, item_id))
+
+
 @router.patch("/{item_id}", response_model=WishlistItemResponse)
 async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
     """Partial update of a wishlist item."""
@@ -436,6 +466,8 @@ async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
         "tags": "tags",
         "notes": "notes",
         "quantity": "quantity",
+        "set_code": "set_code",
+        "is_foil": "is_foil",
     }
     for key, col in field_map.items():
         if key in update_data:
@@ -462,6 +494,9 @@ async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
         f"UPDATE wishlist SET {', '.join(fields)} WHERE id = ?",
         params,
     )
+    # If the set/version changed, point the item at that printing so the
+    # displayed set name, image and price follow the choice.
+    await _repoint_card_to_set(db, item_id, update_data.get("set_code"))
     await db.commit()
 
     # Return updated item
@@ -531,6 +566,7 @@ async def order_wishlist_item(item_id: int, body: WishlistOrderRequest | None = 
            WHERE id = ?""",
         (expected, set_code, is_foil, item_id),
     )
+    await _repoint_card_to_set(db, item_id, set_code)
     await db.commit()
     return {"ok": True, "is_ordered": True}
 
@@ -594,6 +630,7 @@ async def acquire_wishlist_item(item_id: int, body: WishlistAcquireRequest | Non
            WHERE id = ?""",
         (paid_price, source, set_code, is_foil, item_id),
     )
+    await _repoint_card_to_set(db, item_id, set_code)
     await db.commit()
 
     import asyncio

@@ -1,13 +1,16 @@
 """Deck API routes."""
 import json
+from datetime import date
 from fastapi import APIRouter, HTTPException, Query, Response
 from ..database import get_db
 from ..models.schemas import (
     DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate,
     DeckCombo, DeckCompareResponse, DeckCompletenessResponse, MissingCard,
     CardSummary, PairwiseOverlap,
+    DeckGame, DeckGameCreate, DeckGameUpdate, DeckPerformanceStats,
 )
 from ..services.queries import query_all_decks
+from ..services.deck_performance import compute_performance_stats
 
 router = APIRouter()
 
@@ -297,3 +300,109 @@ async def get_deck_completeness(deck_id: int):
         total_acquisition_cost_eur=round(total_cost, 2),
         most_expensive_missing=most_expensive,
     )
+
+
+# --- Deck Performance Tracker ---
+
+def _game_row_to_dict(r) -> dict:
+    return {
+        "id": r["id"],
+        "deck_id": r["deck_id"],
+        "played_at": r["played_at"],
+        "result": r["result"],
+        "opponents": r["opponents"] or "",
+        "pod_size": r["pod_size"],
+        "on_play": bool(r["on_play"]),
+        "mulligans": r["mulligans"],
+        "missed_land_drops": r["missed_land_drops"],
+        "turns": r["turns"],
+        "what_worked": r["what_worked"] or "",
+        "what_didnt": r["what_didnt"] or "",
+        "notes": r["notes"] or "",
+        "created_at": r["created_at"],
+    }
+
+
+async def _ensure_deck(db, deck_id: int) -> None:
+    cursor = await db.execute("SELECT id FROM decks WHERE id = ?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+
+async def _fetch_games(db, deck_id: int) -> list[dict]:
+    cursor = await db.execute(
+        "SELECT * FROM deck_games WHERE deck_id = ? ORDER BY played_at DESC, id DESC",
+        (deck_id,),
+    )
+    return [_game_row_to_dict(r) for r in await cursor.fetchall()]
+
+
+@router.get("/{deck_id}/games", response_model=list[DeckGame])
+async def list_deck_games(deck_id: int):
+    db = await get_db()
+    await _ensure_deck(db, deck_id)
+    return [DeckGame(**g) for g in await _fetch_games(db, deck_id)]
+
+
+@router.post("/{deck_id}/games", response_model=DeckGame)
+async def add_deck_game(deck_id: int, body: DeckGameCreate):
+    db = await get_db()
+    await _ensure_deck(db, deck_id)
+    played_at = body.played_at.strip() or date.today().isoformat()
+    cursor = await db.execute(
+        """INSERT INTO deck_games
+        (deck_id, played_at, result, opponents, pod_size, on_play,
+         mulligans, missed_land_drops, turns, what_worked, what_didnt, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (deck_id, played_at, body.result, body.opponents, body.pod_size,
+         int(body.on_play), body.mulligans, body.missed_land_drops, body.turns,
+         body.what_worked, body.what_didnt, body.notes),
+    )
+    await db.commit()
+    cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (cursor.lastrowid,))
+    return DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+
+
+@router.patch("/{deck_id}/games/{game_id}", response_model=DeckGame)
+async def update_deck_game(deck_id: int, game_id: int, body: DeckGameUpdate):
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT id FROM deck_games WHERE id = ? AND deck_id = ?", (game_id, deck_id)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Game not found")
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=422, detail="No fields to update")
+    fields = []
+    params: list = []
+    for key, val in data.items():
+        if key == "on_play" and val is not None:
+            val = int(val)
+        fields.append(f"{key} = ?")
+        params.append(val)
+    params.append(game_id)
+    await db.execute(f"UPDATE deck_games SET {', '.join(fields)} WHERE id = ?", params)
+    await db.commit()
+    cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (game_id,))
+    return DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+
+
+@router.delete("/{deck_id}/games/{game_id}")
+async def delete_deck_game(deck_id: int, game_id: int):
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM deck_games WHERE id = ? AND deck_id = ?", (game_id, deck_id)
+    )
+    await db.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return {"ok": True}
+
+
+@router.get("/{deck_id}/performance", response_model=DeckPerformanceStats)
+async def deck_performance(deck_id: int):
+    db = await get_db()
+    await _ensure_deck(db, deck_id)
+    games = await _fetch_games(db, deck_id)
+    return DeckPerformanceStats(**compute_performance_stats(games))

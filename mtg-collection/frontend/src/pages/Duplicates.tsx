@@ -37,6 +37,7 @@ const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: 'B', label: '⚫ Black' },
   { value: 'R', label: '🔴 Red' },
   { value: 'G', label: '🟢 Green' },
+  { value: 'MONO', label: '◐ Monocolor' },
   { value: 'M', label: '🌈 Multicolor' },
   { value: 'C', label: '◆ Colorless' },
   { value: 'L', label: '🟤 Land' },

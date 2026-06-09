@@ -103,6 +103,66 @@ class DeckUserFieldsUpdate(BaseModel):
     gameplan: str | None = Field(None, max_length=500)
 
 
+# --- Deck Performance Tracker ---
+
+GAME_RESULT = Literal["win", "loss", "draw"]
+
+
+class DeckGameBase(BaseModel):
+    played_at: str = ""  # ISO date (YYYY-MM-DD); defaults to today on create
+    result: GAME_RESULT = "win"
+    opponents: str = Field("", max_length=300)
+    pod_size: int = Field(4, ge=1, le=8)
+    on_play: bool = False
+    mulligans: int = Field(0, ge=0, le=10)
+    missed_land_drops: int = Field(0, ge=0, le=50)
+    turns: int = Field(0, ge=0, le=100)
+    what_worked: str = Field("", max_length=1000)
+    what_didnt: str = Field("", max_length=1000)
+    notes: str = Field("", max_length=1000)
+
+
+class DeckGameCreate(DeckGameBase):
+    pass
+
+
+class DeckGameUpdate(BaseModel):
+    """All fields optional for PATCH semantics."""
+    played_at: str | None = None
+    result: GAME_RESULT | None = None
+    opponents: str | None = Field(None, max_length=300)
+    pod_size: int | None = Field(None, ge=1, le=8)
+    on_play: bool | None = None
+    mulligans: int | None = Field(None, ge=0, le=10)
+    missed_land_drops: int | None = Field(None, ge=0, le=50)
+    turns: int | None = Field(None, ge=0, le=100)
+    what_worked: str | None = Field(None, max_length=1000)
+    what_didnt: str | None = Field(None, max_length=1000)
+    notes: str | None = Field(None, max_length=1000)
+
+
+class DeckGame(DeckGameBase):
+    id: int
+    deck_id: int
+    created_at: str | None = None
+
+
+class DeckPerformanceStats(BaseModel):
+    games: int = 0
+    wins: int = 0
+    losses: int = 0
+    draws: int = 0
+    win_rate: float = 0.0
+    on_play_games: int = 0
+    on_play_wins: int = 0
+    on_play_win_rate: float = 0.0
+    avg_mulligans: float = 0.0
+    avg_missed_land_drops: float = 0.0
+    avg_turns: float = 0.0
+    last_played_at: str | None = None
+    last_result: str | None = None
+
+
 # --- Collection Models ---
 
 class CollectionEntry(BaseModel):
@@ -239,6 +299,8 @@ class WishlistItemUpdate(BaseModel):
     tags: str | None = None
     notes: str | None = None
     quantity: int | None = Field(None, ge=1, le=99)
+    set_code: str | None = None
+    is_foil: bool | None = None
 
 
 class WishlistOrderRequest(BaseModel):

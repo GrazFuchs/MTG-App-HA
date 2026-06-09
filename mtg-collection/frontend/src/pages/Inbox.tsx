@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
-import { Button, Select, Spinner } from '@fluentui/react-components';
+import { Button, Input, Select, Spinner } from '@fluentui/react-components';
 import {
   ChevronLeft24Regular,
   ChevronRight24Regular,
+  Search24Regular,
 } from '@fluentui/react-icons';
 import { api, TriageDecisionPayload, InboxAcquisitionStats } from '../api';
 import { sothera } from '../theme/sothera';
@@ -34,6 +35,24 @@ const FILTER_OPTIONS = [
   { value: '', label: 'All pending' },
   { value: 'needs_sell', label: 'Suggested: Sell' },
   { value: 'needs_keep', label: 'Suggested: Keep' },
+] as const;
+
+const COLOR_FILTER_OPTIONS = [
+  { value: '', label: 'All colors' },
+  { value: 'W', label: '⚪ White' },
+  { value: 'U', label: '🔵 Blue' },
+  { value: 'B', label: '⚫ Black' },
+  { value: 'R', label: '🔴 Red' },
+  { value: 'G', label: '🟢 Green' },
+  { value: 'Multi', label: '🌈 Multicolor' },
+  { value: 'Colorless', label: '◆ Colorless' },
+] as const;
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'color', label: 'Color' },
+  { value: 'set', label: 'Set' },
+  { value: 'name', label: 'Name' },
 ] as const;
 
 const useStyles = makeStyles({
@@ -123,6 +142,10 @@ export default function Inbox() {
   const [pageSize] = useState(50);
   const [minValue, setMinValue] = useState(0);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [colorFilter, setColorFilter] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
 
   const activeFilter = searchParams.get('filter') || '';
 
@@ -159,8 +182,8 @@ export default function Inbox() {
   };
 
   const { data: eventsData, isLoading: loading, isError: loadError, refetch: refetchEvents } = useQuery({
-    queryKey: ['inbox-pending', page, pageSize, minValue, activeFilter],
-    queryFn: () => api.getPendingTriage(page, pageSize, minValue, activeFilter),
+    queryKey: ['inbox-pending', page, pageSize, minValue, activeFilter, searchQuery, colorFilter, sortBy],
+    queryFn: () => api.getPendingTriage(page, pageSize, minValue, activeFilter, searchQuery, colorFilter, sortBy),
     staleTime: 30_000,
   });
 
@@ -168,6 +191,13 @@ export default function Inbox() {
     queryKey: ['inbox-stats'],
     queryFn: () => api.getInboxStats(),
     staleTime: 30_000,
+  });
+
+  const backfillColors = useMutation({
+    mutationFn: () => api.backfillInboxColors(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inbox-pending'] });
+    },
   });
 
   const events = eventsData?.items ?? [];
@@ -243,6 +273,30 @@ export default function Inbox() {
       </div>
 
       <div className={styles.controls}>
+        <Input
+          placeholder="Search by name..."
+          contentBefore={<Search24Regular />}
+          value={searchInput}
+          onChange={(_, d) => setSearchInput(d.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { setSearchQuery(searchInput.trim()); setPage(1); } }}
+          style={{ minWidth: 200, maxWidth: 320, flex: 1 }}
+        />
+        <Select
+          value={colorFilter}
+          onChange={(_, d) => { setColorFilter(d.value); setPage(1); }}
+          className={styles.select}
+          aria-label="Color filter"
+        >
+          {COLOR_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
+        <Select
+          value={sortBy}
+          onChange={(_, d) => { setSortBy(d.value); setPage(1); }}
+          className={styles.select}
+          aria-label="Sort by"
+        >
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+        </Select>
         <span style={{ fontFamily: sothera.fontMono, fontSize: '10px', letterSpacing: '1px', color: sothera.fgFaint, textTransform: 'uppercase' }}>
           Min value
         </span>
@@ -254,6 +308,15 @@ export default function Inbox() {
           <option value="10">€10+</option>
           <option value="50">€50+</option>
         </Select>
+        <Button
+          size="small"
+          appearance="subtle"
+          disabled={backfillColors.isPending}
+          onClick={() => backfillColors.mutate()}
+          title="Re-fetch missing colour data from Scryfall so the colour groups/filter work"
+        >
+          {backfillColors.isPending ? 'Enriching…' : '↻ Fix colors'}
+        </Button>
       </div>
 
       {loading ? (

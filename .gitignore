@@ -35,3 +35,9 @@ options.json
 # Internal files
 .internal/
 mtg-collection/frontend/dist/
+
+# Python virtualenvs
+.venv/
+venv/
+__pycache__/
+*.pyc

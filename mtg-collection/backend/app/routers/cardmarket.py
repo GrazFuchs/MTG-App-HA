@@ -59,52 +59,67 @@ async def list_cardmarket_listings(
         conditions.append("l.source = ?")
         params.append(source)
 
-    # Color filter applied in Python after fetching color_identity from JOIN
+    # Color filter/sort applied in Python after resolving the matching card.
     color_filter = color.upper() if color.upper() in ("W", "U", "B", "R", "G", "M", "C", "L") else ""
 
+    # Listing-level sort done in SQL; the "color" sort is applied in Python below
+    # since the colour comes from the joined card.
     sort_map = {
         "name": "LOWER(l.card_name)",
         "price": "l.price",
         "qty": "l.quantity",
         "set": "LOWER(l.set_code)",
-        "color": "LOWER(c.color_identity)",
         "source": "CASE WHEN l.source = 'manual' THEN 0 ELSE 1 END",
     }
-    sort_col = sort_map.get(sort_by, "LOWER(l.card_name)")
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
+    sql_sort = sort_map.get(sort_by)
+    order_sql = (
+        f"ORDER BY {sql_sort} {direction}, LOWER(l.card_name) ASC"
+        if sql_sort else "ORDER BY LOWER(l.card_name) ASC"
+    )
 
     where = " AND ".join(conditions)
 
-    base_query = f"""
-        SELECT l.*, c.id as c_id, c.scryfall_id, c.oracle_id, c.name as c_name,
-            c.mana_cost, c.cmc, c.type_line, c.oracle_text, c.colors, c.color_identity,
-            c.set_code as c_set_code, c.set_name as c_set_name, c.collector_number,
-            c.rarity as c_rarity, c.image_uri, c.image_art_crop, c.power, c.toughness,
-            c.loyalty, c.keywords, c.edhrec_rank, c.price_usd, c.price_eur,
-            c.price_usd_foil, c.price_eur_foil, c.updated_at
-        FROM cardmarket_listings l
-        LEFT JOIN cards c ON c.id = (
-            SELECT c2.id FROM cards c2
-            WHERE LOWER(c2.name) = LOWER(l.card_name)
-            ORDER BY
-                CASE WHEN l.set_code != '' AND LOWER(c2.set_code) = LOWER(l.set_code) THEN 0 ELSE 1 END,
-                c2.updated_at DESC
-            LIMIT 1
-        )
-        WHERE {where}
-        ORDER BY {sort_col} {direction}, LOWER(l.card_name) ASC
-    """
+    # Fetch listing rows plainly. We intentionally do NOT join cards in SQL via a
+    # correlated subquery (that errored with "no such column" on some SQLite
+    # builds, making the whole listings view come back empty). Instead we resolve
+    # exactly one best-match card per listing in Python — which also prevents the
+    # earlier row multiplication when a card name has several printings.
+    listing_rows = await (await db.execute(
+        f"SELECT l.* FROM cardmarket_listings l WHERE {where} {order_sql}", params
+    )).fetchall()
 
-    all_rows = await (await db.execute(base_query, params)).fetchall()
+    # Pre-fetch candidate cards for the listing names in one query.
+    names = {(r["card_name"] or "").lower() for r in listing_rows if r["card_name"]}
+    cards_by_name: dict[str, list] = {}
+    if names:
+        placeholders = ",".join("?" * len(names))
+        card_rows = await (await db.execute(
+            f"SELECT * FROM cards WHERE LOWER(name) IN ({placeholders}) ORDER BY updated_at DESC",
+            list(names),
+        )).fetchall()
+        for cr in card_rows:
+            cards_by_name.setdefault((cr["name"] or "").lower(), []).append(cr)
 
-    def _color_bucket(row) -> str:
-        ci_raw = row["color_identity"] if row["color_identity"] is not None else "[]"
+    def _match_card(listing):
+        candidates = cards_by_name.get((listing["card_name"] or "").lower(), [])
+        if not candidates:
+            return None
+        lset = (listing["set_code"] or "").lower()
+        if lset:
+            for cr in candidates:
+                if (cr["set_code"] or "").lower() == lset:
+                    return cr
+        return candidates[0]  # already ordered by updated_at DESC
+
+    def _color_bucket(card) -> str:
+        if card is None:
+            return "C"
         try:
-            ci = json.loads(ci_raw)
+            ci = json.loads(card["color_identity"] or "[]")
         except Exception:
             ci = []
-        type_line = row["type_line"] or ""
-        if "Land" in type_line:
+        if "Land" in (card["type_line"] or ""):
             return "L"
         if len(ci) == 0:
             return "C"
@@ -112,44 +127,54 @@ async def list_cardmarket_listings(
             return "M"
         return ci[0]
 
-    # Apply color filter in Python
-    if color_filter:
-        all_rows = [r for r in all_rows if _color_bucket(r) == color_filter]
+    enriched = [(r, _match_card(r)) for r in listing_rows]
 
-    total = len(all_rows)
-    rows = all_rows[offset:offset + page_size]
+    if color_filter:
+        enriched = [(lst, card) for (lst, card) in enriched if _color_bucket(card) == color_filter]
+
+    if sort_by == "color":
+        order_index = {"W": 1, "U": 2, "B": 3, "R": 4, "G": 5, "M": 6, "C": 7, "L": 8}
+
+        def _color_key(pair):
+            listing, card = pair
+            return order_index.get(_color_bucket(card), 9), (listing["card_name"] or "").lower()
+
+        enriched.sort(key=_color_key, reverse=(direction == "DESC"))
+
+    total = len(enriched)
+    page_rows = enriched[offset:offset + page_size]
 
     result = []
-    for r in rows:
+    for r, card_row in page_rows:
         card_obj: CardResponse | None = None
-        if r["c_id"] is not None:
+        if card_row is not None:
             card_obj = CardResponse(
-                id=r["c_id"],
-                scryfall_id=r["scryfall_id"] or "",
-                oracle_id=r["oracle_id"],
-                name=r["c_name"] or "",
-                mana_cost=r["mana_cost"] or "",
-                cmc=r["cmc"] or 0,
-                type_line=r["type_line"] or "",
-                oracle_text=r["oracle_text"] or "",
-                colors=json.loads(r["colors"] or "[]"),
-                color_identity=json.loads(r["color_identity"] or "[]"),
-                set_code=r["c_set_code"] or "",
-                set_name=r["c_set_name"] or "",
-                collector_number=r["collector_number"] or "",
-                rarity=r["c_rarity"] or "",
-                image_uri=r["image_uri"] or "",
-                image_art_crop=r["image_art_crop"] or "",
-                power=r["power"] or "",
-                toughness=r["toughness"] or "",
-                loyalty=r["loyalty"] or "",
-                keywords=json.loads(r["keywords"] or "[]"),
-                edhrec_rank=r["edhrec_rank"],
-                price_usd=r["price_usd"] or "",
-                price_eur=r["price_eur"] or "",
-                price_usd_foil=r["price_usd_foil"] or "",
-                price_eur_foil=r["price_eur_foil"] or "",
-                updated_at=r["updated_at"],
+                id=card_row["id"],
+                scryfall_id=card_row["scryfall_id"] or "",
+                oracle_id=card_row["oracle_id"],
+                name=card_row["name"] or "",
+                mana_cost=card_row["mana_cost"] or "",
+                cmc=card_row["cmc"] or 0,
+                type_line=card_row["type_line"] or "",
+                oracle_text=card_row["oracle_text"] or "",
+                colors=json.loads(card_row["colors"] or "[]"),
+                color_identity=json.loads(card_row["color_identity"] or "[]"),
+                set_code=card_row["set_code"] or "",
+                set_name=card_row["set_name"] or "",
+                collector_number=card_row["collector_number"] or "",
+                rarity=card_row["rarity"] or "",
+                image_uri=card_row["image_uri"] or "",
+                image_art_crop=card_row["image_art_crop"] or "",
+                power=card_row["power"] or "",
+                toughness=card_row["toughness"] or "",
+                loyalty=card_row["loyalty"] or "",
+                keywords=json.loads(card_row["keywords"] or "[]"),
+                edhrec_rank=card_row["edhrec_rank"],
+                price_usd=card_row["price_usd"] or "",
+                price_eur=card_row["price_eur"] or "",
+                price_usd_foil=card_row["price_usd_foil"] or "",
+                price_eur_foil=card_row["price_eur_foil"] or "",
+                updated_at=card_row["updated_at"],
             )
         result.append(CardmarketListing(
             id=r["id"], card_name=r["card_name"], set_name=r["set_name"],

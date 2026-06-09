@@ -1,3 +1,46 @@
+## 0.22.0
+
+### Added
+- **Deck Performance Tracker** — Log how each game went and see aggregate stats per deck. Each game records result (win/loss/draw), date, on-the-play, pod size, mulligans, missed land drops, turns, opponents/commanders, and free-text "what worked / what didn't / notes". A new section on the deck page shows win rate, W/L/D, recent form, on-play win rate, and averages, plus a list of recent games. Backed by a new `deck_games` table (migration 15) and `GET/POST/PATCH/DELETE /api/decks/{id}/games` + `GET /api/decks/{id}/performance`.
+
+### Fixed
+- **Deck view hover/category overlap** — The card hover-preview is now scoped to the card name only, so it no longer overlaps the adjacent "+N" extra-category tooltip when both were triggered.
+
+## 0.21.0
+
+### Fixed
+- **Cardmarket Active Listings showed nothing** — The v0.17.3 listings query used a correlated subquery inside a `LEFT JOIN ... ON` that raised `sqlite3.OperationalError: no such column: l.set_code`, so `/api/cardmarket/listings` 500'd and the table rendered "No listings". The card match is now resolved in Python: listings are fetched plainly and each is paired with exactly one best-match card (preferring the matching set, then most recent), which also keeps the v0.17.3 fix against row multiplication.
+- **Misleading empty state** — The "Sync from profile" hint (no such feature exists) is now "Import a CSV or list duplicates from the Duplicates tab."
+
+## 0.20.0
+
+### Added
+- **Collection Tag filter** — A real filter dropdown for collection (Archidekt) tags, backed by a new `GET /api/collection/tags` endpoint that returns the distinct individual tags. (The tag badge was already shown; previously only a *sort* existed.)
+- **Wishlist set/version editing anytime** — The Edit dialog now has a Set/Version picker and a Foil toggle, editable for any status (wanted/ordered/acquired). `WishlistItemUpdate` (PATCH) accepts `set_code` + `is_foil`, and choosing a set now repoints the item to that printing so the displayed set name, image and price follow the choice (also applied on Order/Acquire).
+
+### Changed
+- **Wishlist order badge** — The "Ordered" badge now uses a cleaner soft (tint) rounded style.
+
+## 0.19.0
+
+### Added
+- **Inbox name search** — Search pending acquisitions by card name.
+- **Inbox sort** — Sort the inbox by Newest, Color, Set, or Name.
+- **Inbox color filter** — Dropdown to show only one colour bucket (W/U/B/R/G/Multicolor/Colorless) across all pages, complementing the existing colour headers.
+- **"Fix colors" backfill** — `POST /api/acquisitions/backfill-colors` re-fetches colour data from Scryfall for pending cards whose `color_identity` is empty (Archidekt sometimes returns a thin card), so the colour groups/filter stop classifying everything as Colorless. Exposed as a button in the Inbox.
+
+### Fixed
+- **Basic lands in Inbox** — Inbox now excludes basic lands by name (shared with Duplicates), covering snow-covered basics and cards with an empty `type_line`.
+
+## 0.18.0
+
+### Fixed
+- **Basic lands shown in Duplicates** — Filtering relied on `type_line NOT LIKE '%Basic Land%'`, which let through Snow-Covered basics (`Basic Snow Land — …`) and any card with an empty `type_line` (e.g. Cardmarket-imported cards). Replaced with a deterministic **name-based** exclusion (`Plains/Island/Swamp/Mountain/Forest/Wastes` + Snow-Covered variants), shared via `services/queries.basic_land_exclusion_sql()` and reused by the MCP `get_duplicates` tool.
+- **Duplicates color filter (monocolor)** — Selecting a single color now matches every card whose colour identity **includes** that colour (mono **and** multicolor), and a new **Monocolor** option lists all single-colour cards.
+
+### Changed
+- **Test harness** — Tests now initialise an isolated, file-backed SQLite database per test (lifespan isn't run under `ASGITransport`), fixing the previously-failing acquisitions smoke tests and enabling seeded API tests.
+
 ## 0.17.3
 
 ### Fixed
