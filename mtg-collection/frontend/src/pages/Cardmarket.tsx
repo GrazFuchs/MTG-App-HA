@@ -434,7 +434,7 @@ export default function Cardmarket() {
       {loading ? (
         <Spinner label="Loading..." style={{ marginTop: 24 }} />
       ) : listings.length === 0 ? (
-        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 16, letterSpacing: 1 }}>No listings. Sync from profile or import a CSV.</div>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 16, letterSpacing: 1 }}>No listings. Import a CSV or list duplicates from the Duplicates tab.</div>
       ) : (() => {
         const pendingListings = listings.filter(l => l.source === 'manual');
         const liveListings = listings.filter(l => l.source !== 'manual');

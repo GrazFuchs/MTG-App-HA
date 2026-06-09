@@ -84,6 +84,30 @@ async def add_wishlist(
     return cursor.lastrowid
 
 
+async def add_listing(
+    db: aiosqlite.Connection,
+    card_name: str,
+    *,
+    set_name: str = "",
+    set_code: str = "",
+    quantity: int = 1,
+    price: float = 1.0,
+    is_foil: int = 0,
+    source: str = "import",
+    card_id: int | None = None,
+) -> int:
+    cursor = await db.execute(
+        """INSERT INTO cardmarket_listings
+        (card_name, set_name, set_code, quantity, price, condition, language,
+         is_foil, card_id, source)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (card_name, set_name, set_code, quantity, price, "NM", "English",
+         is_foil, card_id, source),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
 async def add_acquisition_event(
     db: aiosqlite.Connection,
     card_id: int,

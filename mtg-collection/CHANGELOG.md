@@ -1,3 +1,9 @@
+## 0.21.0
+
+### Fixed
+- **Cardmarket Active Listings showed nothing** — The v0.17.3 listings query used a correlated subquery inside a `LEFT JOIN ... ON` that raised `sqlite3.OperationalError: no such column: l.set_code`, so `/api/cardmarket/listings` 500'd and the table rendered "No listings". The card match is now resolved in Python: listings are fetched plainly and each is paired with exactly one best-match card (preferring the matching set, then most recent), which also keeps the v0.17.3 fix against row multiplication.
+- **Misleading empty state** — The "Sync from profile" hint (no such feature exists) is now "Import a CSV or list duplicates from the Duplicates tab."
+
 ## 0.20.0
 
 ### Added
