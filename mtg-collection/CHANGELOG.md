@@ -9,6 +9,7 @@
 
 ### Fixed
 - **MCP `get_duplicates` colour filter** — Now uses the same format-robust colour matching as the REST API (see 0.24.0), so single-colour filters behave identically in both.
+- **`mcp-proxy.mjs` "Unexpected end of JSON input" warning** — The stdio proxy forwarded the empty HTTP 202 body of MCP notifications (e.g. `notifications/initialized`) as a blank stdout line, which the MCP client tried to `JSON.parse`. Empty responses are now skipped.
 
 ## 0.25.0 — Sprint 25 (cross-cutting UI)
 

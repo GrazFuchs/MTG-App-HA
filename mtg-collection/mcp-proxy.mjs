@@ -200,8 +200,10 @@ async function main() {
             }
           }
         }
-      } else {
-        // Direct JSON response
+      } else if (resp.data && resp.data.trim()) {
+        // Direct JSON response. Skip empty bodies (e.g. HTTP 202 for
+        // notifications like notifications/initialized) — writing a blank
+        // line makes the MCP client throw "Unexpected end of JSON input".
         log(`← ${resp.data.slice(0, 100)}`);
         process.stdout.write(resp.data + '\n');
       }
@@ -215,7 +217,7 @@ async function main() {
           await createIngressSession();
           // Retry
           const resp = await mcpRequest(msg);
-          process.stdout.write(resp.data + '\n');
+          if (resp.data && resp.data.trim()) process.stdout.write(resp.data + '\n');
         } catch (retryErr) {
           log(`Retry failed: ${retryErr.message}`);
           // Send error response
