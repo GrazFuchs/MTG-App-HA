@@ -11,7 +11,12 @@ from ..models.schemas import (
     InboxAcquisitionStats,
     TriageDecisionRequest,
 )
-from ..services.queries import basic_land_exclusion_sql
+from ..services.queries import (
+    basic_land_exclusion_sql,
+    color_identity_condition,
+    color_order_case_sql,
+    parse_color_identity,
+)
 from ..services.sync_service import upsert_card
 from ..services.triage_advisor import get_suggestion
 
@@ -19,18 +24,8 @@ router = APIRouter()
 
 
 # Colour-bucket ordering used for the "color" sort, mirroring the Inbox headers.
-_COLOR_ORDER_SQL = """
-    CASE
-        WHEN COALESCE(c.color_identity, '[]') IN ('[]', '') THEN 7
-        WHEN c.color_identity LIKE '%,%' THEN 6
-        WHEN c.color_identity LIKE '%"W"%' THEN 1
-        WHEN c.color_identity LIKE '%"U"%' THEN 2
-        WHEN c.color_identity LIKE '%"B"%' THEN 3
-        WHEN c.color_identity LIKE '%"R"%' THEN 4
-        WHEN c.color_identity LIKE '%"G"%' THEN 5
-        ELSE 8
-    END
-"""
+# Format-robust (handles JSON / CSV / bare color_identity values).
+_COLOR_ORDER_SQL = color_order_case_sql("c")
 
 
 def _pending_filter_conditions(search: str, color: str) -> tuple[list[str], list]:
@@ -40,15 +35,11 @@ def _pending_filter_conditions(search: str, color: str) -> tuple[list[str], list
     if search:
         conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
-    clr = color.strip()
-    if clr in ("W", "U", "B", "R", "G"):
-        # Mono of this colour (matches the single-colour Inbox header buckets).
-        conditions.append("(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')")
-        params.append(f'%"{clr}"%')
-    elif clr == "Multi":
-        conditions.append("c.color_identity LIKE '%,%'")
-    elif clr == "Colorless":
-        conditions.append("COALESCE(c.color_identity, '[]') IN ('[]', '')")
+    # Single colours mean *mono* of that colour, matching the Inbox header
+    # buckets. Tokens W/U/B/R/G/Multi/Colorless/Land are all supported.
+    cond = color_identity_condition(color, "c", mono_singles=True)
+    if cond:
+        conditions.append(cond)
     return conditions, params
 
 
@@ -73,8 +64,8 @@ def _build_card_response(r) -> CardResponse:
         cmc=r["cmc"],
         type_line=r["type_line"],
         oracle_text=r["oracle_text"],
-        colors=json.loads(r["colors"] or "[]"),
-        color_identity=json.loads(r["color_identity"] or "[]"),
+        colors=parse_color_identity(r["colors"]),
+        color_identity=parse_color_identity(r["color_identity"]),
         set_code=r["set_code"],
         set_name=r["set_name"],
         collector_number=r["collector_number"],
@@ -326,6 +317,21 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
         if req.sell_qty > event["qty_delta"]:
             raise HTTPException(status_code=422, detail=f"sell_qty ({req.sell_qty}) exceeds qty_delta ({event['qty_delta']})")
 
+    # Snapshot the suggestion + card state exactly as shown at decision time so
+    # the Inbox history/archive can later show how the item was booked and how
+    # it was presented when confirmed.
+    snapshot_card = (await (await db.execute(
+        "SELECT * FROM cards WHERE id = ?", (event["card_id"],)
+    )).fetchone())
+    event_row = {
+        "id": event["id"],
+        "card_id": event["card_id"],
+        "collection_id": event["collection_id"],
+        "is_foil": bool(event["is_foil"]),
+        "qty_delta": event["qty_delta"],
+    }
+    suggestion, printings, in_decks = await get_suggestion(db, event_row)
+
     linked_listing_id = None
     triage_state = req.action
     if req.action == "swap":
@@ -337,17 +343,9 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
             # List the new card
             cursor = await db.execute("SELECT * FROM cards WHERE id = ?", (event["card_id"],))
         else:
-            # swap: list the old card
+            # swap: list the old card (default to the suggestion's pick)
             sell_col_id = req.sell_collection_id
             if sell_col_id is None:
-                # Compute suggestion to get the default
-                event_row = {
-                    "card_id": event["card_id"],
-                    "collection_id": event["collection_id"],
-                    "is_foil": bool(event["is_foil"]),
-                    "qty_delta": event["qty_delta"],
-                }
-                suggestion, _, _ = await get_suggestion(db, event_row)
                 sell_col_id = suggestion.sell_collection_id
             if sell_col_id is None:
                 raise HTTPException(status_code=422, detail="sell_collection_id required for swap (no suggestion available)")
@@ -392,13 +390,38 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
         )
         linked_listing_id = listing_cursor.lastrowid
 
+    # Build the booking-history snapshot.
+    snap_price = None
+    if snapshot_card is not None:
+        snap_price = snapshot_card["price_eur_foil"] if event["is_foil"] else snapshot_card["price_eur"]
+    snapshot = {
+        "decided_action": req.action,
+        "triage_state": triage_state,
+        "source": req.source,
+        "listing_price_eur": req.listing_price_eur,
+        "sell_qty": req.sell_qty,
+        "linked_listing_id": linked_listing_id,
+        "card": {
+            "name": snapshot_card["name"] if snapshot_card else None,
+            "set_code": snapshot_card["set_code"] if snapshot_card else None,
+            "set_name": snapshot_card["set_name"] if snapshot_card else None,
+            "is_foil": bool(event["is_foil"]),
+            "qty_delta": event["qty_delta"],
+            "price_eur": snap_price,
+        },
+        "suggestion": suggestion.model_dump(),
+        "existing_printings": [p.model_dump() for p in printings],
+        "in_decks": in_decks,
+    }
+
     # Update event
     await db.execute(
         """UPDATE acquisition_events
         SET triage_state = ?, triage_decision_at = CURRENT_TIMESTAMP,
-            source = ?, linked_listing_id = ?, notes = ?
+            source = ?, linked_listing_id = ?, notes = ?, decision_snapshot = ?
         WHERE id = ?""",
-        (triage_state, req.source, linked_listing_id, req.notes or "", event_id),
+        (triage_state, req.source, linked_listing_id, req.notes or "",
+         json.dumps(snapshot, default=str), event_id),
     )
     await db.commit()
 
@@ -425,14 +448,73 @@ async def undo_triage(event_id: int):
             (event["linked_listing_id"],),
         )
 
-    # Reset event to pending
+    # Reset event to pending (drop the booking snapshot — it no longer applies)
     await db.execute(
         """UPDATE acquisition_events
         SET triage_state = 'pending', triage_decision_at = NULL,
-            source = NULL, linked_listing_id = NULL, notes = ''
+            source = NULL, linked_listing_id = NULL, notes = '',
+            decision_snapshot = NULL
         WHERE id = ?""",
         (event_id,),
     )
     await db.commit()
 
     return {"status": "ok", "event_id": event_id, "triage_state": "pending"}
+
+
+@router.get("/history")
+async def list_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    """The booking archive: decided acquisition events with the snapshot of how
+    each was booked and how it was presented at confirmation time."""
+    db = await get_db()
+    offset = (page - 1) * page_size
+
+    count_cur = await db.execute(
+        "SELECT COUNT(*) FROM acquisition_events WHERE triage_state != 'pending'"
+    )
+    total = (await count_cur.fetchone())[0]
+
+    cursor = await db.execute(
+        """SELECT ae.id, ae.triage_state, ae.triage_decision_at, ae.source,
+                  ae.qty_delta, ae.is_foil, ae.condition, ae.language,
+                  ae.linked_listing_id, ae.notes, ae.decision_snapshot, ae.created_at,
+                  c.name AS card_name, c.set_code, c.set_name, c.image_uri
+           FROM acquisition_events ae
+           JOIN cards c ON c.id = ae.card_id
+           WHERE ae.triage_state != 'pending'
+           ORDER BY ae.triage_decision_at DESC, ae.id DESC
+           LIMIT ? OFFSET ?""",
+        (page_size, offset),
+    )
+    rows = await cursor.fetchall()
+
+    items = []
+    for r in rows:
+        snapshot = None
+        if r["decision_snapshot"]:
+            try:
+                snapshot = json.loads(r["decision_snapshot"])
+            except (ValueError, TypeError):
+                snapshot = None
+        items.append({
+            "event_id": r["id"],
+            "card_name": r["card_name"],
+            "set_code": r["set_code"],
+            "set_name": r["set_name"],
+            "image_uri": r["image_uri"],
+            "is_foil": bool(r["is_foil"]),
+            "qty_delta": r["qty_delta"],
+            "condition": r["condition"],
+            "language": r["language"],
+            "triage_state": r["triage_state"],
+            "decided_at": r["triage_decision_at"],
+            "source": r["source"],
+            "linked_listing_id": r["linked_listing_id"],
+            "notes": r["notes"],
+            "snapshot": snapshot,
+            "created_at": r["created_at"],
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

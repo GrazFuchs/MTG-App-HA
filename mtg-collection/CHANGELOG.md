@@ -1,3 +1,44 @@
+## 0.26.0 — Sprint 26 (MCP server enhancements)
+
+### Added
+- **Batch card lookup (`get_cards`)** — New MCP tool that resolves several cards in one call. Names are matched against the local DB first (no rate limit), and any misses are fetched from Scryfall in a single `POST /cards/collection` request (chunked at 75/req via the new `ScryfallClient.get_cards_collection`). Returns details + prices per card and a `not_found` list.
+- **Batch collection lookup (`find_cards_in_collection`)** — Batched version of `find_card_in_collection`: owned/foil counts, deck usage and price for many cards in a single SQL pass.
+- **`bulk_add_to_wishlist`** — Add many cards to the wishlist at once (e.g. paste a decklist) with shared priority/tags/deck; reports added vs skipped.
+- **Structured `analyze_deck`** — MCP tool returning mana curve, colour-pip distribution, card-type breakdown and average mana value (previously only a prompt template).
+- **`get_acquisition_history`** — Exposes the Inbox booking archive (see 0.24.0) over MCP.
+
+### Fixed
+- **MCP `get_duplicates` colour filter** — Now uses the same format-robust colour matching as the REST API (see 0.24.0), so single-colour filters behave identically in both.
+
+## 0.25.0 — Sprint 25 (cross-cutting UI)
+
+### Added
+- **"Lands" filter option** — A 🟤 Lands choice was added to the colour filters on the Wishlist and Inbox tabs (Duplicates and Cardmarket already had it), filtering to land-type cards. Backed by the shared, format-robust colour-filter helper.
+- **Open on Cardmarket** — Every card row in the Duplicates, Inbox and Collection tabs now has an icon button that opens the card's Cardmarket page in a new tab (shared `CardmarketButton`).
+- **Back to Top** — A floating button appears after scrolling and smoothly returns to the top of the page (`components/BackToTop.tsx`, attached to the main scroll container).
+
+### Changed
+- **Deck "Combos in this Deck"** — The section is now collapsible and **collapsed by default** (state persisted). Cards listed in a combo's detail dialog are now clickable links that open the card's Scryfall page in a new tab.
+
+## 0.24.0 — Sprint 24 (intake & duplicates reliability)
+
+### Fixed
+- **Single-colour pip filters returned nothing** — Filtering by Red/Blue/etc. in the Inbox and Duplicates (and Collection/Wishlist) tabs missed cards whose `color_identity` was stored in a non-JSON form, because the SQL required literal JSON quotes (`LIKE '%"R"%'`). Colour matching is now format-robust (matches the bare colour letter and counts distinct WUBRG letters for mono/multi/colourless), applied consistently across all routers and the MCP `get_duplicates` tool. A defensive `parse_color_identity` helper also prevents the API from crashing on non-JSON values.
+- **Intake duplicate check missed owned copies** — The triage advisor matched other printings case-sensitively (inconsistent with the rest of the app) and, when a new copy merged into an existing collection row, excluded that whole row — hiding a genuine pre-existing duplicate. Matching is now case-insensitive and subtracts only the freshly-arrived quantity from its own row.
+
+### Added
+- **Inbox booking history / archive** — Confirming a triage decision now records a snapshot of the decision, the suggestion shown and the card's state at that moment (new `decision_snapshot` column, migration 16). A new **History** view in the Inbox (`GET /api/acquisitions/history`) shows how each item was booked and how it was presented at confirmation.
+- **Duplicates urgency tools** — A "Most copies" sort plus quick-filter pills ("≥ 3 / ≥ 5 surplus", "≥ €5 / ≥ €20 value", "Not yet listed") to surface the most pressing duplicates (`min_extras` / `min_value_eur` / `unlisted_only` query params).
+
+## 0.23.0 — Sprint 23 (wishlist enhancements)
+
+### Added
+- **Ordered-cards filter** — The Wishlist (wanted tab) now has an "Ordered / Not ordered / All" filter over the existing `is_ordered` flag.
+- **Interactive price chart on hover** — Hovering a wishlist card name shows an interactive sparkline of the last 2 weeks of Cardmarket trend prices; the popup is hoverable and a crosshair tracks the cursor to read the price/date at each point. The reusable `PriceTrendHover` now also powers the Cardmarket page's price hover, and `Sparkline` gained an `interactive` mode.
+
+### Fixed
+- **Wishlist image didn't follow the chosen edition** — Editing a wishlist item's set/version only updated the displayed image/price when that printing already existed locally; the chosen printing is now imported from Scryfall when missing, so the thumbnail and price always match the selected edition.
+
 ## 0.22.0
 
 ### Added

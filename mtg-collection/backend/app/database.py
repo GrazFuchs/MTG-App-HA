@@ -489,6 +489,21 @@ async def _migration_15(db: aiosqlite.Connection):
     )
 
 
+async def _migration_16(db: aiosqlite.Connection):
+    """Inbox booking history: snapshot of the suggestion + card state at the
+    moment a triage decision was confirmed (acquisition archive)."""
+    cursor = await db.execute("PRAGMA table_info(acquisition_events)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if "decision_snapshot" not in columns:
+        await db.execute(
+            "ALTER TABLE acquisition_events ADD COLUMN decision_snapshot TEXT DEFAULT NULL"
+        )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_acq_decided "
+        "ON acquisition_events(triage_decision_at DESC)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -504,6 +519,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     13: _migration_13,
     14: _migration_14,
     15: _migration_15,
+    16: _migration_16,
 }
 
 

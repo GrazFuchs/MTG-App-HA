@@ -65,6 +65,14 @@ export function DeckCombosSection({ deckId }: Props) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [selectedCombo, setSelectedCombo] = useState<DeckCombo | null>(null);
+  // Collapsed by default — combos are secondary detail.
+  const [open, setOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('deck.combosExpanded') === 'true'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('deck.combosExpanded', String(open)); } catch { /* ignore */ }
+  }, [open]);
 
   const loadCombos = () => {
     setLoading(true);
@@ -116,12 +124,15 @@ export function DeckCombosSection({ deckId }: Props) {
 
   return (
     <div style={{ marginBottom: 26 }}>
-      <SectionHeader
-        num=""
-        title="Combos in this Deck"
-        right={`${fullCombos.length} ACTIVE · ${partialCombos.length} PARTIAL`}
-        accent={accent.oklch}
-      />
+      <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
+        <SectionHeader
+          num=""
+          title={`${open ? '▾' : '▸'} Combos in this Deck`}
+          right={`${fullCombos.length} ACTIVE · ${partialCombos.length} PARTIAL`}
+          accent={accent.oklch}
+        />
+      </div>
+      {open && (
       <Panel>
         <div className={styles.comboGrid}>
           {/* Full combos column */}
@@ -186,6 +197,7 @@ export function DeckCombosSection({ deckId }: Props) {
           </Button>
         </div>
       </Panel>
+      )}
 
       {selectedCombo && (
         <ComboDetailDialog

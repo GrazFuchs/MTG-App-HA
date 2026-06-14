@@ -314,6 +314,52 @@ export interface PaginatedAcquisitions {
   page_size: number;
 }
 
+export interface AcquisitionHistorySnapshot {
+  decided_action: string;
+  triage_state: string;
+  source: string | null;
+  listing_price_eur: number | null;
+  sell_qty: number | null;
+  linked_listing_id: number | null;
+  card: {
+    name: string | null;
+    set_code: string | null;
+    set_name: string | null;
+    is_foil: boolean;
+    qty_delta: number;
+    price_eur: string | null;
+  };
+  suggestion: TriageSuggestion;
+  existing_printings: ExistingPrinting[];
+  in_decks: number;
+}
+
+export interface AcquisitionHistoryItem {
+  event_id: number;
+  card_name: string;
+  set_code: string | null;
+  set_name: string | null;
+  image_uri: string | null;
+  is_foil: boolean;
+  qty_delta: number;
+  condition: string;
+  language: string;
+  triage_state: string;
+  decided_at: string | null;
+  source: string | null;
+  linked_listing_id: number | null;
+  notes: string;
+  snapshot: AcquisitionHistorySnapshot | null;
+  created_at: string;
+}
+
+export interface PaginatedAcquisitionHistory {
+  items: AcquisitionHistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface TriageDecisionPayload {
   action: 'keep' | 'sold_new' | 'swap' | 'dismiss';
   source?: string | null;
@@ -692,6 +738,8 @@ export const api = {
   },
   getInboxStats: () =>
     request<InboxAcquisitionStats>('/api/acquisitions/stats'),
+  getAcquisitionHistory: (page = 1, pageSize = 50) =>
+    request<PaginatedAcquisitionHistory>(`/api/acquisitions/history?page=${page}&page_size=${pageSize}`),
   backfillInboxColors: () =>
     request<{ candidates: number; enriched: number; failed: number }>('/api/acquisitions/backfill-colors', { method: 'POST' }),
   decideTriage: (eventId: number, body: TriageDecisionPayload) =>

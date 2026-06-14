@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { makeStyles } from '@griffel/react';
+import { makeStyles, shorthands } from '@griffel/react';
 import {
   Spinner,
   Button,
@@ -29,6 +29,7 @@ import { api, DuplicateEntry, DuplicatePrinting, CollectionSet } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader } from '../components/sothera';
+import { CardmarketButton } from '../components/CardmarketButton';
 
 const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'All Colors' },
@@ -46,6 +47,7 @@ const COLOR_OPTIONS: { value: string; label: string }[] = [
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'extras_value_desc', label: 'Value desc' },
   { value: 'extras_desc', label: 'Extras desc' },
+  { value: 'copies_desc', label: 'Most copies' },
   { value: 'name_asc', label: 'Name asc' },
   { value: 'set_asc', label: 'Set asc' },
   { value: 'color_asc', label: 'Color asc' },
@@ -65,6 +67,31 @@ const useStyles = makeStyles({
   },
   filterSelect: {
     minWidth: '140px',
+  },
+  quickFilters: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  pill: {
+    padding: '4px 12px',
+    fontSize: '11px',
+    fontFamily: sothera.fontMono,
+    letterSpacing: '0.5px',
+    cursor: 'pointer',
+    borderRadius: '3px',
+    ...shorthands.border('1px', 'solid', sothera.rowBorder),
+    color: sothera.fgMuted,
+    backgroundColor: 'transparent',
+  },
+  pillLabel: {
+    fontFamily: sothera.fontMono,
+    fontSize: '9px',
+    letterSpacing: '1.5px',
+    textTransform: 'uppercase',
+    color: sothera.fgFaint,
   },
   gridHeader: {
     display: 'grid',
@@ -187,7 +214,8 @@ function DuplicateRow({ item, onSell, accent, i, total }: { item: DuplicateEntry
       </div>
       <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{price ? `€${price}` : '—'}</div>
       <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"', paddingRight: 16 }}>{extraValue ? `€${extraValue}` : '—'}</div>
-      <div style={{ paddingLeft: 4 }}>
+      <div style={{ paddingLeft: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
+        <CardmarketButton cardName={item.card_name} />
         <Button size="small" appearance="primary" onClick={() => onSell(item)}>Sell</Button>
       </div>
     </div>
@@ -215,6 +243,9 @@ export default function Duplicates() {
   const colorFilter = searchParams.get('color') || '';
   const setFilter = searchParams.get('set') || '';
   const sortParam = searchParams.get('sort') || 'extras_value_desc';
+  const minExtras = searchParams.get('min_extras') || '';
+  const minValue = searchParams.get('min_value') || '';
+  const unlistedOnly = searchParams.get('unlisted') === 'true';
 
   const [sortBy, sortDir] = (() => {
     const last = sortParam.lastIndexOf('_');
@@ -265,8 +296,11 @@ export default function Duplicates() {
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
     if (includeListed) params.set('include_listed', 'true');
+    if (minExtras) params.set('min_extras', minExtras);
+    if (minValue) params.set('min_value_eur', minValue);
+    if (unlistedOnly) params.set('unlisted_only', 'true');
     return params;
-  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, page, pageSize, includeListed]);
+  }, [searchParams, colorFilter, setFilter, sortBy, sortDir, page, pageSize, includeListed, minExtras, minValue, unlistedOnly]);
 
   const { data: duplicatesData, isLoading: loading } = useQuery({
     queryKey: ['duplicates', duplicatesParams.toString()],
@@ -391,6 +425,32 @@ export default function Duplicates() {
           onChange={(_, d) => { setIncludeListed(!!d.checked); setPage(1); }}
           label="Show fully listed"
         />
+      </div>
+
+      <div className={styles.quickFilters}>
+        <span className={styles.pillLabel}>Urgency</span>
+        {[
+          { key: 'min_extras', label: '≥ 3 surplus', value: '3', active: minExtras === '3' },
+          { key: 'min_extras', label: '≥ 5 surplus', value: '5', active: minExtras === '5' },
+          { key: 'min_value', label: '≥ €5 value', value: '5', active: minValue === '5' },
+          { key: 'min_value', label: '≥ €20 value', value: '20', active: minValue === '20' },
+        ].map(f => (
+          <button
+            key={`${f.key}-${f.value}`}
+            className={styles.pill}
+            onClick={() => setParam(f.key, f.active ? '' : f.value)}
+            style={f.active ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+          >
+            {f.label}
+          </button>
+        ))}
+        <button
+          className={styles.pill}
+          onClick={() => setParam('unlisted', unlistedOnly ? '' : 'true')}
+          style={unlistedOnly ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+        >
+          Not yet listed
+        </button>
       </div>
 
       {loading ? (

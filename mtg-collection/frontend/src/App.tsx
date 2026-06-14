@@ -1,5 +1,5 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 import Dashboard from './pages/Dashboard';
 import Decks from './pages/Decks';
@@ -17,6 +17,7 @@ import { sothera, ACCENTS, ACCENTS_LIGHT, type AccentName } from './theme/sother
 import { useAccent } from './main';
 import { useSotheraTheme } from './theme';
 import { Sigil, BackdropFX } from './components/sothera';
+import BackToTop from './components/BackToTop';
 
 const useStyles = makeStyles({
   root: {
@@ -161,6 +162,7 @@ const navItems = [
 
 export default function App() {
   const styles = useStyles();
+  const contentRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { accent, accentName, setAccent } = useAccent();
@@ -292,7 +294,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className={styles.content}>
+        <div className={styles.content} ref={contentRef}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/decks" element={<Decks />} />
@@ -305,6 +307,7 @@ export default function App() {
             <Route path="/wishlist" element={<Wishlist />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
+          <BackToTop scrollRef={contentRef} />
         </div>
       </div>
     </>

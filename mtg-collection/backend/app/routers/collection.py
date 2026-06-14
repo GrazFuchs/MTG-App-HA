@@ -4,7 +4,12 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from ..database import get_db
 from ..models.schemas import CollectionEntry, CollectionAddRequest, CardResponse
 from ..clients.scryfall import scryfall, parse_scryfall_card
-from ..services.queries import basic_land_exclusion_sql
+from ..services.queries import (
+    basic_land_exclusion_sql,
+    color_identity_condition,
+    color_order_case_sql,
+    parse_color_identity,
+)
 from ..services.sync_service import upsert_card
 
 router = APIRouter()
@@ -31,9 +36,12 @@ async def list_collection(
         conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
     if color:
+        # Single colours mean "INCLUDES this colour"; M/C/L also supported.
+        # Format-robust matching (see color_identity_condition).
         for clr in color.split(","):
-            conditions.append("c.color_identity LIKE ?")
-            params.append(f'%"{clr.strip()}"%')
+            cond = color_identity_condition(clr, "c", mono_singles=False)
+            if cond:
+                conditions.append(cond)
     if rarity:
         conditions.append("c.rarity = ?")
         params.append(rarity.lower())
@@ -127,8 +135,8 @@ async def list_collection(
             id=r["id"], scryfall_id=r["scryfall_id"], oracle_id=r["oracle_id"],
             name=r["name"], mana_cost=r["mana_cost"], cmc=r["cmc"],
             type_line=r["type_line"], oracle_text=r["oracle_text"],
-            colors=json.loads(r["colors"] or "[]"),
-            color_identity=json.loads(r["color_identity"] or "[]"),
+            colors=parse_color_identity(r["colors"]),
+            color_identity=parse_color_identity(r["color_identity"]),
             set_code=r["set_code"], set_name=r["set_name"],
             collector_number=r["collector_number"], rarity=r["rarity"],
             image_uri=r["image_uri"], image_art_crop=r["image_art_crop"],
@@ -235,8 +243,8 @@ async def add_to_collection(req: CollectionAddRequest):
         id=r["id"], scryfall_id=r["scryfall_id"], oracle_id=r["oracle_id"],
         name=r["name"], mana_cost=r["mana_cost"], cmc=r["cmc"],
         type_line=r["type_line"], oracle_text=r["oracle_text"],
-        colors=json.loads(r["colors"] or "[]"),
-        color_identity=json.loads(r["color_identity"] or "[]"),
+        colors=parse_color_identity(r["colors"]),
+        color_identity=parse_color_identity(r["color_identity"]),
         set_code=r["set_code"], set_name=r["set_name"],
         collector_number=r["collector_number"], rarity=r["rarity"],
         image_uri=r["image_uri"], image_art_crop=r["image_art_crop"],
@@ -270,25 +278,12 @@ def _duplicates_conditions(search: str, color: str, set_code: str):
         conditions.append("LOWER(c.set_code) = LOWER(?)")
         params.append(set_code)
     if color:
+        # Single colours here mean "INCLUDES this colour" (mono OR multicolour
+        # containing it); MONO/M/C/L are explicit options. Format-robust.
         for clr in color.split(","):
-            clr = clr.strip().upper()
-            if clr in ("W", "U", "B", "R", "G"):
-                # Match any card whose color identity INCLUDES this color
-                # (monocolor of this color AND multicolor cards containing it).
-                conditions.append("c.color_identity LIKE ?")
-                params.append(f'%"{clr}"%')
-            elif clr == "MONO":
-                # Exactly one color: no comma in the identity array, and not colorless.
-                conditions.append(
-                    "(c.color_identity NOT LIKE '%,%' "
-                    "AND COALESCE(c.color_identity, '[]') != '[]')"
-                )
-            elif clr == "M":
-                conditions.append("c.color_identity LIKE '%,%'")
-            elif clr == "C":
-                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
-            elif clr == "L":
-                conditions.append("c.type_line LIKE '%Land%'")
+            cond = color_identity_condition(clr, "c", mono_singles=False)
+            if cond:
+                conditions.append(cond)
 
     return " AND ".join(conditions), params
 
@@ -359,8 +354,11 @@ async def list_duplicates(
     color: str = Query("", description="W,U,B,R,G,M,C,L (CSV)"),
     set_code: str = Query(""),
     include_listed: bool = Query(False, description="Include rows fully covered by listings"),
-    sort_by: str = Query("extras_value", description="extras, extras_value, name, set, color"),
+    sort_by: str = Query("extras_value", description="extras, extras_value, copies, name, set, color"),
     sort_dir: str = Query("desc"),
+    min_extras: int = Query(0, ge=0, description="Only rows with at least this many surplus copies"),
+    min_value_eur: float = Query(0, ge=0, description="Only rows with surplus value >= this (EUR)"),
+    unlisted_only: bool = Query(False, description="Only rows not yet listed on Cardmarket"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
@@ -371,49 +369,37 @@ async def list_duplicates(
     # Build the CTE with conditions injected
     cte = _DUPLICATES_CTE.replace("{where}", where)
 
-    # Having filter: only rows with extras_after_listings > 0 unless include_listed
-    having_filter = "" if include_listed else "WHERE extras_after_listings > 0"
-
-    COLOR_ORDER_SQL = """
-        CASE
-            WHEN type_line LIKE '%Land%' THEN 8
-            WHEN color_identity = '[]' THEN 7
-            WHEN color_identity LIKE '%,%' THEN 6
-            WHEN color_identity LIKE '%"W"%' THEN 1
-            WHEN color_identity LIKE '%"U"%' THEN 2
-            WHEN color_identity LIKE '%"B"%' THEN 3
-            WHEN color_identity LIKE '%"R"%' THEN 4
-            WHEN color_identity LIKE '%"G"%' THEN 5
-            ELSE 9
-        END
-    """
+    # Format-robust colour ordering (bare column names — the outer query selects
+    # color_identity/type_line without a table alias). Lands ranked last.
+    COLOR_ORDER_SQL = color_order_case_sql("", land_rank=8)
 
     sort_col = {
         "extras": "extras_after_listings",
         "extras_value": "extra_value",
+        "copies": "total_copies",
         "name": "LOWER(name)",
         "set": "LOWER(set_name)",
         "color": COLOR_ORDER_SQL,
     }.get(sort_by, "extra_value")
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
 
-    offset = (page - 1) * page_size
+    # Result-level filters on the computed columns (urgency quick-filters).
+    filters: list[str] = []
+    filter_params: list = []
+    if not include_listed:
+        filters.append("extras_after_listings > 0")
+    if min_extras > 0:
+        filters.append("extras_after_listings >= ?")
+        filter_params.append(min_extras)
+    if min_value_eur > 0:
+        filters.append("extra_value >= ?")
+        filter_params.append(min_value_eur)
+    if unlisted_only:
+        filters.append("listed_quantity = 0")
+    where_clause = ("WHERE " + " AND ".join(filters)) if filters else ""
 
-    # params are used twice in the CTE (once per UNION leg)
-    doubled_params = params + params
-
-    count_query = f"""
-        {cte}
-        SELECT COUNT(*) FROM (
-            SELECT *, MAX(extras - listed_quantity, 0) as extras_after_listings
-            FROM with_extras
-        ) sub {having_filter}
-    """
-    count_cursor = await db.execute(count_query, doubled_params)
-    total = (await count_cursor.fetchone())[0]
-
-    final_query = f"""
-        {cte},
+    # Shared "final" projection so count and page queries see identical columns.
+    final_cte = """
         final AS (
             SELECT *,
                 MAX(extras - listed_quantity, 0) as extras_after_listings,
@@ -422,13 +408,26 @@ async def list_duplicates(
                     * MAX(extras - listed_quantity, 0) as extra_value
             FROM with_extras
         )
+    """
+
+    offset = (page - 1) * page_size
+
+    # params are used twice in the CTE (once per UNION leg)
+    doubled_params = params + params
+
+    count_query = f"{cte}, {final_cte} SELECT COUNT(*) FROM final {where_clause}"
+    count_cursor = await db.execute(count_query, doubled_params + filter_params)
+    total = (await count_cursor.fetchone())[0]
+
+    final_query = f"""
+        {cte}, {final_cte}
         SELECT * FROM final
-        {having_filter}
+        {where_clause}
         ORDER BY {sort_col} {direction}, LOWER(name) ASC
         LIMIT ? OFFSET ?
     """
 
-    params_q = doubled_params + [page_size, offset]
+    params_q = doubled_params + filter_params + [page_size, offset]
     cursor = await db.execute(final_query, params_q)
     rows = await cursor.fetchall()
 
@@ -450,7 +449,7 @@ async def list_duplicates(
             "extras_after_listings": r["extras_after_listings"],
             "card_id": r["card_id"],
             "collector_number": r["collector_number"],
-            "color_identity": json.loads(r["color_identity"] or "[]"),
+            "color_identity": parse_color_identity(r["color_identity"]),
             "type_line": r["type_line"] or "",
         })
 

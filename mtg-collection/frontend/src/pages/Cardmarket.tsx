@@ -16,6 +16,7 @@ import { Sparkline } from '../components/Sparkline';
 import { CardmarketWorkflowBanner } from '../components/cardmarket/CardmarketWorkflowBanner';
 import ListingHealthPanel from '../components/cardmarket/ListingHealthPanel';
 import { CardHoverPreview } from '../components/CardHoverPreview';
+import PriceTrendHover from '../components/PriceTrendHover';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
@@ -119,68 +120,11 @@ const useStyles = makeStyles({
   },
 });
 
-function PriceCell({ cardName, accent }: { cardName: string; accent: string }) {
-  const styles = useStyles();
-  const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
-  const historyRef = useRef<PriceHistoryEntry[] | null>(null);
-
-  const fetchHistory = async () => {
-    if (historyRef.current !== null) return;
-    try {
-      const products = await api.getMatchedProducts(cardName);
-      if (products.length > 0) {
-        const h = await api.getPriceHistory(products[0].cm_product_id);
-        historyRef.current = h;
-        setHistory(h);
-      } else {
-        historyRef.current = [];
-        setHistory([]);
-      }
-    } catch {
-      historyRef.current = [];
-      setHistory([]);
-    }
-  };
-
-  const handleMouseEnter = (e: React.MouseEvent) => {
-    const { clientX, clientY } = e;
-    timerRef.current = setTimeout(async () => {
-      await fetchHistory();
-      setPos({ x: clientX + 16, y: clientY - 40 });
-      setShow(true);
-    }, 300);
-  };
-
-  const handleMouseLeave = () => {
-    clearTimeout(timerRef.current);
-    setShow(false);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    setPos({ x: e.clientX + 16, y: e.clientY - 40 });
-  };
-
+function PriceCell({ cardName }: { cardName: string }) {
   return (
-    <span
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onMouseMove={handleMouseMove}
-      style={{ cursor: 'default' }}
-    >
+    <PriceTrendHover cardName={cardName} days={30} label="30-day trend">
       {cardName}
-      {show && history && history.length > 1 && (
-        <div className={styles.sparklinePopup} style={{ left: pos.x, top: pos.y }}>
-          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginBottom: 4, letterSpacing: 1.5, textTransform: 'uppercase' }}>30-DAY TREND</div>
-          <Sparkline data={history} width={180} height={48} accent={accent} dot={false} />
-          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgMuted, marginTop: 4 }}>
-            €{history[history.length - 1].trend.toFixed(2)} (latest)
-          </div>
-        </div>
-      )}
-    </span>
+    </PriceTrendHover>
   );
 }
 
@@ -451,7 +395,7 @@ export default function Cardmarket() {
                   <span style={{ cursor: 'default' }}>{l.card_name}</span>
                 </CardHoverPreview>
               ) : (
-                <PriceCell cardName={l.card_name} accent={accent.oklch} />
+                <PriceCell cardName={l.card_name} />
               )}
             </div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 0.5 }}>{l.set_name || l.set_code?.toUpperCase() || '—'}</div>

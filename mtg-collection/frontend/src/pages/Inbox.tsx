@@ -14,6 +14,7 @@ import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
 import { t } from '../i18n';
 import AcquisitionCard from '../components/inbox/AcquisitionCard';
+import InboxHistory from '../components/inbox/InboxHistory';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { getColorBucket, groupByColorBucket, BUCKET_KEYS, BucketKey } from '../utils/colors';
@@ -46,6 +47,7 @@ const COLOR_FILTER_OPTIONS = [
   { value: 'G', label: '🟢 Green' },
   { value: 'Multi', label: '🌈 Multicolor' },
   { value: 'Colorless', label: '◆ Colorless' },
+  { value: 'L', label: '🟤 Lands' },
 ] as const;
 
 const SORT_OPTIONS = [
@@ -146,6 +148,7 @@ export default function Inbox() {
   const [searchQuery, setSearchQuery] = useState('');
   const [colorFilter, setColorFilter] = useState('');
   const [sortBy, setSortBy] = useState('newest');
+  const [view, setView] = useState<'triage' | 'history'>('triage');
 
   const activeFilter = searchParams.get('filter') || '';
 
@@ -258,6 +261,24 @@ export default function Inbox() {
         </div>
       )}
 
+      {/* Triage / History view toggle */}
+      <div className={styles.filterRow}>
+        {(['triage', 'history'] as const).map(v => (
+          <button
+            key={v}
+            className={styles.filterPill}
+            onClick={() => setView(v)}
+            style={view === v ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+          >
+            {v === 'triage' ? 'Triage' : 'History'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'history' ? (
+        <InboxHistory />
+      ) : (
+      <>
       {/* Filter bar */}
       <div className={styles.filterRow}>
         {FILTER_OPTIONS.map(opt => (
@@ -378,6 +399,8 @@ export default function Inbox() {
             )}
           </>
         </ErrorBoundary>
+      )}
+      </>
       )}
     </div>
   );

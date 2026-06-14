@@ -54,6 +54,11 @@ const useStyles = makeStyles({
   },
 });
 
+/** Scryfall search URL for an exact card name (opens its card page). */
+function scryfallNameUrl(name: string): string {
+  return `https://scryfall.com/search?q=!"${encodeURIComponent(name)}"`;
+}
+
 interface Props {
   combo: DeckCombo;
   open: boolean;
@@ -86,12 +91,16 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
             <div className={styles.section}>
               <div className={styles.sectionLabel}>CARDS INVOLVED</div>
               {combo.cards.map((card) => (
-                <span
+                <a
                   key={card}
+                  href={scryfallNameUrl(card)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className={`${styles.cardChip} ${combo.missing_cards.includes(card) ? styles.missingChip : ''}`}
+                  style={{ cursor: 'pointer', textDecoration: 'none', color: 'inherit' }}
                 >
-                  {card}
-                </span>
+                  {card} ↗
+                </a>
               ))}
             </div>
 
@@ -99,9 +108,16 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
               <div className={styles.section}>
                 <div className={styles.sectionLabel}>MISSING CARDS</div>
                 {combo.missing_cards.map((card) => (
-                  <span key={card} className={`${styles.cardChip} ${styles.missingChip}`}>
-                    {card}
-                  </span>
+                  <a
+                    key={card}
+                    href={scryfallNameUrl(card)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${styles.cardChip} ${styles.missingChip}`}
+                    style={{ cursor: 'pointer', textDecoration: 'none' }}
+                  >
+                    {card} ↗
+                  </a>
                 ))}
               </div>
             )}

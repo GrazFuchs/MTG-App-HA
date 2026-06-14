@@ -47,8 +47,35 @@ class ScryfallClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def _post(self, path: str, json_body: dict) -> dict[str, Any]:
+        await self._rate_limit()
+        client = await self._get_client()
+        resp = await client.post(path, json=json_body)
+        resp.raise_for_status()
+        return resp.json()
+
     async def search_cards(self, query: str, page: int = 1) -> dict[str, Any]:
         return await self._get("/cards/search", params={"q": query, "page": page})
+
+    async def get_cards_collection(
+        self, identifiers: list[dict[str, str]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Look up many cards in one round-trip via POST /cards/collection.
+
+        `identifiers` is a list of Scryfall identifier dicts, e.g.
+        {"name": "Lightning Bolt"} or {"id": "<scryfall_id>"}. Scryfall caps a
+        request at 75 identifiers, so the input is chunked automatically.
+
+        Returns (cards, not_found).
+        """
+        cards: list[dict[str, Any]] = []
+        not_found: list[dict[str, Any]] = []
+        for i in range(0, len(identifiers), 75):
+            chunk = identifiers[i:i + 75]
+            data = await self._post("/cards/collection", {"identifiers": chunk})
+            cards.extend(data.get("data", []))
+            not_found.extend(data.get("not_found", []))
+        return cards, not_found
 
     async def get_card_by_id(self, scryfall_id: str) -> dict[str, Any]:
         return await self._get(f"/cards/{scryfall_id}")

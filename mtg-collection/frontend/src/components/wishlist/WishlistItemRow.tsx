@@ -22,6 +22,7 @@ import {
 } from '@fluentui/react-icons';
 import { t } from '../../i18n';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
+import PriceTrendHover from '../PriceTrendHover';
 import type { WishlistItem } from '../../api';
 
 const useStyles = makeStyles({
@@ -197,7 +198,7 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
         )}
         <div className={styles.mobileInfo}>
           <div className={styles.name}>
-            {item.card_name}
+            <PriceTrendHover cardName={item.card_name}>{item.card_name}</PriceTrendHover>
             {item.is_foil && <Badge appearance="outline" size="small" style={{ marginLeft: 4 }}>◆</Badge>}
             {item.set_code && <Caption1 style={{ marginLeft: 6 }}>{item.set_code.toUpperCase()}</Caption1>}
           </div>
@@ -226,7 +227,9 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
         <div className={styles.img} />
       )}
       <div>
-        <span className={styles.name}>{item.card_name}</span>
+        <PriceTrendHover cardName={item.card_name}>
+          <span className={styles.name}>{item.card_name}</span>
+        </PriceTrendHover>
         {item.is_foil && <Badge appearance="outline" size="small" style={{ marginLeft: 4 }}>◆ Foil</Badge>}
         {item.set_code && <Caption1 style={{ marginLeft: 6 }}>({item.set_code.toUpperCase()})</Caption1>}
         {item.tags.length > 0 && (

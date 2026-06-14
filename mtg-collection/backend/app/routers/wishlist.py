@@ -20,6 +20,7 @@ from ..models.schemas import (
     WishlistSummary,
 )
 from ..services.card_resolver import resolve_card
+from ..services.queries import color_identity_condition, parse_color_identity
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,7 +75,7 @@ def _build_item_response(row, current_price: float | None) -> WishlistItemRespon
         current_price_eur=current_price,
         is_deal=is_deal,
         image_uri=row["image_uri"],
-        color_identity=json.loads(row["color_identity"] or "[]") if "color_identity" in row.keys() else [],
+        color_identity=parse_color_identity(row["color_identity"]) if "color_identity" in row.keys() else [],
         is_ordered=bool(row["is_ordered"]) if "is_ordered" in row.keys() else False,
         ordered_at=row["ordered_at"] if "ordered_at" in row.keys() else None,
         expected_price_eur=_safe_float(row["expected_price_eur"]) if "expected_price_eur" in row.keys() else None,
@@ -259,17 +260,12 @@ async def list_wishlist(
         params.append(f"%,{tag.strip()},%")
 
     if color:
+        # Single colours mean *mono* of that colour (matching the colour buckets);
+        # M/C/L are explicit options. Format-robust matching.
         for clr in color.split(","):
-            clr = clr.strip().upper()
-            if clr in ("W", "U", "B", "R", "G"):
-                conditions.append(
-                    "(c.color_identity LIKE ? AND c.color_identity NOT LIKE '%,%')"
-                )
-                params.append(f'%"{clr}"%')
-            elif clr == "M":
-                conditions.append("c.color_identity LIKE '%,%'")
-            elif clr == "C":
-                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
+            cond = color_identity_condition(clr, "c", mono_singles=True)
+            if cond:
+                conditions.append(cond)
 
     where_clause = " AND ".join(conditions)
 
@@ -423,8 +419,9 @@ async def _card_id_for_printing(db, card_name: str, set_code: str | None) -> int
 
 
 async def _repoint_card_to_set(db, item_id: int, set_code: str | None) -> None:
-    """Repoint a wishlist item's card_id to the chosen set's printing, if it
-    exists locally, so the displayed set/version/image/price follow the choice."""
+    """Repoint a wishlist item's card_id to the chosen set's printing so the
+    displayed set/version/image/price follow the choice. If that printing is not
+    yet in the local cards table, it is fetched + upserted from Scryfall first."""
     if not set_code:
         return
     cursor = await db.execute(
@@ -434,7 +431,12 @@ async def _repoint_card_to_set(db, item_id: int, set_code: str | None) -> None:
     row = await cursor.fetchone()
     if not row:
         return
+    # Prefer a locally-synced printing; otherwise import the specific printing
+    # from Scryfall so the image/price reflect the chosen edition.
     new_id = await _card_id_for_printing(db, row["name"], set_code)
+    if not new_id:
+        card = await resolve_card(db, card_name=row["name"], set_code=set_code)
+        new_id = card["id"] if card else None
     if new_id:
         await db.execute("UPDATE wishlist SET card_id = ? WHERE id = ?", (new_id, item_id))
 

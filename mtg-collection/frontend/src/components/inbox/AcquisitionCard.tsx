@@ -3,6 +3,7 @@ import { makeStyles } from '@griffel/react';
 import { Button } from '@fluentui/react-components';
 import { AcquisitionEvent, TriageDecisionPayload } from '../../api';
 import { CardHoverPreview } from '../CardHoverPreview';
+import { CardmarketButton } from '../CardmarketButton';
 import { sothera } from '../../theme/sothera';
 import { useAccent } from '../../main';
 import { Panel } from '../sothera';
@@ -133,9 +134,12 @@ export default function AcquisitionCard({
   return (
     <Panel className={styles.card}>
       <div className={styles.header}>
-        <CardHoverPreview card={event.card}>
-          <span className={styles.cardName}>{event.card.name}</span>
-        </CardHoverPreview>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CardHoverPreview card={event.card}>
+            <span className={styles.cardName}>{event.card.name}</span>
+          </CardHoverPreview>
+          <CardmarketButton cardName={event.card.name} />
+        </div>
         <span className={styles.badge}>
           +{event.qty_delta} added {new Date(event.created_at).toLocaleDateString()}
         </span>

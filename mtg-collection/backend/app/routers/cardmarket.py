@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ..database import get_db
 from ..models.schemas import CardmarketListing, CardmarketImportResult, CardResponse
+from ..services.queries import parse_color_identity
 from ..services.cardmarket_import import import_cardmarket_csv
 from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
 from ..services.listing_health import analyze_listings
@@ -115,10 +116,7 @@ async def list_cardmarket_listings(
     def _color_bucket(card) -> str:
         if card is None:
             return "C"
-        try:
-            ci = json.loads(card["color_identity"] or "[]")
-        except Exception:
-            ci = []
+        ci = parse_color_identity(card["color_identity"])
         if "Land" in (card["type_line"] or ""):
             return "L"
         if len(ci) == 0:
@@ -157,8 +155,8 @@ async def list_cardmarket_listings(
                 cmc=card_row["cmc"] or 0,
                 type_line=card_row["type_line"] or "",
                 oracle_text=card_row["oracle_text"] or "",
-                colors=json.loads(card_row["colors"] or "[]"),
-                color_identity=json.loads(card_row["color_identity"] or "[]"),
+                colors=parse_color_identity(card_row["colors"]),
+                color_identity=parse_color_identity(card_row["color_identity"]),
                 set_code=card_row["set_code"] or "",
                 set_name=card_row["set_name"] or "",
                 collector_number=card_row["collector_number"] or "",

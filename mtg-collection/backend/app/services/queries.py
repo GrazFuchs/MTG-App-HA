@@ -1,4 +1,6 @@
 """Shared query functions used by both API routers and MCP tools."""
+import json
+import re
 from typing import Any
 
 import aiosqlite
@@ -26,6 +28,121 @@ def basic_land_exclusion_sql(alias: str = "c") -> str:
     """
     names = ", ".join(f"'{n}'" for n in BASIC_LAND_NAMES)
     return f"{alias}.name NOT IN ({names})"
+
+
+# ---------------------------------------------------------------------------
+# Colour-identity filtering
+#
+# `cards.color_identity` SHOULD be stored as a JSON array (e.g. ["W","U"]), but
+# historically it has also been seen as CSV ("W,U"), space-separated ("W U"),
+# bare ("W") or concatenated ("WU") — the frontend (utils/colors.ts) already
+# parses all of these defensively. The old SQL filters matched the literal JSON
+# form `LIKE '%"W"%'`, so any non-JSON row silently dropped out → single-colour
+# filters returned nothing (multicolour still matched via the comma-based test).
+#
+# These helpers match on the bare colour letter instead. `color_identity` only
+# ever contains the letters WUBRG plus punctuation, so `LIKE '%R%'` is reliable
+# regardless of delimiter format. Mono/multi/colourless are derived by counting
+# how many distinct WUBRG letters are present, which is format-independent.
+# ---------------------------------------------------------------------------
+_WUBRG = ("W", "U", "B", "R", "G")
+
+
+def parse_color_identity(raw: Any) -> list[str]:
+    """Parse a stored color_identity value into a list of colour letters.
+
+    Robust to every format the data has been seen in: JSON (["W","U"]), CSV
+    ("W,U"), space-separated ("W U"), bare ("W") and concatenated ("WU").
+    Mirrors the frontend's defensive parser (utils/colors.ts) so the backend
+    never crashes on a non-JSON row. Returns [] for null/empty/garbage.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    s = str(raw).strip()
+    if not s or s == "[]":
+        return []
+    if s.startswith("["):
+        try:
+            parsed = json.loads(s)
+            return [str(x) for x in parsed] if isinstance(parsed, list) else []
+        except (ValueError, TypeError):
+            return []
+    if "," in s or " " in s:
+        return [p.strip() for p in re.split(r"[,\s]+", s) if p.strip()]
+    if all(ch in "WUBRG" for ch in s):
+        return list(s)
+    return [s]
+
+
+def _ci_col(alias: str) -> str:
+    """The color_identity column, optionally table-qualified (alias='' = bare)."""
+    return f"{alias}.color_identity" if alias else "color_identity"
+
+
+def _ci_has(alias: str, letter: str) -> str:
+    """Boolean: does the colour identity contain this WUBRG letter?"""
+    return f"COALESCE({_ci_col(alias)}, '') LIKE '%{letter}%'"
+
+
+def _ci_distinct_count(alias: str) -> str:
+    """SQL expression: number of distinct WUBRG colours in the identity (0-5)."""
+    return " + ".join(f"({_ci_has(alias, l)})" for l in _WUBRG)
+
+
+def color_order_case_sql(alias: str = "c", land_rank: int | None = None) -> str:
+    """CASE expression ranking rows by colour for ORDER BY (W,U,B,R,G, then
+    multicolour, colourless, then everything else). Pass land_rank to rank land
+    cards separately. Format-robust (see color_identity_condition)."""
+    type_col = f"{alias}.type_line" if alias else "type_line"
+    count = _ci_distinct_count(alias)
+    lines = ["CASE"]
+    if land_rank is not None:
+        lines.append(f"    WHEN {type_col} LIKE '%Land%' THEN {land_rank}")
+    lines.append(f"    WHEN ({count}) = 0 THEN 7")
+    lines.append(f"    WHEN ({count}) >= 2 THEN 6")
+    for i, letter in enumerate(_WUBRG, start=1):
+        lines.append(f"    WHEN {_ci_has(alias, letter)} THEN {i}")
+    lines.append("    ELSE 9")
+    lines.append("END")
+    return "\n".join(lines)
+
+
+def color_identity_condition(
+    token: str, alias: str = "c", mono_singles: bool = True
+) -> str | None:
+    """Return a SQL boolean for a colour-filter token, robust to storage format.
+
+    Tokens (case-insensitive):
+      W/U/B/R/G  single colour. With mono_singles=True this means *mono* of that
+                 colour (matches the Inbox/Wishlist single-colour buckets); with
+                 mono_singles=False it means *includes* that colour (mono OR
+                 multicolour containing it — the Duplicates "includes" semantics).
+      MONO       exactly one colour (any).
+      M/MULTI    two or more colours.
+      C/COLORLESS no colour.
+      L/LAND     land cards (by type line).
+
+    The colour letters are fixed constants (no user input), so inlining them in
+    the SQL is safe. Returns None for an unrecognised token.
+    """
+    t = token.strip().upper()
+    count = _ci_distinct_count(alias)
+    if t in _WUBRG:
+        if mono_singles:
+            others = " AND ".join(f"NOT {_ci_has(alias, l)}" for l in _WUBRG if l != t)
+            return f"({_ci_has(alias, t)} AND {others})"
+        return f"({_ci_has(alias, t)})"
+    if t == "MONO":
+        return f"(({count}) = 1)"
+    if t in ("M", "MULTI"):
+        return f"(({count}) >= 2)"
+    if t in ("C", "COLORLESS"):
+        return f"(({count}) = 0)"
+    if t in ("L", "LAND"):
+        return f"{alias}.type_line LIKE '%Land%'"
+    return None
 
 # ---------------------------------------------------------------------------
 # Canonical definitions (used everywhere — keep these in sync with the UI labels)

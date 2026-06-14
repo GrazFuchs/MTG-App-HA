@@ -414,7 +414,7 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
         page_size: Items per page (default 50)
     """
     from .database import get_db
-    from .services.queries import basic_land_exclusion_sql
+    from .services.queries import basic_land_exclusion_sql, color_identity_condition
     db = await get_db()
     offset = (page - 1) * page_size
 
@@ -425,15 +425,12 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
         conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
     if color:
+        # Single colours mean "INCLUDES this colour" (matches the REST
+        # /duplicates endpoint). Format-robust matching.
         for clr in color.split(","):
-            clr = clr.strip().upper()
-            if clr in ("W", "U", "B", "R", "G"):
-                conditions.append("c.color_identity LIKE ?")
-                params.append(f'%"{clr}"%')
-            elif clr == "M":
-                conditions.append("c.color_identity LIKE '%,%'")
-            elif clr == "C":
-                conditions.append("(c.color_identity = '[]' OR c.color_identity IS NULL)")
+            cond = color_identity_condition(clr, "c", mono_singles=False)
+            if cond:
+                conditions.append(cond)
     where = " AND ".join(conditions)
     doubled_params = params + params
 
@@ -1594,6 +1591,7 @@ async def compare_decks(deck_ids: list[int]) -> str:
         deck_ids: List of 2-4 deck IDs to compare
     """
     from .database import get_db
+    from .services.queries import parse_color_identity
     try:
         if len(deck_ids) < 2 or len(deck_ids) > 4:
             return json.dumps({"error": "Provide 2-4 deck IDs"})
@@ -1619,7 +1617,7 @@ async def compare_decks(deck_ids: list[int]) -> str:
             colors: set[str] = set()
             for r in await cursor.fetchall():
                 names.add(r["name"])
-                for c in json.loads(r["color_identity"] or "[]"):
+                for c in parse_color_identity(r["color_identity"]):
                     colors.add(c)
             deck_card_sets[did] = names
             deck_colors[did] = colors
@@ -1736,6 +1734,330 @@ async def find_card_in_collection(card_name: str) -> str:
             "used_in_decks": len(deck_usage),
             "deck_usage": deck_usage,
         }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def get_cards(names: list[str]) -> str:
+    """Look up several cards at once (one batched request instead of N).
+
+    Resolves each name from the local database first (no rate limit); any names
+    not found locally are fetched from Scryfall in a single /cards/collection
+    call. Returns details + prices per card plus a not_found list.
+
+    Args:
+        names: Exact card names, e.g. ["Lightning Bolt", "Sol Ring"]. Max 200.
+    """
+    from .clients.scryfall import scryfall
+    from .database import get_db
+    from .services.queries import parse_color_identity
+    try:
+        if not names:
+            return json.dumps({"error": "Provide at least one card name"})
+        names = names[:200]
+        db = await get_db()
+        out: list[dict] = []
+        seen: set[str] = set()
+        missing: list[str] = []
+
+        for name in names:
+            cur = await db.execute(
+                """SELECT name, mana_cost, cmc, type_line, oracle_text, colors,
+                          color_identity, set_name, rarity, edhrec_rank,
+                          price_eur, price_usd, price_eur_foil, price_usd_foil
+                   FROM cards WHERE LOWER(name) = LOWER(?) LIMIT 1""",
+                (name,),
+            )
+            row = await cur.fetchone()
+            if row and row["name"].lower() not in seen:
+                seen.add(row["name"].lower())
+                out.append({
+                    "name": row["name"],
+                    "mana_cost": row["mana_cost"],
+                    "cmc": row["cmc"],
+                    "type_line": row["type_line"],
+                    "oracle_text": row["oracle_text"],
+                    "colors": parse_color_identity(row["colors"]),
+                    "color_identity": parse_color_identity(row["color_identity"]),
+                    "set": row["set_name"],
+                    "rarity": row["rarity"],
+                    "edhrec_rank": row["edhrec_rank"],
+                    "price_eur": row["price_eur"],
+                    "price_usd": row["price_usd"],
+                    "source": "local",
+                })
+            elif not row:
+                missing.append(name)
+
+        not_found: list[str] = []
+        if missing:
+            cards, nf = await scryfall.get_cards_collection([{"name": n} for n in missing])
+            for c in cards:
+                nm = c.get("name", "")
+                if nm.lower() in seen:
+                    continue
+                seen.add(nm.lower())
+                prices = c.get("prices", {})
+                out.append({
+                    "name": nm,
+                    "mana_cost": c.get("mana_cost"),
+                    "cmc": c.get("cmc"),
+                    "type_line": c.get("type_line"),
+                    "oracle_text": c.get("oracle_text"),
+                    "colors": c.get("colors", []),
+                    "color_identity": c.get("color_identity", []),
+                    "set": c.get("set_name"),
+                    "rarity": c.get("rarity"),
+                    "edhrec_rank": c.get("edhrec_rank"),
+                    "price_eur": prices.get("eur"),
+                    "price_usd": prices.get("usd"),
+                    "source": "scryfall",
+                })
+            not_found = [i.get("name") or i.get("id") or str(i) for i in nf]
+
+        return json.dumps({"count": len(out), "cards": out, "not_found": not_found}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def find_cards_in_collection(names: list[str]) -> str:
+    """Batch version of find_card_in_collection: for each name, how many are
+    owned (foil/non-foil), which decks use it, and the current price — resolved
+    in one pass instead of one lookup per card.
+
+    Args:
+        names: Card names to look up (exact, case-insensitive). Max 200.
+    """
+    from .database import get_db
+    from .services.queries import parse_color_identity
+    try:
+        if not names:
+            return json.dumps({"error": "Provide at least one card name"})
+        names = names[:200]
+        db = await get_db()
+        lowered = [n.lower() for n in names]
+        placeholders = ",".join(["?"] * len(lowered))
+
+        owned: dict[str, dict] = {}
+        cur = await db.execute(
+            f"""SELECT c.name, c.set_name, c.color_identity, c.price_eur, c.price_eur_foil,
+                       col.quantity, col.foil_quantity, col.condition, col.language
+                FROM collection col JOIN cards c ON c.id = col.card_id
+                WHERE LOWER(c.name) IN ({placeholders})""",
+            lowered,
+        )
+        for r in await cur.fetchall():
+            key = r["name"].lower()
+            entry = owned.setdefault(key, {
+                "name": r["name"], "total_owned": 0, "total_foil": 0,
+                "color_identity": parse_color_identity(r["color_identity"]),
+                "price_eur": r["price_eur"], "entries": [],
+            })
+            entry["total_owned"] += (r["quantity"] or 0) + (r["foil_quantity"] or 0)
+            entry["total_foil"] += r["foil_quantity"] or 0
+            entry["entries"].append({
+                "set": r["set_name"], "quantity": r["quantity"],
+                "foil_quantity": r["foil_quantity"],
+                "condition": r["condition"], "language": r["language"],
+            })
+
+        decks: dict[str, list] = {}
+        cur = await db.execute(
+            f"""SELECT c.name, d.name AS deck_name, d.id AS deck_id, dc.quantity, dc.is_commander
+                FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
+                JOIN decks d ON d.id = dc.deck_id
+                WHERE LOWER(c.name) IN ({placeholders})""",
+            lowered,
+        )
+        for r in await cur.fetchall():
+            decks.setdefault(r["name"].lower(), []).append({
+                "deck_name": r["deck_name"], "deck_id": r["deck_id"],
+                "quantity": r["quantity"], "is_commander": bool(r["is_commander"]),
+            })
+
+        results = []
+        for name in names:
+            key = name.lower()
+            o = owned.get(key)
+            d = decks.get(key, [])
+            results.append({
+                "card_name": name,
+                "found": bool(o) or bool(d),
+                "total_owned": o["total_owned"] if o else 0,
+                "total_foil": o["total_foil"] if o else 0,
+                "color_identity": o["color_identity"] if o else [],
+                "collection_entries": o["entries"] if o else [],
+                "used_in_decks": len(d),
+                "deck_usage": d,
+            })
+        return json.dumps({"count": len(results), "cards": results}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def bulk_add_to_wishlist(
+    names: list[str],
+    priority: int = 3,
+    tags: str = "",
+    deck_id: int | None = None,
+) -> str:
+    """Add several cards to the wishlist in one call (e.g. paste a decklist).
+
+    Each name is resolved via the local DB or Scryfall. Shared priority/tags/
+    deck apply to every card. Reports which were added vs skipped.
+
+    Args:
+        names: Card names to add. Max 100.
+        priority: 1 (low) to 5 (high). Default 3.
+        tags: Comma-separated tags applied to all added cards.
+        deck_id: Optional deck these cards are wanted for.
+    """
+    from .database import get_db
+    from .services.card_resolver import resolve_card
+    try:
+        if not names:
+            return json.dumps({"error": "Provide at least one card name"})
+        if not 1 <= priority <= 5:
+            return json.dumps({"error": "priority must be 1-5"})
+        names = names[:100]
+        db = await get_db()
+        added, skipped = [], []
+        for name in names:
+            card = await resolve_card(db, card_name=name)
+            if not card:
+                skipped.append({"name": name, "reason": "not found"})
+                continue
+            try:
+                await db.execute(
+                    """INSERT INTO wishlist (card_id, quantity, priority, deck_id, tags, notes)
+                       VALUES (?, 1, ?, ?, ?, '')""",
+                    (card["id"], priority, deck_id, tags.strip()),
+                )
+                added.append(card["name"])
+            except Exception as e:
+                if "UNIQUE" in str(e):
+                    skipped.append({"name": card["name"], "reason": "already on wishlist"})
+                else:
+                    skipped.append({"name": name, "reason": str(e)})
+        await db.commit()
+        return json.dumps({"added_count": len(added), "added": added,
+                           "skipped_count": len(skipped), "skipped": skipped}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def analyze_deck(deck_id: int) -> str:
+    """Structured deck analysis: mana curve, colour-pip distribution, card-type
+    breakdown and average mana value. Use for a quick health snapshot.
+
+    Args:
+        deck_id: Local deck ID (from list_decks).
+    """
+    import re
+    from .database import get_db
+    from .services.queries import query_deck_detail
+    try:
+        db = await get_db()
+        detail = await query_deck_detail(db, deck_id)
+        if not detail:
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+
+        curve: dict[int, int] = {}
+        type_counts: dict[str, int] = {}
+        pips = {"W": 0, "U": 0, "B": 0, "R": 0, "G": 0}
+        nonland_cards = 0
+        nonland_cmc_total = 0.0
+        lands = 0
+
+        for c in detail["cards"]:
+            qty = c.get("quantity") or 1
+            type_line = (c.get("type_line") or "")
+            is_land = "Land" in type_line
+            # Primary card type for the breakdown.
+            primary = "Other"
+            for t in ("Creature", "Planeswalker", "Instant", "Sorcery",
+                      "Artifact", "Enchantment", "Battle", "Land"):
+                if t in type_line:
+                    primary = t
+                    break
+            type_counts[primary] = type_counts.get(primary, 0) + qty
+
+            if is_land:
+                lands += qty
+            else:
+                cmc = int(c.get("cmc") or 0)
+                curve[cmc] = curve.get(cmc, 0) + qty
+                nonland_cards += qty
+                nonland_cmc_total += (c.get("cmc") or 0) * qty
+
+            for sym in re.findall(r"\{([WUBRG])\}", c.get("mana_cost") or ""):
+                pips[sym] += qty
+
+        avg_cmc = round(nonland_cmc_total / nonland_cards, 2) if nonland_cards else 0.0
+        return json.dumps({
+            "deck": detail["name"],
+            "format": detail.get("format"),
+            "total_cards": detail.get("card_count"),
+            "lands": lands,
+            "nonland_cards": nonland_cards,
+            "average_cmc": avg_cmc,
+            "mana_curve": {str(k): curve[k] for k in sorted(curve)},
+            "color_pips": pips,
+            "type_breakdown": dict(sorted(type_counts.items(), key=lambda kv: -kv[1])),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def get_acquisition_history(limit: int = 50) -> str:
+    """The Inbox booking archive: decided acquisition events with the action
+    taken, source, and the suggestion shown at confirmation time.
+
+    Args:
+        limit: Max events to return (default 50, max 200).
+    """
+    from .database import get_db
+    try:
+        db = await get_db()
+        limit = max(1, min(200, limit))
+        cursor = await db.execute(
+            """SELECT ae.id, ae.triage_state, ae.triage_decision_at, ae.source,
+                      ae.qty_delta, ae.is_foil, ae.decision_snapshot,
+                      c.name AS card_name, c.set_code, c.set_name
+               FROM acquisition_events ae
+               JOIN cards c ON c.id = ae.card_id
+               WHERE ae.triage_state != 'pending'
+               ORDER BY ae.triage_decision_at DESC, ae.id DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        events = []
+        for r in rows:
+            snapshot = None
+            if r["decision_snapshot"]:
+                try:
+                    snapshot = json.loads(r["decision_snapshot"])
+                except (ValueError, TypeError):
+                    snapshot = None
+            events.append({
+                "event_id": r["id"],
+                "card_name": r["card_name"],
+                "set_code": r["set_code"],
+                "set_name": r["set_name"],
+                "is_foil": bool(r["is_foil"]),
+                "qty_delta": r["qty_delta"],
+                "decided_state": r["triage_state"],
+                "decided_at": r["triage_decision_at"],
+                "source": r["source"],
+                "snapshot": snapshot,
+            })
+        return json.dumps({"count": len(events), "events": events}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
 

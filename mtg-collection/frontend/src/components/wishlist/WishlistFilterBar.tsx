@@ -26,6 +26,7 @@ export interface WishlistFilters {
   deckId: number | null;
   tag: string | null;
   color: string | null;
+  ordered: 'all' | 'ordered' | 'unordered';
   isDealOnly: boolean;
   sort: 'priority' | 'added_at' | 'target_price' | 'current_price' | 'delta_eur';
 }
@@ -36,6 +37,7 @@ export const DEFAULT_FILTERS: WishlistFilters = {
   deckId: null,
   tag: null,
   color: null,
+  ordered: 'all',
   isDealOnly: false,
   sort: 'priority',
 };
@@ -47,18 +49,22 @@ export function filtersToParams(f: WishlistFilters): URLSearchParams {
   if (f.deckId != null) p.set('deck_id', String(f.deckId));
   if (f.tag) p.set('tag', f.tag);
   if (f.color) p.set('color', f.color);
+  if (f.ordered === 'ordered') p.set('is_ordered', 'true');
+  else if (f.ordered === 'unordered') p.set('is_ordered', 'false');
   if (f.isDealOnly) p.set('deals_only', 'true');
   p.set('sort', f.sort);
   return p;
 }
 
 export function filtersFromSearchParams(sp: URLSearchParams): WishlistFilters {
+  const isOrdered = sp.get('is_ordered');
   return {
     status: (sp.get('status') as WishlistFilters['status']) || 'wanted',
     priority: sp.has('priority') ? parseInt(sp.get('priority')!) : null,
     deckId: sp.has('deck_id') ? parseInt(sp.get('deck_id')!) : null,
     tag: sp.get('tag') || null,
     color: sp.get('color') || null,
+    ordered: isOrdered === 'true' ? 'ordered' : isOrdered === 'false' ? 'unordered' : 'all',
     isDealOnly: sp.get('deals_only') === 'true',
     sort: (sp.get('sort') as WishlistFilters['sort']) || 'priority',
   };
@@ -86,6 +92,12 @@ const SORT_OPTIONS: { value: WishlistFilters['sort']; label: string }[] = [
   { value: 'delta_eur', label: 'wishlist.sort_delta' },
 ];
 
+const ORDERED_OPTIONS: { value: WishlistFilters['ordered']; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'ordered', label: '📦 Ordered' },
+  { value: 'unordered', label: 'Not ordered' },
+];
+
 const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'All Colors' },
   { value: 'W', label: '⚪ White' },
@@ -95,6 +107,7 @@ const COLOR_OPTIONS: { value: string; label: string }[] = [
   { value: 'G', label: '🟢 Green' },
   { value: 'M', label: '🌈 Multi' },
   { value: 'C', label: '◆ Colorless' },
+  { value: 'L', label: '🟤 Lands' },
 ];
 
 export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
@@ -156,6 +169,19 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
           <Option key={o.value} value={o.value}>{o.label}</Option>
         ))}
       </Dropdown>
+
+      {filters.status === 'wanted' && (
+        <Dropdown
+          placeholder="Ordered"
+          value={ORDERED_OPTIONS.find(o => o.value === filters.ordered)?.label || 'All'}
+          onOptionSelect={(_, d) => update({ ordered: (d.optionValue as WishlistFilters['ordered']) || 'all' })}
+          style={{ minWidth: '130px' }}
+        >
+          {ORDERED_OPTIONS.map(o => (
+            <Option key={o.value} value={o.value}>{o.label}</Option>
+          ))}
+        </Dropdown>
+      )}
 
       <Checkbox
         label={t('wishlist.deals_only')}

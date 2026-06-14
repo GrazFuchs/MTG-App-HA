@@ -16,6 +16,7 @@ import {
 } from '@fluentui/react-icons';
 import { api, CollectionEntry, CollectionSet, DeckSummary } from '../api';
 import { CardHoverPreview } from '../components/CardHoverPreview';
+import { CardmarketButton } from '../components/CardmarketButton';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
@@ -289,11 +290,14 @@ export default function Collection() {
             <div>
               {entries.map(entry => (
                 <Panel key={entry.id} className={styles.mobileCard}>
-                  <CardHoverPreview card={entry.card}>
-                    <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>
-                      <strong>{entry.card.name}</strong>
-                    </a>
-                  </CardHoverPreview>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <CardHoverPreview card={entry.card}>
+                      <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>
+                        <strong>{entry.card.name}</strong>
+                      </a>
+                    </CardHoverPreview>
+                    <CardmarketButton cardName={entry.card.name} />
+                  </div>
                   <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, marginTop: 4 }}>{entry.card.set_name || entry.card.set_code}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                     <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>Qty: {getCopies(entry)} ({getFinish(entry)})</span>
@@ -317,6 +321,7 @@ export default function Collection() {
                         <CardHoverPreview card={entry.card}>
                           <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                         </CardHoverPreview>
+                        <CardmarketButton cardName={entry.card.name} />
                         {entry.cardmarket_listing_count > 0 && (
                           <span
                             title={t('collection.listed_on_cardmarket', { qty: String(entry.cardmarket_listed_qty) })}
@@ -356,6 +361,7 @@ export default function Collection() {
                           <CardHoverPreview card={entry.card}>
                             <a href={scryfallUrl(entry.card)} target="_blank" rel="noopener noreferrer" className={styles.cardLink}>{entry.card.name}</a>
                           </CardHoverPreview>
+                          <CardmarketButton cardName={entry.card.name} />
                           {entry.cardmarket_listing_count > 0 && (
                             <span
                               title={t('collection.listed_on_cardmarket', { qty: String(entry.cardmarket_listed_qty) })}

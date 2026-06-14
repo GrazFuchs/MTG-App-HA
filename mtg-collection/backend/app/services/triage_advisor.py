@@ -28,14 +28,14 @@ async def _get_suggested_sell_price(db, card_name: str) -> float:
         SELECT cph.trend FROM cardmarket_price_history cph
         JOIN cardmarket_products cp ON cp.cm_product_id = cph.cm_product_id
         JOIN cards c ON c.id = cp.card_id
-        WHERE c.name = ?
+        WHERE LOWER(c.name) = LOWER(?)
         ORDER BY cph.date DESC LIMIT 1
     """, (card_name,))
     cm_row = await cm_cursor.fetchone()
     if cm_row and cm_row["trend"]:
         return round(float(cm_row["trend"]), 2)
 
-    scry_cursor = await db.execute("SELECT price_eur FROM cards WHERE name = ? LIMIT 1", (card_name,))
+    scry_cursor = await db.execute("SELECT price_eur FROM cards WHERE LOWER(name) = LOWER(?) LIMIT 1", (card_name,))
     scry_row = await scry_cursor.fetchone()
     try:
         return round(float(scry_row["price_eur"]), 2) if scry_row and scry_row["price_eur"] else 0.0
@@ -62,38 +62,59 @@ async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[Ex
     # Determine the event_id if available (for sibling detection)
     event_id = event_row.get("id")
 
-    # 2. Other printings of the same card name in collection
+    # 2. All collection rows for this card name (any printing). Matching is
+    #    case-insensitive to stay consistent with the rest of the app
+    #    (LOWER(c.name)=LOWER(?) is used everywhere else) — a case mismatch was
+    #    one way the duplicate check silently missed owned copies.
+    #
+    #    We do NOT drop the new copy's own row outright. If the new arrival
+    #    merged into an existing row (same printing+condition+language), the
+    #    PRE-EXISTING copies in that row are still genuine duplicates; we only
+    #    subtract the freshly-arrived quantity so the new copy isn't counted
+    #    against itself.
     cursor = await db.execute(
         """SELECT col.id, c.set_code, c.set_name, col.quantity, col.foil_quantity,
                c.price_eur, c.price_eur_foil
         FROM collection col JOIN cards c ON c.id = col.card_id
-        WHERE c.name = ? AND col.id != COALESCE(?, -1)""",
-        (card_name, event_row["collection_id"]),
+        WHERE LOWER(c.name) = LOWER(?)""",
+        (card_name,),
     )
     rows = await cursor.fetchall()
+
+    new_col_id = event_row.get("collection_id")
+    is_foil_event = bool(event_row["is_foil"])
+    qty_delta = event_row["qty_delta"] or 0
 
     # 3. Build existing printings list (one per foil/non-foil slot with qty>0)
     printings: list[ExistingPrinting] = []
     for r in rows:
-        if r["quantity"] and r["quantity"] > 0:
+        qty = r["quantity"] or 0
+        foil_qty = r["foil_quantity"] or 0
+        if new_col_id is not None and r["id"] == new_col_id:
+            # Remove the just-arrived copies from their own row.
+            if is_foil_event:
+                foil_qty = max(0, foil_qty - qty_delta)
+            else:
+                qty = max(0, qty - qty_delta)
+        if qty > 0:
             printings.append(ExistingPrinting(
                 collection_id=r["id"],
                 set_code=r["set_code"] or "",
                 set_name=r["set_name"] or "",
                 is_foil=False,
-                quantity=r["quantity"],
+                quantity=qty,
                 foil_quantity=0,
                 price_eur=r["price_eur"] or "0",
                 keep_score=await compute_keep_score(r["price_eur"] or "0", False),
             ))
-        if r["foil_quantity"] and r["foil_quantity"] > 0:
+        if foil_qty > 0:
             printings.append(ExistingPrinting(
                 collection_id=r["id"],
                 set_code=r["set_code"] or "",
                 set_name=r["set_name"] or "",
                 is_foil=True,
                 quantity=0,
-                foil_quantity=r["foil_quantity"],
+                foil_quantity=foil_qty,
                 price_eur=r["price_eur_foil"] or r["price_eur"] or "0",
                 keep_score=await compute_keep_score(r["price_eur_foil"] or r["price_eur"] or "0", True),
             ))
@@ -105,7 +126,7 @@ async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[Ex
             SELECT COALESCE(SUM(ae.qty_delta), 0) as sibling_pending
             FROM acquisition_events ae
             JOIN cards c ON c.id = ae.card_id
-            WHERE c.name = ?
+            WHERE LOWER(c.name) = LOWER(?)
               AND ae.triage_state = 'pending'
               AND ae.id != ?
               AND ae.id < ?
@@ -117,11 +138,11 @@ async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[Ex
     cursor = await db.execute(
         """SELECT COALESCE(SUM(dc.quantity), 0) FROM deck_cards dc
         JOIN cards c ON c.id = dc.card_id
-        WHERE c.name = ?""",
+        WHERE LOWER(c.name) = LOWER(?)""",
         (card_name,),
     )
     in_decks = (await cursor.fetchone())[0]
-    total_owned = sum(p.quantity + p.foil_quantity for p in printings) + event_row["qty_delta"] + sibling_qty
+    total_owned = sum(p.quantity + p.foil_quantity for p in printings) + qty_delta + sibling_qty
     sellable = total_owned - in_decks
 
     suggested_price = await _get_suggested_sell_price(db, card_name)

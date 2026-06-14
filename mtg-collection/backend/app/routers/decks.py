@@ -9,7 +9,7 @@ from ..models.schemas import (
     CardSummary, PairwiseOverlap,
     DeckGame, DeckGameCreate, DeckGameUpdate, DeckPerformanceStats,
 )
-from ..services.queries import query_all_decks
+from ..services.queries import parse_color_identity, query_all_decks
 from ..services.deck_performance import compute_performance_stats
 
 router = APIRouter()
@@ -68,7 +68,7 @@ async def compare_decks(ids: str = Query(..., description="Comma-separated deck 
                 "name": r["name"], "set_code": r["set_code"] or "",
                 "image_uri": r["image_uri"] or "", "price_eur": r["price_eur"] or "",
             }
-            for c in json.loads(r["color_identity"] or "[]"):
+            for c in parse_color_identity(r["color_identity"]):
                 colors.add(c)
         deck_card_sets[did] = cards_in_deck
         deck_colors[did] = colors
@@ -139,8 +139,8 @@ async def get_deck(deck_id: int):
             id=r["id"], scryfall_id=r["scryfall_id"], oracle_id=r["oracle_id"],
             name=r["name"], mana_cost=r["mana_cost"], cmc=r["cmc"],
             type_line=r["type_line"], oracle_text=r["oracle_text"],
-            colors=json.loads(r["colors"] or "[]"),
-            color_identity=json.loads(r["color_identity"] or "[]"),
+            colors=parse_color_identity(r["colors"]),
+            color_identity=parse_color_identity(r["color_identity"]),
             set_code=r["set_code"], set_name=r["set_name"],
             collector_number=r["collector_number"], rarity=r["rarity"],
             image_uri=r["image_uri"], image_art_crop=r["image_art_crop"],
