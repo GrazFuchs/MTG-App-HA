@@ -37,6 +37,21 @@ async def _sync_job():
     except Exception as e:
         logger.error("Scheduled Cardmarket price sync failed: %s", e)
 
+    # MTGStocks sync (daily): print mapping -> prices/all-time extremes -> movers
+    if settings.mtgstocks_enabled:
+        logger.info("Starting scheduled MTGStocks sync...")
+        try:
+            from .services.mtgstocks_prices import (
+                sync_mtgstocks_prints, sync_mtgstocks_prices, sync_mtgstocks_interests,
+            )
+            r1 = await sync_mtgstocks_prints()
+            r2 = await sync_mtgstocks_prices()
+            r3 = await sync_mtgstocks_interests()
+            logger.info("Scheduled MTGStocks sync completed: prints=%s prices=%s interests=%s",
+                        r1, r2, r3)
+        except Exception as e:
+            logger.error("Scheduled MTGStocks sync failed: %s", e)
+
     # Send price spike notifications after price sync
     try:
         from .services.cardmarket_prices import get_price_alerts

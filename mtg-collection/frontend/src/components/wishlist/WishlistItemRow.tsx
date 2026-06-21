@@ -198,7 +198,7 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
         )}
         <div className={styles.mobileInfo}>
           <div className={styles.name}>
-            <PriceTrendHover cardName={item.card_name}>{item.card_name}</PriceTrendHover>
+            <PriceTrendHover cardName={item.card_name} cardId={item.card_id}>{item.card_name}</PriceTrendHover>
             {item.is_foil && <Badge appearance="outline" size="small" style={{ marginLeft: 4 }}>◆</Badge>}
             {item.set_code && <Caption1 style={{ marginLeft: 6 }}>{item.set_code.toUpperCase()}</Caption1>}
           </div>
@@ -227,7 +227,7 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
         <div className={styles.img} />
       )}
       <div>
-        <PriceTrendHover cardName={item.card_name}>
+        <PriceTrendHover cardName={item.card_name} cardId={item.card_id}>
           <span className={styles.name}>{item.card_name}</span>
         </PriceTrendHover>
         {item.is_foil && <Badge appearance="outline" size="small" style={{ marginLeft: 4 }}>◆ Foil</Badge>}

@@ -1,9 +1,12 @@
 import { useRef, useState, ReactNode } from 'react';
 import { makeStyles, shorthands } from '@griffel/react';
-import { api, PriceHistoryEntry } from '../api';
+import { api, PriceHistoryEntry, MtgStocksHistory } from '../api';
 import { Sparkline } from './Sparkline';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
+
+const formatUsd = (v: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
 
 const useStyles = makeStyles({
   trigger: {
@@ -36,6 +39,11 @@ interface Props {
   days?: number;
   /** Optional override for the popup header label. */
   label?: string;
+  /**
+   * Optional card id. When provided, the popup also shows the MTGStocks
+   * long-term (TCGplayer USD) trend plus all-time high/low for the card.
+   */
+  cardId?: number;
 }
 
 /**
@@ -43,10 +51,11 @@ interface Props {
  * sparkline (Cardmarket trend) for the last `days` days. Fetches lazily on
  * first hover. The popup is hoverable so the cursor can travel along the graph.
  */
-export default function PriceTrendHover({ cardName, children, days = 14, label }: Props) {
+export default function PriceTrendHover({ cardName, children, days = 14, label, cardId }: Props) {
   const styles = useStyles();
   const { accent } = useAccent();
   const [history, setHistory] = useState<PriceHistoryEntry[] | null>(null);
+  const [longTerm, setLongTerm] = useState<MtgStocksHistory | null>(null);
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const enterTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -66,6 +75,15 @@ export default function PriceTrendHover({ cardName, children, days = 14, label }
       }
     } catch {
       setHistory([]);
+    }
+    // MTGStocks long-term trend (USD) — best-effort, only when a card id is known.
+    if (cardId) {
+      try {
+        const lt = await api.getMtgStocksHistory(cardId, 365);
+        setLongTerm(lt.series.length > 1 ? lt : null);
+      } catch {
+        setLongTerm(null);
+      }
     }
   };
 
@@ -114,6 +132,28 @@ export default function PriceTrendHover({ cardName, children, days = 14, label }
           ) : (
             <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint }}>
               No price history
+            </div>
+          )}
+          {longTerm && longTerm.series.length > 1 && (
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${sothera.glassBorder}` }}>
+              <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginBottom: 4, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+                MTGStocks · 1y (USD)
+              </div>
+              <Sparkline
+                data={longTerm.series.map(p => ({ v: p.market ?? p.avg ?? p.low ?? 0, date: p.date }))}
+                width={200}
+                height={48}
+                accent={accent.oklch}
+                dot={false}
+                interactive
+                formatValue={formatUsd}
+              />
+              {(longTerm.all_time_high != null || longTerm.all_time_low != null) && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgMuted, marginTop: 4 }}>
+                  <span>ATL ${longTerm.all_time_low?.toFixed(2) ?? '—'}</span>
+                  <span>ATH ${longTerm.all_time_high?.toFixed(2) ?? '—'}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

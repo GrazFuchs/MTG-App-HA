@@ -1,3 +1,12 @@
+## 0.27.0 — Sprint 27 (MTGStocks integration)
+
+### Added
+- **MTGStocks.com integration** — Optional new data source (off by default; enable via the `mtgstocks_enabled` add-on option). Uses MTGStocks' (unofficial) API with a browser-like header set and a polite ~1 req/s rate limit, degrading gracefully if the source is blocked/unavailable. Synced daily after the Cardmarket job.
+  - **Market Movers** — Daily MTGStocks "interests" (market & average boards, regular + foil) filtered to cards you own, surfaced as a **Collection Movers** section on the Dashboard. Exact per-printing matching (set abbreviation + collector number) via each print's `sets[]`.
+  - **Buy/Sell signals** — All-time-high/low tracking per print drives a **Trade Signals** Dashboard section: wishlist cards trading near their all-time low (buy) and owned, unused copies near their all-time high (sell).
+  - **Long-term price history** — Multi-year TCGplayer (USD) trend with all-time high/low, shown as an extra sparkline in the price-trend hover (wishlist rows).
+  - New tables (`mtgstocks_prints`, `mtgstocks_price_history`, `mtgstocks_interests`, migration 17), client `clients/mtgstocks.py`, service `services/mtgstocks_prices.py`, and routes under `/api/mtgstocks` (`/status`, `/movers`, `/signals`, `/price-history/{card_id}`, `/sync`).
+
 ## 0.26.0 — Sprint 26 (MCP server enhancements)
 
 ### Added

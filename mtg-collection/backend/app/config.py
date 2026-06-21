@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     archidekt_deck_ids: list[int] = []
     sync_enabled: bool = True
     sync_hour: int = 3
+    mtgstocks_enabled: bool = False
     mcp_auth_token: str = ""
     cardmarket_username: str = ""
     mqtt_enabled: bool = False

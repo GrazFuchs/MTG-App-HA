@@ -1,5 +1,5 @@
 name: "MTG Collection Manager"
-version: "0.26.0"
+version: "0.27.0"
 slug: "mtg-collection"
 description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
 arch:
@@ -24,6 +24,7 @@ options:
   archidekt_deck_ids: []
   sync_enabled: true
   sync_hour: 3
+  mtgstocks_enabled: false
   mcp_auth_token: ""
   cardmarket_username: ""
   mqtt_enabled: false
@@ -43,6 +44,7 @@ schema:
     - "int"
   sync_enabled: "bool"
   sync_hour: "int(0,23)"
+  mtgstocks_enabled: "bool"
   mcp_auth_token: "str?"
   cardmarket_username: "str?"
   mqtt_enabled: "bool"

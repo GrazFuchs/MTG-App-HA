@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.26.0 |
+| App version | 0.27.0 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |

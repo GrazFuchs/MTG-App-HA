@@ -504,6 +504,73 @@ async def _migration_16(db: aiosqlite.Connection):
     )
 
 
+async def _migration_17(db: aiosqlite.Connection):
+    """MTGStocks integration: print mapping (+ latest prices & all-time high/low),
+    a daily price snapshot table, and a market-movers (interests) snapshot table."""
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS mtgstocks_prints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtgstocks_print_id INTEGER UNIQUE NOT NULL,
+            card_id INTEGER REFERENCES cards(id),
+            card_name TEXT DEFAULT '',
+            set_name TEXT DEFAULT '',
+            all_time_high REAL,
+            all_time_high_date TEXT,
+            all_time_low REAL,
+            all_time_low_date TEXT,
+            market REAL,
+            avg REAL,
+            low REAL,
+            market_foil REAL,
+            low_foil REAL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_mtgstocks_prints_card ON mtgstocks_prints(card_id)")
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS mtgstocks_price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtgstocks_print_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            market REAL,
+            avg REAL,
+            low REAL,
+            market_foil REAL,
+            low_foil REAL,
+            UNIQUE(mtgstocks_print_id, date)
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mtgstocks_price_print ON mtgstocks_price_history(mtgstocks_print_id)"
+    )
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS mtgstocks_interests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            mtgstocks_print_id INTEGER NOT NULL,
+            card_id INTEGER REFERENCES cards(id),
+            card_name TEXT DEFAULT '',
+            set_name TEXT DEFAULT '',
+            set_code TEXT DEFAULT '',
+            kind TEXT NOT NULL,
+            is_foil INTEGER DEFAULT 0,
+            interest_type TEXT DEFAULT '',
+            percentage REAL,
+            present_price REAL,
+            past_price REAL,
+            UNIQUE(date, mtgstocks_print_id, kind, is_foil)
+        )
+    """)
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mtgstocks_interests_date ON mtgstocks_interests(date)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mtgstocks_interests_card ON mtgstocks_interests(card_id)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -520,6 +587,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     14: _migration_14,
     15: _migration_15,
     16: _migration_16,
+    17: _migration_17,
 }
 
 

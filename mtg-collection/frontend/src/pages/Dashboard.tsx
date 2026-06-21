@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { makeStyles, shorthands } from '@griffel/react';
 import { Spinner } from '@fluentui/react-components';
-import { api, CollectionStats, PriceAlert, ValueSnapshot } from '../api';
+import { api, CollectionStats, PriceAlert, ValueSnapshot, MtgStocksMover, MtgStocksSignals } from '../api';
 import { Sparkline } from '../components/Sparkline';
 import { t } from '../i18n';
 import { sothera } from '../theme/sothera';
@@ -187,6 +187,24 @@ export default function Dashboard() {
     queryFn: () => api.getValueHistory(90),
     staleTime: 5 * 60_000,
   });
+  const { data: mtgStocks } = useQuery<{ enabled: boolean }>({
+    queryKey: ['mtgstocksStatus'],
+    queryFn: () => api.getMtgStocksStatus(),
+    staleTime: 10 * 60_000,
+  });
+  const mtgStocksOn = !!mtgStocks?.enabled;
+  const { data: movers = [] } = useQuery<MtgStocksMover[]>({
+    queryKey: ['mtgstocksMovers'],
+    queryFn: () => api.getMtgStocksMovers(20),
+    staleTime: 5 * 60_000,
+    enabled: mtgStocksOn,
+  });
+  const { data: signals } = useQuery<MtgStocksSignals>({
+    queryKey: ['mtgstocksSignals'],
+    queryFn: () => api.getMtgStocksSignals(),
+    staleTime: 5 * 60_000,
+    enabled: mtgStocksOn,
+  });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   if (statsLoading || alertsLoading) return <Spinner label="Loading..." />;
@@ -318,6 +336,80 @@ export default function Dashboard() {
                   </div>
                 );
               })}
+          </Panel>
+        </>
+      )}
+
+      {/* MTGStocks: Collection Movers */}
+      {mtgStocksOn && movers.length > 0 && (
+        <>
+          <SectionHeader num="02" title="Collection Movers" right={`MTGSTOCKS · ${movers.length}`} accent={accent.oklch} />
+          <Panel>
+            {movers.map((m, i) => {
+              const up = m.direction === 'up';
+              const color = up ? sothera.positive : sothera.negative;
+              return (
+                <div key={i} className={styles.alertRow}>
+                  <div>
+                    <span className={styles.alertName}>{m.card_name}</span>
+                    {m.is_foil && <span style={{ marginLeft: 6, fontSize: 11 }}>◆</span>}
+                    {m.set_code && (
+                      <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginLeft: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.glassBorder}`, color: sothera.fgMuted }}>
+                        {m.set_code.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className={styles.alertSuggestion}>
+                    {m.kind === 'market' ? 'market' : 'avg'} · {m.interest_type || 'move'} · {m.owned} owned
+                  </div>
+                  <div className={styles.alertSpike} style={{ color }}>
+                    {up ? '+' : ''}{m.percentage}%
+                    {m.present_price != null && (
+                      <div className={styles.alertPrice}>
+                        {m.past_price != null ? `$${m.past_price.toFixed(2)} → ` : ''}${m.present_price.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </Panel>
+        </>
+      )}
+
+      {/* MTGStocks: Buy/Sell Signals */}
+      {mtgStocksOn && signals && (signals.buy.length > 0 || signals.sell.length > 0) && (
+        <>
+          <SectionHeader num="03" title="Trade Signals" right={`${signals.buy.length} BUY · ${signals.sell.length} SELL`} accent={accent.oklch} />
+          <Panel>
+            {signals.buy.map((b, i) => (
+              <div key={`b${i}`} className={styles.alertRow}>
+                <div>
+                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.positive}`, color: sothera.positive }}>BUY</span>
+                  <span className={styles.alertName}>{b.card_name}</span>
+                </div>
+                <div className={styles.alertSuggestion}>near all-time low (+{b.pct_above_low}%)</div>
+                <div className={styles.alertSpike} style={{ color: sothera.positive }}>
+                  ${b.current_usd.toFixed(2)}
+                  <div className={styles.alertPrice}>ATL ${b.all_time_low.toFixed(2)}</div>
+                </div>
+              </div>
+            ))}
+            {signals.sell.map((s, i) => (
+              <div key={`s${i}`} className={styles.alertRow}>
+                <div>
+                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.negative}`, color: sothera.negative }}>SELL</span>
+                  <span className={styles.alertName}>{s.card_name}</span>
+                </div>
+                <div className={styles.alertSuggestion}>
+                  {s.pct_of_high}% of ATH · {s.unused_copies} unused cop{s.unused_copies === 1 ? 'y' : 'ies'}
+                </div>
+                <div className={styles.alertSpike} style={{ color: sothera.negative }}>
+                  ${s.current_usd.toFixed(2)}
+                  <div className={styles.alertPrice}>ATH ${s.all_time_high.toFixed(2)}</div>
+                </div>
+              </div>
+            ))}
           </Panel>
         </>
       )}

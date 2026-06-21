@@ -173,6 +173,70 @@ export interface PriceAlert {
   suggestion: string;
 }
 
+// --- MTGStocks ---
+
+export interface MtgStocksHistoryPoint {
+  date: string;
+  market?: number;
+  avg?: number;
+  low?: number;
+  market_foil?: number;
+}
+
+export interface MtgStocksHistory {
+  series: MtgStocksHistoryPoint[];
+  all_time_high: number | null;
+  all_time_high_date: string | null;
+  all_time_low: number | null;
+  all_time_low_date: string | null;
+  currency: string;
+}
+
+export interface MtgStocksMover {
+  card_id: number;
+  card_name: string;
+  set_name: string;
+  set_code: string;
+  kind: string;
+  is_foil: boolean;
+  interest_type: string;
+  percentage: number;
+  present_price: number | null;
+  past_price: number | null;
+  direction: 'up' | 'down';
+  owned: number;
+}
+
+export interface MtgStocksBuySignal {
+  card_id: number;
+  card_name: string;
+  set_name: string;
+  current_usd: number;
+  all_time_low: number;
+  all_time_low_date: string | null;
+  pct_above_low: number;
+  suggestion: string;
+}
+
+export interface MtgStocksSellSignal {
+  card_id: number;
+  card_name: string;
+  set_name: string;
+  current_usd: number;
+  all_time_high: number;
+  all_time_high_date: string | null;
+  pct_of_high: number;
+  owned: number;
+  in_decks: number;
+  unused_copies: number;
+  suggestion: string;
+}
+
+export interface MtgStocksSignals {
+  buy: MtgStocksBuySignal[];
+  sell: MtgStocksSellSignal[];
+}
+
 export interface CollectionStats {
   total_cards: number;
   unique_cards: number;
@@ -652,6 +716,14 @@ export const api = {
     request<{ cm_product_id: number; card_name: string; expansion: string }[]>(
       `/api/cardmarket/products${search ? `?search=${encodeURIComponent(search)}` : ''}`
     ),
+
+  // MTGStocks
+  getMtgStocksStatus: () => request<{ enabled: boolean }>('/api/mtgstocks/status'),
+  getMtgStocksHistory: (cardId: number, days?: number) =>
+    request<MtgStocksHistory>(`/api/mtgstocks/price-history/${cardId}${days ? `?days=${days}` : ''}`),
+  getMtgStocksMovers: (limit?: number) =>
+    request<MtgStocksMover[]>(`/api/mtgstocks/movers${limit ? `?limit=${limit}` : ''}`),
+  getMtgStocksSignals: () => request<MtgStocksSignals>('/api/mtgstocks/signals'),
 
   // EDHREC
   getEDHRECRecommendations: (commander: string) =>
