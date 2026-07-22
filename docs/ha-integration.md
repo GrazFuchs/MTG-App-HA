@@ -98,7 +98,51 @@ These sensors are published once daily after the scheduled sync (and on startup)
 | `sensor.mtg_listings_overpriced` | Cardmarket listings above trend (+15 %) | – |
 | `sensor.mtg_listings_fair` | Cardmarket listings within the fair band | – |
 
+### Inbox / acquisition triage
+
+| Sensor entity | Description | Unit |
+|---------------|-------------|------|
+| `sensor.mtg_inbox_pending` | Cards waiting for a triage decision | – |
+| `sensor.mtg_inbox_needs_sell` | Of those, ones the advisor suggests selling (`sold_new`/`swap`) | – |
+| `sensor.mtg_inbox_needs_keep` | Of those, ones the advisor suggests keeping | – |
+| `sensor.mtg_inbox_pending_value_eur` | Market value of everything still pending | EUR |
+| `sensor.mtg_inbox_oldest_age_days` | Age of the oldest pending card | d |
+| `sensor.mtg_inbox_decided_30d` | Triage decisions in the last 30 days | – |
+| `binary_sensor.mtg_inbox_has_pending` | `on` while anything is pending | – |
+
+`sensor.mtg_inbox_pending` carries the 10 newest pending cards in its `items`
+attribute (name, set, quantity, suggestion, reason, price, age).
+`sensor.mtg_inbox_decided_30d` carries a `by_state` breakdown.
+
+Basic lands are excluded everywhere, matching the Inbox UI.
+
+### Selling
+
+| Sensor entity | Description | Unit |
+|---------------|-------------|------|
+| `sensor.mtg_sell_candidates` | Cards the sell advisor recommends selling | – |
+| `sensor.mtg_sell_potential_eur` | Expected proceeds if you sold all unused copies | EUR |
+| `sensor.mtg_duplicates_surplus_cards` | Surplus copies beyond deck usage and existing listings | – |
+| `sensor.mtg_duplicates_surplus_value_eur` | Value of that surplus | EUR |
+| `sensor.mtg_unlisted_value_eur` | Value of surplus **not yet listed** on Cardmarket — your to-do number | EUR |
+
+`sensor.mtg_sell_candidates` and `sensor.mtg_unlisted_value_eur` carry their top
+10 rows in the `items` attribute.
+
+### MTGStocks signals
+
+Published only while `mtgstocks_enabled` is on; switching the option off clears
+the entities from HA.
+
+| Sensor entity | Description |
+|---------------|-------------|
+| `sensor.mtg_signals_buy` | Wishlist cards trading near their all-time low |
+| `sensor.mtg_signals_sell` | Owned, unused copies trading near their all-time high |
+
 All sensors are registered via MQTT Discovery under the `MTG Collection` device.
+The discovery payload pins `object_id`, so a fresh install gets exactly the
+entity ids listed above. Entities that already exist keep the id they have —
+check Settings → Devices & Services → MQTT if yours differ.
 
 The count sensors declare `state_class: measurement` and the monetary ones
 `state_class: total`, so HA records long-term statistics for them — you can chart
@@ -242,6 +286,68 @@ automation:
         data:
           message: "MTG price spike alert. Check your collection manager."
           cache: false
+```
+
+### New cards in the inbox → mobile notification
+
+```yaml
+automation:
+  - alias: "MTG Inbox: new cards to triage"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.mtg_inbox_pending
+        above: 0
+    action:
+      - service: notify.mobile_app_yourphone
+        data:
+          title: "MTG Inbox: {{ states('sensor.mtg_inbox_pending') }} cards"
+          message: >
+            {{ state_attr('sensor.mtg_inbox_pending', 'items')
+               | map(attribute='card_name') | join(', ') }}
+            — {{ states('sensor.mtg_inbox_needs_sell') }} suggested for selling.
+```
+
+### Weekly selling report
+
+```yaml
+automation:
+  - alias: "MTG: weekly sell report"
+    trigger:
+      - platform: time
+        at: "18:00:00"
+    condition:
+      - condition: time
+        weekday: [sun]
+      - condition: numeric_state
+        entity_id: sensor.mtg_sell_potential_eur
+        above: 20
+    action:
+      - service: notify.mobile_app_yourphone
+        data:
+          title: "MTG: €{{ states('sensor.mtg_sell_potential_eur') }} sellable"
+          message: >
+            {{ states('sensor.mtg_sell_candidates') }} candidates,
+            €{{ states('sensor.mtg_unlisted_value_eur') }} not yet listed.
+            Top: {% for c in state_attr('sensor.mtg_sell_candidates', 'items')[:3] %}
+            {{ c.card_name }} ({{ c.copies_to_sell }}× €{{ c.trend_price_eur }}){% endfor %}
+```
+
+### Inbox left unattended
+
+```yaml
+automation:
+  - alias: "MTG Inbox: cards waiting too long"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.mtg_inbox_oldest_age_days
+        above: 14
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "MTG Inbox"
+          message: >
+            The oldest card has been waiting
+            {{ states('sensor.mtg_inbox_oldest_age_days') }} days.
 ```
 
 ### Wishlist deal alert

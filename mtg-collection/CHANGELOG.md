@@ -1,3 +1,20 @@
+## 0.29.0 — Sprint 29 (inbox & sell sensors)
+
+### Added
+- **Inbox sensors** — `mtg_inbox_pending`, `mtg_inbox_needs_sell`, `mtg_inbox_needs_keep`, `mtg_inbox_pending_value_eur`, `mtg_inbox_oldest_age_days`, `mtg_inbox_decided_30d` and a `binary_sensor.mtg_inbox_has_pending`. The pending sensor carries the 10 newest cards (name, set, quantity, triage suggestion, reason, price, age) as attributes; the decided sensor carries a per-state breakdown. Basic lands are excluded, matching the Inbox UI.
+- **Selling sensors** — `mtg_sell_candidates` and `mtg_sell_potential_eur` from the sell advisor, plus `mtg_duplicates_surplus_cards`, `mtg_duplicates_surplus_value_eur` and `mtg_unlisted_value_eur` (the surplus not yet listed on Cardmarket). Candidates and unlisted rows carry their top 10 entries as attributes.
+- **MTGStocks signal sensors** — `mtg_signals_buy` / `mtg_signals_sell`, published only while `mtgstocks_enabled` is on; turning the option off clears them from HA.
+- **Refresh on triage** — Confirming or undoing an inbox decision refreshes the inbox sensors, debounced by 5 s so working through the inbox does not trigger one full recompute per click. Everything else refreshes with the existing daily stats publish.
+- **Predictable entity ids** — Discovery now pins `object_id`, so a fresh install gets exactly the entity ids listed in the docs (`sensor.mtg_inbox_pending`, …) instead of ids derived from the device and entity name. Existing entities keep the id they already have.
+- Example automations for the new sensors in [docs/ha-integration.md](../docs/ha-integration.md): inbox push notification, weekly selling report, "inbox left unattended" reminder.
+
+### Fixed
+- **Sell advisor skipped cards that are in no deck** — In `HAVING total_owned > in_decks`, SQLite resolved the bare `in_decks` to the joined `deck_use.in_decks` column (NULL for a card in no deck) rather than to the `COALESCE(…, 0)` output alias, so the comparison evaluated to NULL and the row was dropped. Cards not used in any deck — the most obvious sell candidates — never showed up in `suggest_sells`, and its "nicht in Decks" reason was unreachable. Affects the Dashboard sell suggestions and the `suggest_sells` MCP tool.
+- **`suggest_sells` with no target** — The advisor can now be called with `target_amount_eur=None` to rank every candidate and offer all unused copies, instead of stopping at the first €50.
+
+### Changed
+- The duplicates CTE moved from `routers/collection.py` to `services/queries.py` so the Duplicates API and the surplus sensors share one definition of "surplus".
+
 ## 0.28.0 — Sprint 28 (MQTT foundation)
 
 Groundwork for the HA dashboard integration planned in [docs/ha-dashboard-sprints.md](../docs/ha-dashboard-sprints.md). No new entities — the existing ones get more reliable instead.

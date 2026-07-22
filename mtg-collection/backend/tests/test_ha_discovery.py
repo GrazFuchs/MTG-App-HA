@@ -35,7 +35,7 @@ EXPECTED_UNIQUE_IDS = [
 
 
 def test_aggregate_unique_ids_are_stable():
-    assert [e.object_id for e in ha_publisher.AGGREGATE_SENSORS] == EXPECTED_UNIQUE_IDS
+    assert [e.resolved_unique_id for e in ha_publisher.AGGREGATE_SENSORS] == EXPECTED_UNIQUE_IDS
 
 
 def test_aggregate_discovery_topics_unchanged():
@@ -98,12 +98,34 @@ def test_extra_keys_are_merged():
     assert discovery_topic(entity) == "homeassistant/select/mtg_collection_log_result/config"
 
 
+def test_entity_ids_are_predictable():
+    """object_id pins the generated entity_id to sensor.mtg_<key>."""
+    by_key = {e.key: e for e in ha_publisher.active_entities()}
+    assert by_key["total_cards"].object_id == "mtg_total_cards"
+    assert by_key["inbox_pending"].object_id == "mtg_inbox_pending"
+    assert by_key["unlisted_value_eur"].object_id == "mtg_unlisted_value_eur"
+    # …while the registry identity stays on its historical value
+    assert by_key["total_cards"].resolved_unique_id == "mtg_collection_total_cards"
+
+
+def test_attributes_topic_derived_from_state_topic():
+    entity = ha_publisher.INBOX_SENSORS[0]
+    payload = discovery_payload(entity, "mtg-collection", "mtg-collection/status")
+    assert payload["json_attributes_topic"] == "mtg-collection/inbox_pending/attributes"
+
+    plain = ha_publisher.AGGREGATE_SENSORS[0]
+    assert "json_attributes_topic" not in discovery_payload(
+        plain, "mtg-collection", "mtg-collection/status"
+    )
+
+
 def test_wishlist_entity_shape_unchanged():
     entity = ha_publisher._wishlist_entity(42, "Sol Ring", "C21", "mtg-collection")
     payload = discovery_payload(entity, "mtg-collection", "mtg-collection/status")
 
     assert discovery_topic(entity) == "homeassistant/sensor/mtg_wishlist_42/config"
     assert payload["unique_id"] == "mtg_wishlist_42"
+    assert payload["object_id"] == "mtg_wishlist_42"
     assert payload["name"] == "MTG Wishlist Sol Ring (C21)"
     assert payload["state_topic"] == "mtg-collection/wishlist/42/state"
     assert payload["json_attributes_topic"] == "mtg-collection/wishlist/42/state"
@@ -267,11 +289,16 @@ async def test_discovery_publishes_every_sensor_retained(fake_mqtt):
 
     assert len(_FakeClient.instances) == 1  # one fallback connection for the batch
     published = _FakeClient.instances[0].published
-    assert len(published) == len(ha_publisher.AGGREGATE_SENSORS)
+    # Active entities, plus a cleared config for each disabled MTGStocks sensor
+    assert len(published) == len(ha_publisher.active_entities()) + len(
+        ha_publisher.SIGNAL_SENSORS
+    )
     assert all(retain for _, _, retain in published)
 
     topics = [t for t, _, _ in published]
     assert "homeassistant/sensor/mtg_collection_total_cards/config" in topics
+    assert "homeassistant/sensor/mtg_collection_inbox_pending/config" in topics
+    assert "homeassistant/binary_sensor/mtg_collection_inbox_has_pending/config" in topics
 
     payload = json.loads(published[0][1])
     assert payload["availability_topic"] == "mtg-collection/status"
@@ -285,6 +312,55 @@ async def test_stats_publish_uses_one_connection(fake_mqtt):
     topics = [t for t, _, _ in _FakeClient.instances[0].published]
     assert "mtg-collection/total_cards" in topics
     assert "mtg-collection/listings_fair" in topics
+    # Inbox and sell metrics ride along with the stats refresh
+    assert "mtg-collection/inbox_pending" in topics
+    assert "mtg-collection/inbox_pending/attributes" in topics
+    assert "mtg-collection/sell_candidates" in topics
+    assert "mtg-collection/unlisted_value_eur" in topics
+
+
+@pytest.mark.anyio
+async def test_signal_sensors_only_published_when_mtgstocks_enabled(fake_mqtt, monkeypatch):
+    from app import config
+
+    keys = {e.key for e in ha_publisher.active_entities()}
+    assert "signals_buy" not in keys
+
+    monkeypatch.setattr(config.get_settings(), "mtgstocks_enabled", True)
+    keys = {e.key for e in ha_publisher.active_entities()}
+    assert {"signals_buy", "signals_sell"} <= keys
+
+
+@pytest.mark.anyio
+async def test_disabled_signal_configs_are_cleared(fake_mqtt):
+    await ha_publisher.publish_discovery()
+
+    cleared = [
+        (t, p) for t, p, _ in _FakeClient.instances[0].published if p == ""
+    ]
+    assert [t for t, _ in cleared] == [
+        "homeassistant/sensor/mtg_collection_signals_buy/config",
+        "homeassistant/sensor/mtg_collection_signals_sell/config",
+    ]
+
+
+@pytest.mark.anyio
+async def test_inbox_publish_is_debounced(fake_mqtt, monkeypatch):
+    monkeypatch.setattr(ha_publisher, "INBOX_PUBLISH_DEBOUNCE_S", 0.02)
+    monkeypatch.setattr(ha_publisher, "_inbox_publish_task", None)
+
+    calls = []
+
+    async def _record():
+        calls.append(1)
+
+    monkeypatch.setattr(ha_publisher, "publish_inbox_sensors", _record)
+
+    for _ in range(5):  # five rapid triage decisions
+        ha_publisher.schedule_inbox_publish()
+
+    await asyncio.sleep(0.1)
+    assert calls == [1]
 
 
 @pytest.mark.anyio

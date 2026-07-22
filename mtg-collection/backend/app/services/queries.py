@@ -144,6 +144,84 @@ def color_identity_condition(
         return f"{alias}.type_line LIKE '%Land%'"
     return None
 
+
+# ---------------------------------------------------------------------------
+# Duplicates
+#
+# One row per (card_id, set_code, is_foil) with the surplus columns computed.
+# `{where}` is substituted per caller and appears in BOTH union legs, so the
+# bound parameters have to be passed twice.  Used by the Duplicates API and by
+# the HA surplus sensors, which must agree on what "surplus" means.
+# ---------------------------------------------------------------------------
+DUPLICATES_CTE = """
+    WITH deck_usage AS (
+        SELECT c2.name, SUM(dc.quantity) as in_decks
+        FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
+        GROUP BY c2.name
+    ),
+    global_owned AS (
+        SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
+        FROM collection col2 JOIN cards c3 ON c3.id = col2.card_id
+        GROUP BY c3.name
+    ),
+    printing_rows AS (
+        SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+               c.image_uri, c.price_eur, c.price_eur_foil, c.color_identity,
+               c.type_line, c.collector_number,
+               0 as is_foil,
+               SUM(col.quantity) as total_copies,
+               COALESCE(du.in_decks, 0) as in_decks,
+               COALESCE(go.total_global, 0) as total_global
+        FROM collection col
+        JOIN cards c ON c.id = col.card_id
+        LEFT JOIN deck_usage du ON du.name = c.name
+        LEFT JOIN global_owned go ON go.name = c.name
+        WHERE {where}
+        GROUP BY c.id, c.set_code
+        HAVING SUM(col.quantity) > 0
+
+        UNION ALL
+
+        SELECT c.id as card_id, c.name, c.set_code, c.set_name, c.rarity,
+               c.image_uri, c.price_eur, c.price_eur_foil, c.color_identity,
+               c.type_line, c.collector_number,
+               1 as is_foil,
+               SUM(col.foil_quantity) as total_copies,
+               COALESCE(du.in_decks, 0) as in_decks,
+               COALESCE(go.total_global, 0) as total_global
+        FROM collection col
+        JOIN cards c ON c.id = col.card_id
+        LEFT JOIN deck_usage du ON du.name = c.name
+        LEFT JOIN global_owned go ON go.name = c.name
+        WHERE {where}
+        GROUP BY c.id, c.set_code
+        HAVING SUM(col.foil_quantity) > 0
+    ),
+    with_extras AS (
+        SELECT pr.*,
+               MAX(pr.total_global - pr.in_decks, 0) as extras_global,
+               pr.total_copies as extras,
+               COALESCE((
+                   SELECT SUM(l.quantity) FROM cardmarket_listings l
+                   WHERE LOWER(l.card_name) = LOWER(pr.name)
+               ), 0) as listed_quantity
+        FROM printing_rows pr
+        WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
+    )
+"""
+
+# Surplus copies left after existing Cardmarket listings, and their value.
+DUPLICATES_FINAL_CTE = """
+    final AS (
+        SELECT *,
+            MAX(extras - listed_quantity, 0) as extras_after_listings,
+            CAST(COALESCE(NULLIF(
+                CASE WHEN is_foil THEN price_eur_foil ELSE price_eur END, ''), '0') AS REAL)
+                * MAX(extras - listed_quantity, 0) as extra_value
+        FROM with_extras
+    )
+"""
+
 # ---------------------------------------------------------------------------
 # Canonical definitions (used everywhere — keep these in sync with the UI labels)
 #

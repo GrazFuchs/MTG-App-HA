@@ -71,26 +71,133 @@ AGGREGATE_SENSORS = [
     ),
 ]
 
+# Inbox / acquisition triage
+INBOX_SENSORS = [
+    Entity(
+        key="inbox_pending", name="MTG Inbox Pending",
+        icon="mdi:tray-full", state_class="measurement", has_attributes=True,
+    ),
+    Entity(
+        key="inbox_needs_sell", name="MTG Inbox Needs Sell",
+        icon="mdi:tag-arrow-right", state_class="measurement",
+    ),
+    Entity(
+        key="inbox_needs_keep", name="MTG Inbox Needs Keep",
+        icon="mdi:archive-check", state_class="measurement",
+    ),
+    Entity(
+        key="inbox_pending_value_eur", name="MTG Inbox Pending Value",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:cash-clock",
+    ),
+    Entity(
+        key="inbox_oldest_age_days", name="MTG Inbox Oldest Age",
+        unit="d", state_class="measurement", icon="mdi:clock-alert-outline",
+    ),
+    Entity(
+        key="inbox_decided_30d", name="MTG Inbox Decided 30d",
+        icon="mdi:check-decagram", state_class="measurement", has_attributes=True,
+    ),
+    Entity(
+        key="inbox_has_pending", name="MTG Inbox Has Pending",
+        component="binary_sensor", icon="mdi:tray-alert",
+        extra={"payload_on": "ON", "payload_off": "OFF"},
+    ),
+]
+
+# Selling: advisor candidates, duplicate surplus, unlisted backlog
+SELL_SENSORS = [
+    Entity(
+        key="sell_candidates", name="MTG Sell Candidates",
+        icon="mdi:tag-multiple", state_class="measurement", has_attributes=True,
+    ),
+    Entity(
+        key="sell_potential_eur", name="MTG Sell Potential",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:cash-plus",
+    ),
+    Entity(
+        key="duplicates_surplus_cards", name="MTG Duplicates Surplus",
+        icon="mdi:content-duplicate", state_class="measurement",
+    ),
+    Entity(
+        key="duplicates_surplus_value_eur", name="MTG Duplicates Surplus Value",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:cash-multiple",
+    ),
+    Entity(
+        key="unlisted_value_eur", name="MTG Unlisted Value",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:tag-off", has_attributes=True,
+    ),
+]
+
+# MTGStocks all-time-high/low signals — only published while the optional
+# MTGStocks integration is enabled.
+SIGNAL_SENSORS = [
+    Entity(
+        key="signals_buy", name="MTG Buy Signals",
+        icon="mdi:trending-down", state_class="measurement", has_attributes=True,
+    ),
+    Entity(
+        key="signals_sell", name="MTG Sell Signals",
+        icon="mdi:trending-up", state_class="measurement", has_attributes=True,
+    ),
+]
+
+
+def _mtgstocks_enabled() -> bool:
+    from ..config import get_settings
+
+    return bool(get_settings().mtgstocks_enabled)
+
+
+def active_entities() -> list[Entity]:
+    """Every entity that should currently exist in HA."""
+    entities = AGGREGATE_SENSORS + INBOX_SENSORS + SELL_SENSORS
+    if _mtgstocks_enabled():
+        entities += SIGNAL_SENSORS
+    return entities
+
 
 async def publish_discovery():
-    """Publish HA MQTT Discovery config for all aggregate sensors."""
+    """Publish HA MQTT Discovery config for all aggregate sensors.
+
+    Entities of disabled integrations get their retained config cleared, so
+    turning MTGStocks off removes the signal sensors from HA instead of
+    leaving them behind with a stale value.
+    """
     if not ha_mqtt.is_available():
         return
 
     prefix = ha_mqtt.topic_prefix()
     availability = ha_mqtt.status_topic()
+    entities = active_entities()
+    retired = [e for e in SIGNAL_SENSORS if e not in entities]
 
     try:
         async with ha_mqtt.session() as client:
-            for entity in AGGREGATE_SENSORS:
+            for entity in entities:
                 await client.publish(
                     discovery_topic(entity),
                     payload=json.dumps(discovery_payload(entity, prefix, availability)),
                     retain=True,
                 )
-        logger.info("MQTT discovery configs published for %d sensors", len(AGGREGATE_SENSORS))
+            for entity in retired:
+                await client.publish(discovery_topic(entity), payload="", retain=True)
+        logger.info("MQTT discovery configs published for %d entities", len(entities))
     except Exception:
         logger.exception("Failed to publish MQTT discovery configs")
+
+
+async def _publish_metrics(client, prefix: str, metrics) -> None:
+    """Publish a Metrics bundle: states, plus attributes where present."""
+    for key, value in metrics.states.items():
+        await client.publish(f"{prefix}/{key}", payload=str(value), retain=True)
+    for key, attributes in metrics.attributes.items():
+        await client.publish(
+            f"{prefix}/{key}/attributes", payload=json.dumps(attributes), retain=True
+        )
 
 
 async def publish_stats():
@@ -181,6 +288,15 @@ async def publish_stats():
             "listings_fair": listings_fair,
         }
 
+        # Inbox / sell metrics.  Each block degrades independently so one bad
+        # query cannot take the whole stats publish down.
+        bundles = []
+        for name, factory in _metric_bundles(db):
+            try:
+                bundles.append(await factory())
+            except Exception:
+                logger.exception("Could not compute %s metrics for MQTT", name)
+
         async with ha_mqtt.session() as client:
             for key, value in values.items():
                 await client.publish(
@@ -188,9 +304,69 @@ async def publish_stats():
                     payload=str(value),
                     retain=True,
                 )
-        logger.info("MQTT stats published: %d sensors updated", len(values))
+            for bundle in bundles:
+                await _publish_metrics(client, prefix, bundle)
+
+        published = len(values) + sum(len(b.states) for b in bundles)
+        logger.info("MQTT stats published: %d sensors updated", published)
     except Exception:
         logger.exception("Failed to publish MQTT stats")
+
+
+def _metric_bundles(db):
+    """The metric factories that make up a full stats refresh."""
+    from . import ha_metrics
+
+    bundles = [
+        ("inbox", lambda: ha_metrics.inbox_metrics(db)),
+        ("sell", lambda: ha_metrics.sell_metrics(db)),
+    ]
+    if _mtgstocks_enabled():
+        bundles.append(("signals", ha_metrics.signal_metrics))
+    return bundles
+
+
+async def publish_inbox_sensors() -> None:
+    """Refresh only the inbox sensors (after a triage decision)."""
+    if not ha_mqtt.is_available():
+        return
+
+    from ..database import get_db
+    from . import ha_metrics
+
+    try:
+        db = await get_db()
+        metrics = await ha_metrics.inbox_metrics(db)
+        async with ha_mqtt.session() as client:
+            await _publish_metrics(client, ha_mqtt.topic_prefix(), metrics)
+        logger.debug("MQTT inbox sensors published")
+    except Exception:
+        logger.exception("Failed to publish inbox MQTT sensors")
+
+
+_inbox_publish_task: asyncio.Task | None = None
+INBOX_PUBLISH_DEBOUNCE_S = 5.0
+
+
+def schedule_inbox_publish() -> None:
+    """Publish the inbox sensors shortly, coalescing rapid triage decisions.
+
+    Recomputing the suggestion split costs a few queries per pending event, so
+    working through the inbox card by card must not trigger one full refresh
+    per click.  A pending publish already covers any decision made before it
+    fires.
+    """
+    global _inbox_publish_task
+    if not ha_mqtt.is_available():
+        return
+    if _inbox_publish_task is not None and not _inbox_publish_task.done():
+        return
+
+    async def _delayed() -> None:
+        await asyncio.sleep(INBOX_PUBLISH_DEBOUNCE_S)
+        await publish_inbox_sensors()
+
+    _inbox_publish_task = asyncio.create_task(_delayed())
 
 
 # ---------------------------------------------------------------------------

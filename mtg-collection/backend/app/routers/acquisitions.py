@@ -11,6 +11,7 @@ from ..models.schemas import (
     InboxAcquisitionStats,
     TriageDecisionRequest,
 )
+from ..services.ha_publisher import schedule_inbox_publish
 from ..services.queries import (
     basic_land_exclusion_sql,
     color_identity_condition,
@@ -425,6 +426,7 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
     )
     await db.commit()
 
+    schedule_inbox_publish()
     return {"status": "ok", "event_id": event_id, "triage_state": triage_state}
 
 
@@ -459,6 +461,7 @@ async def undo_triage(event_id: int):
     )
     await db.commit()
 
+    schedule_inbox_publish()
     return {"status": "ok", "event_id": event_id, "triage_state": "pending"}
 
 

@@ -7,11 +7,14 @@ from ..database import get_db
 logger = logging.getLogger(__name__)
 
 
-async def suggest_sells(target_amount_eur: float = 50.0, max_suggestions: int = 10) -> list[dict[str, Any]]:
+async def suggest_sells(
+    target_amount_eur: float | None = 50.0, max_suggestions: int = 10
+) -> list[dict[str, Any]]:
     """Score and rank cards to sell.
 
     Score = unused_copies * trend_price * (1 + spike_pct/100).
-    Accumulates until target_amount_eur is reached.
+    Accumulates until target_amount_eur is reached; pass ``None`` to rank every
+    candidate and offer all unused copies (used by the HA sell sensors).
     """
     db = await get_db()
 
@@ -36,8 +39,13 @@ async def suggest_sells(target_amount_eur: float = 50.0, max_suggestions: int = 
         LEFT JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
             AND ph.date = (SELECT MAX(date) FROM cardmarket_price_history)
         GROUP BY c.id
-        HAVING total_owned > in_decks AND ph.trend > 0
-        ORDER BY (total_owned - in_decks) * ph.trend * (1 + CASE WHEN ph.avg30 > 0 THEN (ph.trend - ph.avg30) / ph.avg30 ELSE 0 END) DESC"""
+        -- COALESCE spelled out: a bare `in_decks` in HAVING/ORDER BY binds to
+        -- deck_use.in_decks (NULL for cards in no deck), not to the SELECT
+        -- alias, which silently dropped every card that isn't in a deck.
+        HAVING total_owned > COALESCE(deck_use.in_decks, 0) AND ph.trend > 0
+        ORDER BY (total_owned - COALESCE(deck_use.in_decks, 0)) * ph.trend
+                 * (1 + CASE WHEN ph.avg30 > 0
+                             THEN (ph.trend - ph.avg30) / ph.avg30 ELSE 0 END) DESC"""
     )
     rows = await cursor.fetchall()
 
@@ -47,7 +55,7 @@ async def suggest_sells(target_amount_eur: float = 50.0, max_suggestions: int = 
     for row in rows:
         if len(suggestions) >= max_suggestions:
             break
-        if accumulated >= target_amount_eur:
+        if target_amount_eur is not None and accumulated >= target_amount_eur:
             break
 
         unused = int(row["total_owned"]) - int(row["in_decks"])
@@ -58,9 +66,11 @@ async def suggest_sells(target_amount_eur: float = 50.0, max_suggestions: int = 
         spike_pct = float(row["spike_pct"])
 
         # Determine how many to sell (enough to reach target, but not more than unused)
-        remaining = target_amount_eur - accumulated
-        copies_to_sell = min(unused, max(1, int(remaining / trend) + 1)) if trend > 0 else unused
-        copies_to_sell = min(copies_to_sell, unused)
+        if target_amount_eur is None or trend <= 0:
+            copies_to_sell = unused
+        else:
+            remaining = target_amount_eur - accumulated
+            copies_to_sell = min(unused, max(1, int(remaining / trend) + 1))
         expected_total = round(copies_to_sell * trend, 2)
 
         # Build reason
