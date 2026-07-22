@@ -1,3 +1,9 @@
+## 0.32.1
+
+### Fixed
+- **Price-spike notifications never arrived** — Creating a persistent notification calls the Core API proxy at `http://supervisor/core/api/...`, which the Supervisor only allows when the add-on declares `homeassistant_api: true`. That key was missing from `config.yaml`, so every attempt came back `401 Unauthorized` — 76 of them in a single night's log. Added the permission.
+- **Log noise on a rejected notification** — A rejected proxy call is a configuration problem, not a runtime fault; it now logs one line per alert (including the hint about the missing permission for 401/403) instead of an identical traceback each time.
+
 ## 0.32.0 — Sprint 32 (deep links)
 
 ### Added

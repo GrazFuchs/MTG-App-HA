@@ -1,5 +1,5 @@
 name: "MTG Collection Manager"
-version: "0.32.0"
+version: "0.32.1"
 slug: "mtg-collection"
 description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
 arch:
@@ -12,6 +12,10 @@ ingress: true
 ingress_port: 8099
 ingress_entry: /
 init: false
+# Required for the Core API proxy (http://supervisor/core/api/...), which the
+# price-spike persistent notifications use. Without it the Supervisor answers
+# every such request with 401.
+homeassistant_api: true
 panel_icon: "mdi:cards-playing-outline"
 panel_title: "MTG Collection"
 map:

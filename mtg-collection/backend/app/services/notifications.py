@@ -12,6 +12,12 @@ from ..database import get_db
 logger = logging.getLogger(__name__)
 
 
+_PERMISSION_HINT = (
+    " — the add-on needs 'homeassistant_api: true' in config.yaml to use the"
+    " Core API proxy"
+)
+
+
 def _get_supervisor_token() -> str:
     """Get HA Supervisor token from environment."""
     return os.environ.get("SUPERVISOR_TOKEN", "")
@@ -64,6 +70,15 @@ async def send_persistent_notification(
             )
             resp.raise_for_status()
             logger.info("Persistent notification created: %s", title)
+    except httpx.HTTPStatusError as exc:
+        # A rejected proxy call is a configuration problem, not a runtime fault:
+        # one line per alert instead of an identical traceback each time.
+        logger.error(
+            "Persistent notification %r rejected with HTTP %d%s",
+            title,
+            exc.response.status_code,
+            _PERMISSION_HINT if exc.response.status_code in (401, 403) else "",
+        )
     except Exception:
         logger.exception("Failed to create persistent notification: %s", title)
 
