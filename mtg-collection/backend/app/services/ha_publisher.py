@@ -132,6 +132,23 @@ SELL_SENSORS = [
     ),
 ]
 
+# Deck performance (overall; per-deck sensors are published dynamically)
+DECK_SENSORS = [
+    Entity(
+        key="games_30d", name="MTG Games 30d",
+        icon="mdi:cards-playing", state_class="measurement",
+    ),
+    Entity(
+        key="winrate_30d", name="MTG Win Rate 30d",
+        icon="mdi:trophy", unit="%", state_class="measurement", has_attributes=True,
+    ),
+    Entity(key="last_game_at", name="MTG Last Game At", device_class="timestamp"),
+    Entity(
+        key="last_game_result", name="MTG Last Game Result",
+        icon="mdi:flag-checkered", has_attributes=True,
+    ),
+]
+
 # MTGStocks all-time-high/low signals — only published while the optional
 # MTGStocks integration is enabled.
 SIGNAL_SENSORS = [
@@ -153,11 +170,35 @@ def _mtgstocks_enabled() -> bool:
 
 
 def active_entities() -> list[Entity]:
-    """Every entity that should currently exist in HA."""
-    entities = AGGREGATE_SENSORS + INBOX_SENSORS + SELL_SENSORS
+    """Every static entity that should currently exist in HA.
+
+    Per-deck sensors are not listed here — they depend on the database and are
+    published by :func:`publish_deck_sensors`.
+    """
+    entities = AGGREGATE_SENSORS + INBOX_SENSORS + SELL_SENSORS + DECK_SENSORS
     if _mtgstocks_enabled():
         entities += SIGNAL_SENSORS
     return entities
+
+
+def _deck_entity(deck_id: int, deck_name: str, prefix: str) -> Entity:
+    """Win-rate sensor for one deck.
+
+    Keyed by deck id, not name: renaming a deck in Archidekt must not orphan
+    the entity and its history.
+    """
+    state_topic = f"{prefix}/deck/{deck_id}/state"
+    return Entity(
+        key=f"deck_{deck_id}_winrate",
+        name=f"MTG Deck {deck_name} Win Rate",
+        unique_id=f"mtg_deck_{deck_id}_winrate",
+        state_topic=state_topic,
+        value_template="{{ value_json.win_rate }}",
+        json_attributes_topic=state_topic,
+        unit="%",
+        icon="mdi:trophy-outline",
+        state_class="measurement",
+    )
 
 
 async def publish_discovery():
@@ -191,8 +232,14 @@ async def publish_discovery():
 
 
 async def _publish_metrics(client, prefix: str, metrics) -> None:
-    """Publish a Metrics bundle: states, plus attributes where present."""
+    """Publish a Metrics bundle: states, plus attributes where present.
+
+    A `None` state means "no value yet" and is skipped, so the entity stays
+    unknown in HA instead of receiving an unparseable empty payload.
+    """
     for key, value in metrics.states.items():
+        if value is None:
+            continue
         await client.publish(f"{prefix}/{key}", payload=str(value), retain=True)
     for key, attributes in metrics.attributes.items():
         await client.publish(
@@ -342,6 +389,63 @@ async def publish_inbox_sensors() -> None:
         logger.debug("MQTT inbox sensors published")
     except Exception:
         logger.exception("Failed to publish inbox MQTT sensors")
+
+
+async def publish_deck_sensors() -> None:
+    """Publish the overall play sensors and one win-rate sensor per active deck.
+
+    Every deck is visited: active ones get their discovery + state, inactive
+    ones get their retained discovery config cleared, so a deck that stops
+    being played disappears from HA again.  Walking all decks keeps this
+    stateless — no bookkeeping to lose across restarts.
+    """
+    if not ha_mqtt.is_available():
+        return
+
+    from ..database import get_db
+    from . import ha_metrics
+
+    try:
+        db = await get_db()
+        prefix = ha_mqtt.topic_prefix()
+        availability = ha_mqtt.status_topic()
+
+        overall = await ha_metrics.deck_performance_metrics(db)
+        decks = await ha_metrics.deck_stats(db)
+
+        async with ha_mqtt.session() as client:
+            await _publish_metrics(client, prefix, overall)
+
+            for deck in decks:
+                entity = _deck_entity(deck["deck_id"], deck["deck_name"], prefix)
+                if not deck["is_active"]:
+                    await client.publish(discovery_topic(entity), payload="", retain=True)
+                    continue
+
+                await client.publish(
+                    discovery_topic(entity),
+                    payload=json.dumps(discovery_payload(entity, prefix, availability)),
+                    retain=True,
+                )
+                await client.publish(
+                    entity.resolved_state_topic(prefix),
+                    payload=json.dumps({
+                        "win_rate": deck["win_rate"],
+                        "games": deck["games"],
+                        "wins": deck["wins"],
+                        "losses": deck["losses"],
+                        "draws": deck["draws"],
+                        "last_played": deck["last_played"],
+                        "deck_name": deck["deck_name"],
+                    }),
+                    retain=True,
+                )
+                await asyncio.sleep(0.05)  # pace HA's MQTT processor
+
+        active = sum(1 for d in decks if d["is_active"])
+        logger.info("MQTT deck sensors published: %d active of %d decks", active, len(decks))
+    except Exception:
+        logger.exception("Failed to publish deck MQTT sensors")
 
 
 _inbox_publish_task: asyncio.Task | None = None
@@ -580,6 +684,15 @@ async def _handle_service_cmd(cmd: str, payload: dict) -> dict:
     if cmd == "mark_acquired":
         return await _service_mark_acquired(payload)
 
+    if cmd == "log_game":
+        return await _service_log_game(payload)
+
+    if cmd == "triage":
+        return await _service_triage(payload)
+
+    if cmd == "create_listing":
+        return await _service_create_listing(payload)
+
     raise ValueError(f"Unknown service command: {cmd!r}")
 
 
@@ -677,6 +790,55 @@ async def _service_mark_acquired(payload: dict) -> dict:
     await db.commit()
     asyncio.create_task(delete_wishlist_sensor(item_id))
     return {"status": "acquired", "item_id": item_id}
+
+
+async def _service_log_game(payload: dict) -> dict:
+    """Log a played game.  The deck may be given by id or by name."""
+    from ..database import get_db
+    from .game_log import DeckLookupError, log_game
+
+    db = await get_db()
+    try:
+        result = await log_game(db, payload)
+    except DeckLookupError as exc:
+        return {"error": str(exc), "candidates": exc.candidates, "cmd": "log_game"}
+
+    asyncio.create_task(publish_deck_sensors())
+    return result
+
+
+async def _service_triage(payload: dict) -> dict:
+    """Decide one inbox item — the write half of an actionable notification.
+
+    Delegates to the API handler rather than repeating the booking logic
+    (listing creation, decision snapshot).  Imported lazily because the
+    acquisitions router imports this module for the sensor refresh.
+    """
+    from fastapi import HTTPException
+
+    from ..models.schemas import TriageDecisionRequest
+    from ..routers.acquisitions import decide_triage
+
+    event_id = payload.get("event_id")
+    if event_id is None:
+        raise ValueError("event_id is required")
+
+    fields = {k: v for k, v in payload.items() if k != "event_id"}
+    # A decision made from HA is a manual one unless stated otherwise.
+    if fields.get("action") in ("keep", "sold_new", "swap"):
+        fields.setdefault("source", "other")
+
+    try:
+        return await decide_triage(int(event_id), TriageDecisionRequest(**fields))
+    except HTTPException as exc:
+        return {"error": exc.detail, "status_code": exc.status_code, "cmd": "triage"}
+
+
+async def _service_create_listing(payload: dict) -> dict:
+    """Create a Cardmarket listing (e.g. straight from a duplicates alert)."""
+    from ..routers.cardmarket import AddListingRequest, add_cardmarket_listing
+
+    return await add_cardmarket_listing(AddListingRequest(**payload))
 
 
 async def _on_service_message(topic: str, payload: bytes) -> None:

@@ -129,6 +129,21 @@ Basic lands are excluded everywhere, matching the Inbox UI.
 `sensor.mtg_sell_candidates` and `sensor.mtg_unlisted_value_eur` carry their top
 10 rows in the `items` attribute.
 
+### Deck performance
+
+| Sensor entity | Description | Unit |
+|---------------|-------------|------|
+| `sensor.mtg_games_30d` | Games logged in the last 30 days | – |
+| `sensor.mtg_winrate_30d` | Win rate over that window (attributes: W/L/D) | % |
+| `sensor.mtg_last_game_at` | When the last game was played | timestamp |
+| `sensor.mtg_last_game_result` | `win` / `loss` / `draw` (attribute: `deck_name`) | – |
+| `sensor.mtg_deck_<deck_id>_winrate` | Win rate per deck played in the last 90 days | % |
+
+Per-deck sensors carry `games`, `wins`, `losses`, `draws`, `last_played` and
+`deck_name` as attributes. They are keyed by deck **id**, so renaming a deck in
+Archidekt keeps the sensor and its history. A deck that has not been played for
+90 days is removed from HA again; logging a game brings it straight back.
+
 ### MTGStocks signals
 
 Published only while `mtgstocks_enabled` is on; switching the option off clears
@@ -153,7 +168,7 @@ without any template sensors.
 
 ## MQTT-Based Service Registry
 
-The add-on subscribes to `mtg-collection/service/+` and exposes four callable services:
+The add-on subscribes to `mtg-collection/service/+` and exposes these callable services:
 
 | Command topic | Payload | Description |
 |---------------|---------|-------------|
@@ -161,8 +176,108 @@ The add-on subscribes to `mtg-collection/service/+` and exposes four callable se
 | `mtg-collection/service/sync_prices` | `{}` | Sync Cardmarket prices immediately |
 | `mtg-collection/service/add_to_wishlist` | `{"card_name": "Sol Ring", "priority": 4}` | Add a card to the wishlist |
 | `mtg-collection/service/mark_acquired` | `{"item_id": 42, "source": "whatnot", "paid_price_eur": 1.20}` | Mark a wishlist item as acquired |
+| `mtg-collection/service/log_game` | see below | Log a played game |
+| `mtg-collection/service/triage` | `{"event_id": 42, "action": "keep"}` | Decide one inbox item |
+| `mtg-collection/service/create_listing` | `{"card_name": "Sol Ring", "price": 1.5, "quantity": 2}` | Create a Cardmarket listing |
 
 Every command publishes a response to `mtg-collection/service/{cmd}/response`.
+
+### Logging a game
+
+```json
+{
+  "deck": "Atraxa",
+  "result": "win",
+  "played_at": "2026-07-22",
+  "pod_size": 4,
+  "on_play": true,
+  "mulligans": 1,
+  "missed_land_drops": 0,
+  "turns": 9,
+  "opponents": "Krenko, Edgar",
+  "what_worked": "...",
+  "what_didnt": "...",
+  "notes": "..."
+}
+```
+
+Only `deck` (or `deck_id`) and `result` matter; everything else has a default,
+and `played_at` defaults to today. The deck is matched by id or by name —
+case-insensitively, exact match first, then a unique substring:
+
+```json
+{"status": "logged", "game_id": 17, "deck_id": 3, "deck_name": "Atraxa", "result": "win", "played_at": "2026-07-22"}
+```
+
+An ambiguous or unknown name is never guessed at; the response names the
+candidates so you can retry:
+
+```json
+{"error": "'Krenko' matches 2 decks — be more specific", "candidates": ["Krenko Goblins", "Krenko Mob Boss"], "cmd": "log_game"}
+```
+
+### Triage from a notification
+
+`action` is `keep`, `sold_new`, `swap` or `dismiss`. Selling requires
+`listing_price_eur`; `source` defaults to `other` for decisions made from HA.
+Combined with `sensor.mtg_inbox_pending` this gives actionable notifications:
+
+```yaml
+automation:
+  - alias: "MTG Inbox: actionable triage"
+    trigger:
+      - platform: state
+        entity_id: sensor.mtg_inbox_pending
+    condition: "{{ trigger.to_state.state | int > trigger.from_state.state | int }}"
+    action:
+      - variables:
+          card: "{{ state_attr('sensor.mtg_inbox_pending', 'items')[0] }}"
+      - service: notify.mobile_app_yourphone
+        data:
+          title: "New: {{ card.card_name }}"
+          message: "Suggestion: {{ card.suggestion }} — {{ card.reason }}"
+          data:
+            actions:
+              - action: "MTG_KEEP_{{ card.event_id }}"
+                title: "Keep"
+              - action: "MTG_SELL_{{ card.event_id }}"
+                title: "Sell (€{{ card.price_eur }})"
+
+  - alias: "MTG Inbox: handle notification action"
+    trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+    action:
+      - variables:
+          parts: "{{ trigger.event.data.action.split('_') }}"
+      - condition: "{{ parts[0] == 'MTG' }}"
+      - service: mqtt.publish
+        data:
+          topic: "mtg-collection/service/triage"
+          payload: >
+            {"event_id": {{ parts[2] }},
+             "action": "{{ 'keep' if parts[1] == 'KEEP' else 'sold_new' }}"
+             {%- if parts[1] == 'SELL' %}, "listing_price_eur": 1.0{% endif %}}
+```
+
+### Logging a game by voice
+
+Copy [voice/sentences.yaml](../mtg-collection/voice/sentences.yaml) as described
+under [Voice Integration](#voice-integration-ha-assist); it ships
+`HassMTGLogWin` / `HassMTGLogLoss` with a `{deck}` slot. Wire the intent to a
+script:
+
+```yaml
+intent_script:
+  HassMTGLogWin:
+    speech:
+      text: "Logged a win with {{ deck }}."
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "mtg-collection/service/log_game"
+          payload: '{"deck": "{{ deck }}", "result": "win"}'
+```
 
 ### Example: trigger sync from an automation
 

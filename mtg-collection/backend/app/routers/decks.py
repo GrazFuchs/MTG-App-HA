@@ -323,6 +323,15 @@ def _game_row_to_dict(r) -> dict:
     }
 
 
+def _refresh_deck_sensors() -> None:
+    """Push updated play stats to HA after a game changed (no-op without MQTT)."""
+    import asyncio
+
+    from ..services.ha_publisher import publish_deck_sensors
+
+    asyncio.create_task(publish_deck_sensors())
+
+
 async def _ensure_deck(db, deck_id: int) -> None:
     cursor = await db.execute("SELECT id FROM decks WHERE id = ?", (deck_id,))
     if not await cursor.fetchone():
@@ -360,7 +369,9 @@ async def add_deck_game(deck_id: int, body: DeckGameCreate):
     )
     await db.commit()
     cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (cursor.lastrowid,))
-    return DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+    game = DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+    _refresh_deck_sensors()
+    return game
 
 
 @router.patch("/{deck_id}/games/{game_id}", response_model=DeckGame)
@@ -385,7 +396,9 @@ async def update_deck_game(deck_id: int, game_id: int, body: DeckGameUpdate):
     await db.execute(f"UPDATE deck_games SET {', '.join(fields)} WHERE id = ?", params)
     await db.commit()
     cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (game_id,))
-    return DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+    game = DeckGame(**_game_row_to_dict(await cursor.fetchone()))
+    _refresh_deck_sensors()
+    return game
 
 
 @router.delete("/{deck_id}/games/{game_id}")
@@ -397,6 +410,7 @@ async def delete_deck_game(deck_id: int, game_id: int):
     await db.commit()
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Game not found")
+    _refresh_deck_sensors()
     return {"ok": True}
 
 

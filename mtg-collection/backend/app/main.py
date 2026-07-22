@@ -59,10 +59,16 @@ async def _startup_mqtt_publish():
     import asyncio
     await asyncio.sleep(10)  # Wait for DB to be populated
     try:
-        from .services.ha_publisher import publish_discovery, publish_stats, publish_wishlist_sensors
+        from .services.ha_publisher import (
+            publish_deck_sensors,
+            publish_discovery,
+            publish_stats,
+            publish_wishlist_sensors,
+        )
         await publish_discovery()
         await publish_stats()
         await publish_wishlist_sensors()
+        await publish_deck_sensors()
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Startup MQTT publish failed: %s", e)

@@ -38,3 +38,29 @@ intents:
           - "(trigger|start|run) (a |)(mtg |)sync"
           - "(synchronize|sync) my (mtg |magic |)collection"
           - "MTG Synchronisierung starten"
+
+  # Logging a game. Wire the intent to a script that publishes to
+  # mtg-collection/service/log_game with {"deck": "{deck}", "result": "..."}.
+  # See docs/ha-integration.md → "Logging a game by voice".
+  HassMTGLogWin:
+    data:
+      - sentences:
+          - "(log|record) a win with {deck}"
+          - "I won with {deck}"
+          - "(trag|schreib) (einen |)Sieg mit {deck} ein"
+          - "ich habe mit {deck} gewonnen"
+
+  HassMTGLogLoss:
+    data:
+      - sentences:
+          - "(log|record) a loss with {deck}"
+          - "I lost with {deck}"
+          - "(trag|schreib) (eine |)Niederlage mit {deck} ein"
+          - "ich habe mit {deck} verloren"
+
+  HassMTGGetInbox:
+    data:
+      - sentences:
+          - "(what's|what is) in my (mtg |)inbox"
+          - "how many cards (are |)(waiting|pending) (for triage|in the inbox)"
+          - "was liegt in meiner (MTG |)Inbox"

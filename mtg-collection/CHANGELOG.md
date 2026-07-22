@@ -1,3 +1,15 @@
+## 0.30.0 — Sprint 30 (log games from HA)
+
+### Added
+- **`log_game` MQTT service** — Log a played game from an automation, script or voice command: `{"deck": "Atraxa", "result": "win", "turns": 9, …}`. The deck is matched by id or by name (case-insensitive, exact match first, then a unique substring); an ambiguous or unknown name is never guessed at — the response lists the candidates instead. Field validation reuses the same model as the REST endpoint, so bounds like `pod_size` 1–8 hold everywhere. New `services/game_log.py`.
+- **`triage` MQTT service** — Decide one inbox item (`{"event_id": 42, "action": "keep"}`), so the inbox notifications from 0.29.0 can carry "Keep" / "Sell" buttons. Delegates to the API handler, so listing creation and the decision snapshot behave exactly as in the UI; `source` defaults to `other` for decisions made from HA.
+- **`create_listing` MQTT service** — Create a Cardmarket listing straight from a duplicates alert.
+- **Deck performance sensors** — `mtg_games_30d`, `mtg_winrate_30d` (with W/L/D attributes), `mtg_last_game_at`, `mtg_last_game_result`, plus one `mtg_deck_<deck_id>_winrate` per deck played in the last 90 days, carrying games/W/L/D/last_played as attributes. Keyed by deck id, so renaming a deck in Archidekt keeps the sensor and its history; a deck that goes quiet for 90 days is removed from HA and reappears when it is played again. Refreshed on every game change (UI or MQTT) and with the daily publish.
+- **Voice sentences** — `HassMTGLogWin` / `HassMTGLogLoss` with a `{deck}` slot ("trag einen Sieg mit Atraxa ein"), plus `HassMTGGetInbox`. Wiring example in [docs/ha-integration.md](../docs/ha-integration.md), together with an actionable-notification automation for triage.
+
+### Changed
+- A metric whose value is `None` is no longer published, so a sensor without a value (e.g. `mtg_last_game_at` before the first logged game) stays *unknown* in HA instead of receiving an empty payload that `device_class: timestamp` cannot parse.
+
 ## 0.29.0 — Sprint 29 (inbox & sell sensors)
 
 ### Added

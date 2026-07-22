@@ -237,6 +237,89 @@ async def sell_metrics(db: aiosqlite.Connection) -> Metrics:
     )
 
 
+async def deck_performance_metrics(db: aiosqlite.Connection) -> Metrics:
+    """Overall play stats: games and win rate over the last 30 days, last game."""
+    cursor = await db.execute(
+        """SELECT COUNT(*) AS games,
+                  SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) AS wins,
+                  SUM(CASE WHEN result = 'loss' THEN 1 ELSE 0 END) AS losses,
+                  SUM(CASE WHEN result = 'draw' THEN 1 ELSE 0 END) AS draws
+           FROM deck_games
+           WHERE played_at >= date('now', '-30 days')"""
+    )
+    row = await cursor.fetchone()
+    games = int(row["games"] or 0)
+    wins = int(row["wins"] or 0)
+    win_rate = round(wins / games * 100, 1) if games else 0.0
+
+    cursor = await db.execute(
+        """SELECT g.played_at, g.result, d.name AS deck_name
+           FROM deck_games g LEFT JOIN decks d ON d.id = g.deck_id
+           ORDER BY g.played_at DESC, g.id DESC LIMIT 1"""
+    )
+    last = await cursor.fetchone()
+
+    return Metrics(
+        states={
+            "games_30d": games,
+            "winrate_30d": win_rate,
+            # device_class timestamp needs a full ISO datetime; played_at is a
+            # date.  None means "never played" — the sensor stays unknown
+            # rather than getting an unparseable empty state.
+            "last_game_at": f"{last['played_at']}T00:00:00+00:00" if last else None,
+            "last_game_result": last["result"] if last else "none",
+        },
+        attributes={
+            "winrate_30d": {"wins": wins, "losses": int(row["losses"] or 0),
+                            "draws": int(row["draws"] or 0), "games": games},
+            "last_game_result": {"deck_name": (last["deck_name"] if last else "") or ""},
+        },
+    )
+
+
+# A deck counts as "active" — and gets its own sensor — when it was played
+# within this window.  Decks that fall out of it are removed from HA again.
+ACTIVE_DECK_WINDOW_DAYS = 90
+
+
+async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    """Per-deck play stats for every deck, with an `is_active` flag.
+
+    Inactive decks are included so their sensors can be cleared from HA.
+    """
+    cursor = await db.execute(
+        """SELECT d.id, d.name,
+                  COUNT(g.id) AS games,
+                  SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
+                  SUM(CASE WHEN g.result = 'loss' THEN 1 ELSE 0 END) AS losses,
+                  SUM(CASE WHEN g.result = 'draw' THEN 1 ELSE 0 END) AS draws,
+                  MAX(g.played_at) AS last_played,
+                  COALESCE(MAX(g.played_at) >= date('now', ?), 0) AS is_active
+           FROM decks d LEFT JOIN deck_games g ON g.deck_id = d.id
+           GROUP BY d.id
+           ORDER BY d.id""",
+        (f"-{ACTIVE_DECK_WINDOW_DAYS} days",),
+    )
+
+    stats = []
+    for r in await cursor.fetchall():
+        games = int(r["games"] or 0)
+        wins = int(r["wins"] or 0)
+        last_played = r["last_played"]
+        stats.append({
+            "deck_id": r["id"],
+            "deck_name": r["name"] or f"Deck {r['id']}",
+            "games": games,
+            "wins": wins,
+            "losses": int(r["losses"] or 0),
+            "draws": int(r["draws"] or 0),
+            "win_rate": round(wins / games * 100, 1) if games else 0.0,
+            "last_played": last_played or "",
+            "is_active": bool(games) and bool(r["is_active"]),
+        })
+    return stats
+
+
 async def signal_metrics() -> Metrics:
     """MTGStocks buy/sell signals (only meaningful when the integration is on)."""
     from .mtgstocks_prices import get_buy_sell_signals

@@ -411,3 +411,165 @@ async def test_service_response_topics_are_ignored(fake_mqtt):
         "mtg-collection/service/trigger_sync/response", b"{}"
     )
     assert _FakeClient.instances == []
+
+
+# --- sprint 30: game logging service + deck sensors --------------------------
+
+
+@pytest.mark.anyio
+async def test_log_game_service_returns_game_id(fake_mqtt):
+    from _helpers import insert_deck
+    from app.database import get_db
+
+    db = await get_db()
+    deck_id = await insert_deck(db, "Atraxa")
+
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/log_game",
+        b'{"deck": "Atraxa", "result": "win", "turns": 8}',
+    )
+
+    topic, payload, _ = _FakeClient.instances[0].published[0]
+    assert topic == "mtg-collection/service/log_game/response"
+    body = json.loads(payload)
+    assert body["status"] == "logged"
+    assert body["deck_id"] == deck_id
+
+
+@pytest.mark.anyio
+async def test_log_game_service_reports_ambiguous_deck(fake_mqtt):
+    from _helpers import insert_deck
+    from app.database import get_db
+
+    db = await get_db()
+    await insert_deck(db, "Krenko Goblins")
+    await insert_deck(db, "Krenko Mob Boss")
+
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/log_game", b'{"deck": "Krenko", "result": "win"}'
+    )
+
+    body = json.loads(_FakeClient.instances[0].published[0][1])
+    assert "matches 2 decks" in body["error"]
+    assert len(body["candidates"]) == 2
+
+
+@pytest.mark.anyio
+async def test_log_game_service_reports_validation_errors(fake_mqtt):
+    from _helpers import insert_deck
+    from app.database import get_db
+
+    db = await get_db()
+    await insert_deck(db, "Atraxa")
+
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/log_game", b'{"deck": "Atraxa", "result": "victory"}'
+    )
+
+    body = json.loads(_FakeClient.instances[0].published[0][1])
+    assert "error" in body
+
+
+@pytest.mark.anyio
+async def test_create_listing_service(fake_mqtt):
+    from app.database import get_db
+
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/create_listing",
+        b'{"card_name": "Sol Ring", "price": 1.5, "quantity": 2}',
+    )
+
+    body = json.loads(_FakeClient.instances[0].published[0][1])
+    assert body["status"] == "created"
+
+    db = await get_db()
+    cursor = await db.execute("SELECT card_name, quantity FROM cardmarket_listings")
+    assert [tuple(r) for r in await cursor.fetchall()] == [("Sol Ring", 2)]
+
+
+@pytest.mark.anyio
+async def test_triage_service_reports_api_errors(fake_mqtt):
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/triage", b'{"event_id": 999, "action": "keep"}'
+    )
+
+    body = json.loads(_FakeClient.instances[0].published[0][1])
+    assert body["status_code"] == 404
+
+
+@pytest.mark.anyio
+async def test_triage_service_decides_an_event(fake_mqtt):
+    from _helpers import add_acquisition_event, insert_card
+    from app.database import get_db
+
+    db = await get_db()
+    card = await insert_card(db, "Sol Ring")
+    event_id = await add_acquisition_event(db, card)
+
+    await ha_publisher._on_service_message(
+        "mtg-collection/service/triage",
+        f'{{"event_id": {event_id}, "action": "keep"}}'.encode(),
+    )
+
+    body = json.loads(_FakeClient.instances[0].published[0][1])
+    assert body["status"] == "ok"
+    assert body["triage_state"] == "keep"
+
+    cursor = await db.execute(
+        "SELECT triage_state, source FROM acquisition_events WHERE id = ?", (event_id,)
+    )
+    row = await cursor.fetchone()
+    assert row["triage_state"] == "keep"
+    assert row["source"] == "other"  # defaulted for HA-initiated decisions
+
+
+@pytest.mark.anyio
+async def test_states_without_a_value_are_not_published(fake_mqtt):
+    """Never played → the timestamp sensor must not get an empty payload."""
+    await ha_publisher.publish_deck_sensors()
+
+    topics = [t for t, _, _ in _FakeClient.instances[0].published]
+    assert "mtg-collection/games_30d" in topics
+    assert "mtg-collection/last_game_at" not in topics
+
+
+@pytest.mark.anyio
+async def test_deck_sensors_publish_active_and_clear_inactive(fake_mqtt):
+    from _helpers import insert_deck
+    from app.database import get_db
+
+    db = await get_db()
+    active = await insert_deck(db, "Atraxa")
+    stale = await insert_deck(db, "Old Deck")
+    await db.execute(
+        "INSERT INTO deck_games (deck_id, played_at, result)"
+        " VALUES (?, date('now','-2 days'), 'win')",
+        (active,),
+    )
+    await db.execute(
+        "INSERT INTO deck_games (deck_id, played_at, result)"
+        " VALUES (?, date('now','-200 days'), 'loss')",
+        (stale,),
+    )
+    await db.commit()
+
+    await ha_publisher.publish_deck_sensors()
+
+    published = dict((t, p) for t, p, _ in _FakeClient.instances[0].published)
+
+    # Overall sensors
+    assert published["mtg-collection/games_30d"] == "1"
+    assert published["mtg-collection/last_game_result"] == "win"
+
+    # Active deck: discovery + state
+    config = json.loads(published[f"homeassistant/sensor/mtg_deck_{active}_winrate/config"])
+    assert config["unique_id"] == f"mtg_deck_{active}_winrate"
+    assert config["name"] == "MTG Deck Atraxa Win Rate"
+    assert config["value_template"] == "{{ value_json.win_rate }}"
+    state = json.loads(published[f"mtg-collection/deck/{active}/state"])
+    assert state["win_rate"] == 100.0
+    assert state["games"] == 1
+
+    # Inactive deck: retained config cleared, no state
+    assert published[f"homeassistant/sensor/mtg_deck_{stale}_winrate/config"] == ""
+    assert f"mtg-collection/deck/{stale}/state" not in published
