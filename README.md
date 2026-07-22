@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.32.2 |
+| App version | 0.32.3 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -99,7 +99,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 ### As a Home Assistant Add-on (recommended)
 
 1. In Home Assistant: **Settings → Add-ons → Add-on Store → ⋮ (top right) → Repositories**
-2. Enter the URL: `https://github.com/HerrFuchs/mtg-collection-ha` → **Add**
+2. Enter the URL: `https://github.com/GrazFuchs/MTG-App-HA` → **Add**
 3. "MTG Collection Manager" now appears in the Add-on Store — install it
 4. Configure the add-on (see [Configuration](#configuration))
 5. Start the add-on — it appears as the "MTG Collection" panel in the sidebar
@@ -203,7 +203,7 @@ mtg-collection-ha/                     # GitHub repository root
     │       ├── database.py      # SQLite schema, init, migrations, connection
     │       ├── scheduler.py     # APScheduler for daily sync
     │       ├── static_files.py  # SPA fallback + cache headers for the built frontend
-    │       ├── version.py       # VERSION = "0.32.2"
+    │       ├── version.py       # VERSION = "0.32.3"
     │       ├── mcp_server.py    # MCP server (27 tools, 3 resources, 2 prompts)
     │       ├── logging_config.py # Structured JSON logging to stdout
     │       ├── clients/

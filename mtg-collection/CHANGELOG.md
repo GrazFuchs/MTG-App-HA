@@ -1,3 +1,8 @@
+## 0.32.3
+
+### Fixed
+- **Repository links pointed at a repository that does not exist** — `config.yaml`, `repository.yaml` and the install instructions in the README all named `HerrFuchs/mtg-collection-ha`, while the add-on actually lives at `GrazFuchs/MTG-App-HA`. The documentation link in the HA add-on panel therefore went nowhere, and anyone following the README added a repository URL that cannot be resolved. Historical CHANGELOG entries keep the old URL — they describe what was true at the time.
+
 ## 0.32.2
 
 ### Fixed
