@@ -52,6 +52,9 @@ class Entity:
     # Publish a JSON attribute payload alongside the state, on
     # `{state_topic}/attributes` (used for the top-N lists).
     has_attributes: bool = False
+    # Buttons have no state at all; HA rejects a discovery config that
+    # carries a state_topic for them.
+    has_state: bool = True
     device: dict[str, Any] = field(default_factory=lambda: DEVICE_INFO)
     # Component-specific keys (options, min/max, command_topic, …)
     extra: dict[str, Any] = field(default_factory=dict)
@@ -94,12 +97,13 @@ def discovery_payload(entity: Entity, prefix: str, availability_topic: str) -> d
         "name": entity.name,
         "unique_id": entity.resolved_unique_id,
         "object_id": entity.object_id,
-        "state_topic": entity.resolved_state_topic(prefix),
         "device": entity.device,
         "availability_topic": availability_topic,
         "payload_available": "online",
         "payload_not_available": "offline",
     }
+    if entity.has_state:
+        payload["state_topic"] = entity.resolved_state_topic(prefix)
 
     optional = {
         "device_class": entity.device_class,

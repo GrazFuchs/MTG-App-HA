@@ -3,6 +3,7 @@
 This guide covers all the ways **MTG Collection Manager** integrates deeply with Home Assistant:
 
 - [Availability](#availability)
+- [Game Logger Form](#game-logger-form)
 - [Wishlist Item Sensors](#wishlist-item-sensors)
 - [Aggregate Sensors (Spending, Listing Health)](#aggregate-sensors)
 - [MQTT-Based Service Registry](#mqtt-based-service-registry)
@@ -30,6 +31,63 @@ Every entity below references this topic, so all MTG entities show as
 ```bash
 mosquitto_sub -h <mqtt_host> -t 'mtg-collection/status' -C 1
 ```
+
+---
+
+## Game Logger Form
+
+The add-on publishes its own input entities under a separate **MTG Game Logger**
+device, so logging a game needs no HA helpers, no `input_*` entities and no
+templating in the dashboard:
+
+| Entity | Type | Notes |
+|--------|------|-------|
+| `select.mtg_log_deck` | select | Options come from the database and follow every sync |
+| `select.mtg_log_result` | select | `win` / `loss` / `draw` |
+| `number.mtg_log_pod_size` | number | 1–8 |
+| `switch.mtg_log_on_play` | switch | |
+| `number.mtg_log_mulligans` | number | 0–10 |
+| `number.mtg_log_missed_land_drops` | number | 0–50 |
+| `number.mtg_log_turns` | number | 0–100 |
+| `text.mtg_log_opponents` | text | max 255 characters |
+| `text.mtg_log_notes` | text | max 255 characters |
+| `button.mtg_log_submit` | button | Writes the game |
+| `sensor.mtg_log_status` | sensor | Outcome of the last submit |
+
+Pressing the button makes the add-on read the values it is already holding,
+write the game, clear the form and update the deck performance sensors.
+`sensor.mtg_log_status` then reads e.g. *"Logged win with Atraxa on 2026-07-22"*
+— or why it did not work.
+
+Field values are stored in the database, so a half-filled form survives an
+add-on restart. Numbers outside their range are clamped; a value HA cannot
+send meaningfully (a select option that no longer exists) is rejected, and the
+entity keeps its previous value with a note on the status sensor.
+
+"What worked" / "what didn't" are deliberately not part of the form — long
+free text belongs in the web UI. `text` entities are capped at 255 characters
+by HA, below what the API accepts for opponents (300) and notes (1000).
+
+### Dashboard card
+
+```yaml
+type: entities
+title: Log a game
+entities:
+  - entity: select.mtg_log_deck
+  - entity: select.mtg_log_result
+  - entity: number.mtg_log_pod_size
+  - entity: switch.mtg_log_on_play
+  - entity: number.mtg_log_mulligans
+  - entity: number.mtg_log_turns
+  - entity: text.mtg_log_opponents
+  - entity: text.mtg_log_notes
+  - entity: button.mtg_log_submit
+  - entity: sensor.mtg_log_status
+```
+
+For scripts and voice, the `log_game` MQTT service is usually the better fit —
+see [MQTT-Based Service Registry](#mqtt-based-service-registry).
 
 ---
 

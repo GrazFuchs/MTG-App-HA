@@ -571,6 +571,21 @@ async def _migration_17(db: aiosqlite.Connection):
     )
 
 
+async def _migration_18(db: aiosqlite.Connection):
+    """Persisted state of the HA game-logger form.
+
+    The form lives in HA as MQTT entities whose values the add-on owns, so a
+    half-filled form has to survive an add-on restart.
+    """
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS ha_form_state (
+            field TEXT PRIMARY KEY,
+            value TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -588,6 +603,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     15: _migration_15,
     16: _migration_16,
     17: _migration_17,
+    18: _migration_18,
 }
 
 

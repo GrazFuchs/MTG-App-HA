@@ -14,6 +14,7 @@ from app.services.ha_entities import (
     discovery_payload,
     discovery_topic,
 )
+from conftest import FakeMqttClient
 
 # Frozen list of the aggregate sensors as HA knows them today.
 EXPECTED_UNIQUE_IDS = [
@@ -228,67 +229,12 @@ async def test_dispatch_swallows_handler_errors(monkeypatch):
 # --- end-to-end against a fake broker ---------------------------------------
 
 
-class _FakeClient:
-    """Stands in for aiomqtt.Client; records what would hit the broker."""
-
-    instances: list["_FakeClient"] = []
-
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        self.published: list[tuple[str, object, bool]] = []
-        self.subscribed: list[str] = []
-        _FakeClient.instances.append(self)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-    async def publish(self, topic, payload=None, retain=False, qos=0):
-        self.published.append((topic, payload, retain))
-
-    async def subscribe(self, topic_filter):
-        self.subscribed.append(topic_filter)
-
-    @property
-    def messages(self):
-        async def _idle():
-            await asyncio.Event().wait()  # blocks until cancelled
-            yield  # pragma: no cover
-
-        return _idle()
-
-
-class _FakeWill:
-    def __init__(self, topic, payload=None, qos=0, retain=False):
-        self.topic = topic
-        self.payload = payload
-        self.retain = retain
-
-
-@pytest.fixture
-def fake_mqtt(monkeypatch):
-    """Enable MQTT and swap aiomqtt for the fake client."""
-    from app import config
-
-    _FakeClient.instances = []
-    fake_module = type("_FakeAiomqtt", (), {"Client": _FakeClient, "Will": _FakeWill})
-    monkeypatch.setattr(ha_mqtt, "_aiomqtt_module", fake_module)
-    monkeypatch.setattr(ha_mqtt, "_aiomqtt_checked", True)
-    monkeypatch.setattr(ha_mqtt, "_client", None)
-    monkeypatch.setattr(ha_mqtt, "_handlers", [])
-    monkeypatch.setattr(ha_mqtt, "_manager_task", None)
-    monkeypatch.setattr(config.get_settings(), "mqtt_enabled", True)
-    yield
-
-
 @pytest.mark.anyio
 async def test_discovery_publishes_every_sensor_retained(fake_mqtt):
     await ha_publisher.publish_discovery()
 
-    assert len(_FakeClient.instances) == 1  # one fallback connection for the batch
-    published = _FakeClient.instances[0].published
+    assert len(FakeMqttClient.instances) == 1  # one fallback connection for the batch
+    published = FakeMqttClient.instances[0].published
     # Active entities, plus a cleared config for each disabled MTGStocks sensor
     assert len(published) == len(ha_publisher.active_entities()) + len(
         ha_publisher.SIGNAL_SENSORS
@@ -308,8 +254,8 @@ async def test_discovery_publishes_every_sensor_retained(fake_mqtt):
 async def test_stats_publish_uses_one_connection(fake_mqtt):
     await ha_publisher.publish_stats()
 
-    assert len(_FakeClient.instances) == 1
-    topics = [t for t, _, _ in _FakeClient.instances[0].published]
+    assert len(FakeMqttClient.instances) == 1
+    topics = [t for t, _, _ in FakeMqttClient.instances[0].published]
     assert "mtg-collection/total_cards" in topics
     assert "mtg-collection/listings_fair" in topics
     # Inbox and sell metrics ride along with the stats refresh
@@ -336,7 +282,7 @@ async def test_disabled_signal_configs_are_cleared(fake_mqtt):
     await ha_publisher.publish_discovery()
 
     cleared = [
-        (t, p) for t, p, _ in _FakeClient.instances[0].published if p == ""
+        (t, p) for t, p, _ in FakeMqttClient.instances[0].published if p == ""
     ]
     assert [t for t, _ in cleared] == [
         "homeassistant/sensor/mtg_collection_signals_buy/config",
@@ -367,7 +313,7 @@ async def test_inbox_publish_is_debounced(fake_mqtt, monkeypatch):
 async def test_delete_wishlist_sensor_clears_retained_config(fake_mqtt):
     await ha_publisher.delete_wishlist_sensor(42)
 
-    published = _FakeClient.instances[0].published
+    published = FakeMqttClient.instances[0].published
     assert published == [("homeassistant/sensor/mtg_wishlist_42/config", "", True)]
 
 
@@ -379,15 +325,18 @@ async def test_manager_announces_online_and_subscribes(fake_mqtt):
             break
         await asyncio.sleep(0.01)
 
-    client = _FakeClient.instances[0]
-    assert client.subscribed == ["mtg-collection/service/+"]
+    client = FakeMqttClient.instances[0]
+    assert client.subscribed == [
+        "mtg-collection/service/+",
+        "mtg-collection/form/+/set",
+    ]
     assert ("mtg-collection/status", "online", True) in client.published
     assert client.kwargs["will"].payload == "offline"
     assert ha_mqtt._client is client
 
     # Publishing while the manager is connected must reuse its client
     await ha_mqtt.publish("mtg-collection/total_cards", "5")
-    assert len(_FakeClient.instances) == 1
+    assert len(FakeMqttClient.instances) == 1
 
     await ha_mqtt.shutdown()
     assert ("mtg-collection/status", "offline", True) in client.published
@@ -398,7 +347,7 @@ async def test_manager_announces_online_and_subscribes(fake_mqtt):
 async def test_service_message_answers_on_response_topic(fake_mqtt):
     await ha_publisher._on_service_message("mtg-collection/service/add_to_wishlist", b"{}")
 
-    published = _FakeClient.instances[0].published
+    published = FakeMqttClient.instances[0].published
     topic, payload, _ = published[0]
     assert topic == "mtg-collection/service/add_to_wishlist/response"
     # No card_name in the payload → error is reported back, not raised
@@ -410,7 +359,7 @@ async def test_service_response_topics_are_ignored(fake_mqtt):
     await ha_publisher._on_service_message(
         "mtg-collection/service/trigger_sync/response", b"{}"
     )
-    assert _FakeClient.instances == []
+    assert FakeMqttClient.instances == []
 
 
 # --- sprint 30: game logging service + deck sensors --------------------------
@@ -429,7 +378,7 @@ async def test_log_game_service_returns_game_id(fake_mqtt):
         b'{"deck": "Atraxa", "result": "win", "turns": 8}',
     )
 
-    topic, payload, _ = _FakeClient.instances[0].published[0]
+    topic, payload, _ = FakeMqttClient.instances[0].published[0]
     assert topic == "mtg-collection/service/log_game/response"
     body = json.loads(payload)
     assert body["status"] == "logged"
@@ -449,7 +398,7 @@ async def test_log_game_service_reports_ambiguous_deck(fake_mqtt):
         "mtg-collection/service/log_game", b'{"deck": "Krenko", "result": "win"}'
     )
 
-    body = json.loads(_FakeClient.instances[0].published[0][1])
+    body = json.loads(FakeMqttClient.instances[0].published[0][1])
     assert "matches 2 decks" in body["error"]
     assert len(body["candidates"]) == 2
 
@@ -466,7 +415,7 @@ async def test_log_game_service_reports_validation_errors(fake_mqtt):
         "mtg-collection/service/log_game", b'{"deck": "Atraxa", "result": "victory"}'
     )
 
-    body = json.loads(_FakeClient.instances[0].published[0][1])
+    body = json.loads(FakeMqttClient.instances[0].published[0][1])
     assert "error" in body
 
 
@@ -479,7 +428,7 @@ async def test_create_listing_service(fake_mqtt):
         b'{"card_name": "Sol Ring", "price": 1.5, "quantity": 2}',
     )
 
-    body = json.loads(_FakeClient.instances[0].published[0][1])
+    body = json.loads(FakeMqttClient.instances[0].published[0][1])
     assert body["status"] == "created"
 
     db = await get_db()
@@ -493,7 +442,7 @@ async def test_triage_service_reports_api_errors(fake_mqtt):
         "mtg-collection/service/triage", b'{"event_id": 999, "action": "keep"}'
     )
 
-    body = json.loads(_FakeClient.instances[0].published[0][1])
+    body = json.loads(FakeMqttClient.instances[0].published[0][1])
     assert body["status_code"] == 404
 
 
@@ -511,7 +460,7 @@ async def test_triage_service_decides_an_event(fake_mqtt):
         f'{{"event_id": {event_id}, "action": "keep"}}'.encode(),
     )
 
-    body = json.loads(_FakeClient.instances[0].published[0][1])
+    body = json.loads(FakeMqttClient.instances[0].published[0][1])
     assert body["status"] == "ok"
     assert body["triage_state"] == "keep"
 
@@ -528,7 +477,7 @@ async def test_states_without_a_value_are_not_published(fake_mqtt):
     """Never played → the timestamp sensor must not get an empty payload."""
     await ha_publisher.publish_deck_sensors()
 
-    topics = [t for t, _, _ in _FakeClient.instances[0].published]
+    topics = [t for t, _, _ in FakeMqttClient.instances[0].published]
     assert "mtg-collection/games_30d" in topics
     assert "mtg-collection/last_game_at" not in topics
 
@@ -555,7 +504,7 @@ async def test_deck_sensors_publish_active_and_clear_inactive(fake_mqtt):
 
     await ha_publisher.publish_deck_sensors()
 
-    published = dict((t, p) for t, p, _ in _FakeClient.instances[0].published)
+    published = dict((t, p) for t, p, _ in FakeMqttClient.instances[0].published)
 
     # Overall sensors
     assert published["mtg-collection/games_30d"] == "1"

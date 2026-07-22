@@ -1,3 +1,15 @@
+## 0.31.0 — Sprint 31 (game-logger form in HA)
+
+### Added
+- **Game-logger form** — The add-on publishes its own input entities under a separate **MTG Game Logger** device, so logging a game from a dashboard needs no HA helpers and no templating: `select.mtg_log_deck`, `select.mtg_log_result`, `number.mtg_log_pod_size` / `_mulligans` / `_missed_land_drops` / `_turns`, `switch.mtg_log_on_play`, `text.mtg_log_opponents` / `_notes`, `button.mtg_log_submit` and `sensor.mtg_log_status`. Pressing the button writes the game, clears the form, refreshes the deck performance sensors and reports the outcome on the status sensor. Ready-made dashboard card in [docs/ha-integration.md](../docs/ha-integration.md).
+- **Deck selector follows the database** — The options of `select.mtg_log_deck` are rebuilt on startup and after every sync (scheduled or manual). Decks that share a name get their id appended so every option resolves to exactly one deck.
+- **Form state survives a restart** — Field values live in the new `ha_form_state` table (migration 18) instead of memory, so a half-filled form is still there after an add-on restart.
+- Numbers outside their range are clamped, texts are cut to HA's 255-character limit, and a select value that is no longer a valid option is rejected with a note on the status sensor rather than being stored. The form's number bounds are checked against the game model in the tests, so the form cannot offer a value the API would reject.
+- Deleting or renaming a deck while it sits selected in the form is caught at submit time (and reset on the next publish) instead of logging the game against the wrong deck.
+
+### Fixed
+- `discovery_payload` no longer puts a `state_topic` on stateless entities; HA rejects a `button` config that carries one.
+
 ## 0.30.0 — Sprint 30 (log games from HA)
 
 ### Added

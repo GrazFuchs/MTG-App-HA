@@ -68,12 +68,15 @@ async def _sync_job():
     try:
         from .services.ha_publisher import (
             publish_deck_sensors,
+            publish_form_entities,
             publish_stats,
             publish_wishlist_sensors,
         )
         await publish_stats()
         await publish_wishlist_sensors()
         await publish_deck_sensors()
+        # Decks may have appeared or vanished — refresh the selector options
+        await publish_form_entities()
     except Exception as e:
         logger.error("MQTT stats/wishlist publish failed: %s", e)
 

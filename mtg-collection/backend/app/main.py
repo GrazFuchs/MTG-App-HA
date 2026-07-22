@@ -62,6 +62,7 @@ async def _startup_mqtt_publish():
         from .services.ha_publisher import (
             publish_deck_sensors,
             publish_discovery,
+            publish_form_entities,
             publish_stats,
             publish_wishlist_sensors,
         )
@@ -69,6 +70,7 @@ async def _startup_mqtt_publish():
         await publish_stats()
         await publish_wishlist_sensors()
         await publish_deck_sensors()
+        await publish_form_entities()
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Startup MQTT publish failed: %s", e)

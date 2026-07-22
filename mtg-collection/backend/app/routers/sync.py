@@ -63,10 +63,12 @@ async def _run_resync():
         await run_full_resync()
     except Exception:
         logger.exception("Background resync crashed")
-    # Publish updated stats to MQTT
+    # Publish updated stats to MQTT (decks may have changed -> refresh the
+    # game-logger deck selector too)
     try:
-        from ..services.ha_publisher import publish_stats
+        from ..services.ha_publisher import publish_form_entities, publish_stats
         await publish_stats()
+        await publish_form_entities()
     except Exception:
         logger.exception("MQTT stats publish after resync failed")
 
@@ -76,10 +78,12 @@ async def _run_sync():
         await run_full_sync()
     except Exception:
         logger.exception("Background sync crashed")
-    # Publish updated stats to MQTT
+    # Publish updated stats to MQTT (decks may have changed -> refresh the
+    # game-logger deck selector too)
     try:
-        from ..services.ha_publisher import publish_stats
+        from ..services.ha_publisher import publish_form_entities, publish_stats
         await publish_stats()
+        await publish_form_entities()
     except Exception:
         logger.exception("MQTT stats publish after sync failed")
 

@@ -448,6 +448,98 @@ async def publish_deck_sensors() -> None:
         logger.exception("Failed to publish deck MQTT sensors")
 
 
+# ---------------------------------------------------------------------------
+# Game-logger form
+# ---------------------------------------------------------------------------
+
+
+async def publish_form_entities() -> None:
+    """Publish the game-logger discovery configs and the current field values.
+
+    Re-run after a sync so the deck dropdown follows the database.  A stored
+    deck that has disappeared from the options is reset, because HA refuses a
+    select state that is not one of its options.
+    """
+    if not ha_mqtt.is_available():
+        return
+
+    from ..database import get_db
+    from . import ha_form
+
+    try:
+        db = await get_db()
+        prefix = ha_mqtt.topic_prefix()
+        availability = ha_mqtt.status_topic()
+
+        options, _mapping = await ha_form.deck_options(db)
+        values = await ha_form.load_state(db)
+
+        if values["deck"] not in options:
+            values["deck"] = ha_form.NO_DECK
+            await ha_form.set_field(db, "deck", ha_form.NO_DECK)
+
+        async with ha_mqtt.session() as client:
+            for entity in ha_form.form_entities(prefix, options):
+                await client.publish(
+                    discovery_topic(entity),
+                    payload=json.dumps(discovery_payload(entity, prefix, availability)),
+                    retain=True,
+                )
+            for key, value in values.items():
+                await client.publish(
+                    ha_form.state_topic(prefix, key), payload=value, retain=True
+                )
+
+        logger.info("MQTT game-logger form published (%d deck options)", len(options) - 1)
+    except Exception:
+        logger.exception("Failed to publish game-logger form")
+
+
+async def _publish_form_status(text: str) -> None:
+    from . import ha_form
+
+    await ha_mqtt.publish(
+        ha_form.state_topic(ha_mqtt.topic_prefix(), ha_form.STATUS_KEY),
+        payload=text,
+        retain=True,
+    )
+
+
+async def _on_form_message(topic: str, payload: bytes) -> None:
+    """Handle one `{prefix}/form/{field}/set` command from HA."""
+    from ..database import get_db
+    from . import ha_form
+
+    key = topic.split("/")[-2]
+    raw = payload.decode(errors="replace") if payload else ""
+    db = await get_db()
+    prefix = ha_mqtt.topic_prefix()
+
+    if key == ha_form.SUBMIT_KEY:
+        result = await ha_form.submit(db)
+        await _publish_form_status(ha_form.status_text(result))
+        if "error" not in result:
+            # Reset the visible form and refresh the play statistics
+            values = await ha_form.load_state(db)
+            async with ha_mqtt.session() as client:
+                for field, value in values.items():
+                    await client.publish(
+                        ha_form.state_topic(prefix, field), payload=value, retain=True
+                    )
+            asyncio.create_task(publish_deck_sensors())
+        return
+
+    try:
+        value = await ha_form.set_field(db, key, raw)
+    except ValueError as exc:
+        # Leave HA showing the previous value and say why on the status sensor
+        logger.warning("Rejected form command for %s: %s", key, exc)
+        await _publish_form_status(f"Ignored {key}: {exc}"[:255])
+        return
+
+    await ha_mqtt.publish(ha_form.state_topic(prefix, key), payload=value, retain=True)
+
+
 _inbox_publish_task: asyncio.Task | None = None
 INBOX_PUBLISH_DEBOUNCE_S = 5.0
 
@@ -861,12 +953,18 @@ async def _on_service_message(topic: str, payload: bytes) -> None:
 
 
 def start_ha_mqtt() -> None:
-    """Register the HA service subscriptions and start the MQTT manager.
+    """Register the HA subscriptions and start the MQTT manager.
 
-    Subscribes to ``{prefix}/service/+``; results go back to
-    ``{prefix}/service/{cmd}/response``.  The manager handles reconnects.
+    Subscribes to ``{prefix}/service/+`` (results go back to
+    ``{prefix}/service/{cmd}/response``) and to the game-logger command topics.
+    The manager handles reconnects.
     """
     if not ha_mqtt.is_available():
         return
-    ha_mqtt.register_handler(f"{ha_mqtt.topic_prefix()}/service/+", _on_service_message)
+
+    from . import ha_form
+
+    prefix = ha_mqtt.topic_prefix()
+    ha_mqtt.register_handler(f"{prefix}/service/+", _on_service_message)
+    ha_mqtt.register_handler(ha_form.command_topic_filter(prefix), _on_form_message)
     ha_mqtt.start()
