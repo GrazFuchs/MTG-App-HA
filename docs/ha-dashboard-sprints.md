@@ -143,12 +143,18 @@ neue Sensoren in derselben Version.
 - Edge Cases: Notizen > 255 Zeichen, während der Auswahl gelöschtes Deck,
   sehr viele Decks in der Options-Liste.
 
-## Sprint 32 — Dashboard-Paket & Doku (0.32.0)
+## Sprint 32 — Dashboard (in der HA-Config, nicht hier)
 
-- `docs/ha-dashboard.yaml`: fertiges Lovelace-Dashboard (Mushroom optional, mit
-  Fallback auf Core-Karten).
-- `docs/ha-package.yaml`: Automationen, Scripts, Notifications als HA-Package.
+Das Dashboard und die Automationen gehören in die Home-Assistant-Konfiguration,
+nicht ins Add-on-Repo: dort sind die Kartenbibliothek, das Theme, die
+Package-Struktur und die Namenskonventionen bekannt. Übergabe an den Agenten in
+der HA-Config: **[ha-dashboard-handoff.md](ha-dashboard-handoff.md)** — enthält
+die vollständige Entity-Inventur, die Attribut-Shapes, die MQTT-Services, die
+Aktualisierungs-Kadenz und die Fallstricke.
+
+Offen auf der Add-on-Seite:
+
 - `sensor.mtg_ingress_url`: Das Add-on publiziert seine eigene Ingress-URL, damit
   Deep-Links im Dashboard ohne manuell eingetragenen Slug funktionieren (die Doku
-  verlangt aktuell `<your-ingress-slug>`).
-- Überarbeitung von `docs/ha-integration.md`.
+  verlangt aktuell `<your-ingress-slug>`). Bis dahin trägt die HA-Seite den Slug
+  einmalig selbst ein.

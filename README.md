@@ -678,6 +678,7 @@ Configuration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
 - [Home Assistant Integration](docs/ha-integration.md) — MQTT sensors, availability, voice integration, automations, dashboard cards
 - [HA Dashboard Sprint Plan](docs/ha-dashboard-sprints.md) — Roadmap for inbox/sell sensors and logging games from HA (Sprints 28–32)
+- [HA Dashboard Handoff](docs/ha-dashboard-handoff.md) — Entity inventory and services, for building the dashboard in your Home Assistant config
 - [MCP Setup für Claude Desktop](docs/mcp-setup.md) — How to connect this add-on to Claude Desktop
 - [Cardmarket Workflow](docs/cardmarket-workflow.md) — CSV-based listing management
 
