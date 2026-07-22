@@ -132,6 +132,14 @@ SELL_SENSORS = [
     ),
 ]
 
+# Add-on itself
+ADDON_SENSORS = [
+    Entity(
+        key="ingress_url", name="MTG Ingress URL",
+        icon="mdi:link-variant", has_attributes=True,
+    ),
+]
+
 # Deck performance (overall; per-deck sensors are published dynamically)
 DECK_SENSORS = [
     Entity(
@@ -175,7 +183,9 @@ def active_entities() -> list[Entity]:
     Per-deck sensors are not listed here — they depend on the database and are
     published by :func:`publish_deck_sensors`.
     """
-    entities = AGGREGATE_SENSORS + INBOX_SENSORS + SELL_SENSORS + DECK_SENSORS
+    entities = (
+        AGGREGATE_SENSORS + ADDON_SENSORS + INBOX_SENSORS + SELL_SENSORS + DECK_SENSORS
+    )
     if _mtgstocks_enabled():
         entities += SIGNAL_SENSORS
     return entities
@@ -364,7 +374,11 @@ def _metric_bundles(db):
     """The metric factories that make up a full stats refresh."""
     from . import ha_metrics
 
+    async def _addon():
+        return ha_metrics.addon_metrics()
+
     bundles = [
+        ("addon", _addon),
         ("inbox", lambda: ha_metrics.inbox_metrics(db)),
         ("sell", lambda: ha_metrics.sell_metrics(db)),
     ]

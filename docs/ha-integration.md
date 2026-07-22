@@ -187,6 +187,25 @@ Basic lands are excluded everywhere, matching the Inbox UI.
 `sensor.mtg_sell_candidates` and `sensor.mtg_unlisted_value_eur` carry their top
 10 rows in the `items` attribute.
 
+### Deep links into the add-on UI
+
+| Sensor entity | Description |
+|---------------|-------------|
+| `sensor.mtg_ingress_url` | The add-on's own ingress path, e.g. `/api/hassio_ingress/<token>` |
+
+Its attributes carry a ready-made link per UI route — `dashboard`, `decks`,
+`collection`, `inbox`, `duplicates`, `cardmarket`, `wishlist`, `settings` — so
+dashboard cards never need a hardcoded slug:
+
+```yaml
+tap_action:
+  action: url
+  url_path: "{{ state_attr('sensor.mtg_ingress_url', 'inbox') }}"
+```
+
+The sensor stays *unknown* when the add-on runs outside Home Assistant
+(standalone Docker), where no absolute link exists.
+
 ### Deck performance
 
 | Sensor entity | Description | Unit |
@@ -381,6 +400,11 @@ Notifications include a clickable **"Open in MTG Collection"** link that jumps d
 |------------|-----------|
 | Price spike | `/cardmarket` |
 | Sync error | `/settings` |
+
+The link is resolved to a full Ingress URL from the path the Supervisor hands
+the add-on at startup. Outside a Supervisor environment there is no absolute
+link, and the notification is sent without one rather than with a path that
+would resolve against Home Assistant itself.
 
 You can also trigger persistent notifications from your own Python services or scripts via the `send_persistent_notification` helper in `backend/app/services/notifications.py`.
 

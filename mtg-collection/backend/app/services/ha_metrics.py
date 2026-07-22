@@ -237,6 +237,21 @@ async def sell_metrics(db: aiosqlite.Connection) -> Metrics:
     )
 
 
+def addon_metrics() -> Metrics:
+    """The add-on's own ingress link, so dashboards can deep-link into the UI.
+
+    Stays `None` — and therefore unpublished — outside a Supervisor
+    environment, where no absolute link exists.
+    """
+    from .ingress import deep_links, ingress_base
+
+    base = ingress_base()
+    return Metrics(
+        states={"ingress_url": base or None},
+        attributes={"ingress_url": deep_links()},
+    )
+
+
 async def deck_performance_metrics(db: aiosqlite.Connection) -> Metrics:
     """Overall play stats: games and win rate over the last 30 days, last game."""
     cursor = await db.execute(

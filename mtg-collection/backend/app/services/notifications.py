@@ -39,14 +39,14 @@ async def send_persistent_notification(
         return
 
     if deep_link:
-        # Resolve the add-on Ingress slug from the environment; fall back to a
-        # generic path that opens the Ingress panel for this add-on.
-        ingress_slug = os.environ.get("INGRESS_TOKEN", "")
-        if ingress_slug:
-            ingress_url = f"/api/hassio_ingress/{ingress_slug}{deep_link}"
-        else:
-            ingress_url = deep_link
-        message = f"{message}\n\n[Open in MTG Collection]({ingress_url})"
+        # Resolve to a full Ingress URL.  A bare relative path would resolve
+        # against Home Assistant itself and 404, so the link is omitted when the
+        # ingress path is unknown (i.e. outside a Supervisor environment).
+        from .ingress import ingress_url
+
+        resolved = ingress_url(deep_link)
+        if resolved:
+            message = f"{message}\n\n[Open in MTG Collection]({resolved})"
 
     if notification_id is None:
         notification_id = f"mtg_alert_{abs(hash(title)) % 10**8}"

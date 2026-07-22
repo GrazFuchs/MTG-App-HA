@@ -1,3 +1,12 @@
+## 0.32.0 — Sprint 32 (deep links)
+
+### Added
+- **`sensor.mtg_ingress_url`** — The add-on publishes its own ingress path, with one ready-made link per UI route as attributes (`dashboard`, `decks`, `collection`, `inbox`, `duplicates`, `cardmarket`, `wishlist`, `settings`). Dashboard cards can link into the add-on without a hardcoded slug — which also survives a reinstall, since the ingress token changes with it. Stays *unknown* outside a Supervisor environment, where no absolute link exists.
+- New `services/ingress.py` resolves every link into the add-on UI in one place.
+
+### Fixed
+- **Deep links in persistent notifications never worked** — The "Open in MTG Collection" link resolved the ingress slug from an `INGRESS_TOKEN` environment variable that nothing sets (`run.sh` exports `INGRESS_ENTRY`), so the link always fell back to a bare path such as `/cardmarket`, which resolves against Home Assistant itself and 404s. Links are now built from the path the Supervisor hands the add-on, and are omitted entirely when it is unknown rather than pointing somewhere wrong.
+
 ## 0.31.0 — Sprint 31 (game-logger form in HA)
 
 ### Added

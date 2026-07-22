@@ -152,9 +152,8 @@ der HA-Config: **[ha-dashboard-handoff.md](ha-dashboard-handoff.md)** — enthä
 die vollständige Entity-Inventur, die Attribut-Shapes, die MQTT-Services, die
 Aktualisierungs-Kadenz und die Fallstricke.
 
-Offen auf der Add-on-Seite:
+Add-on-Seite erledigt (v0.32.0):
 
-- `sensor.mtg_ingress_url`: Das Add-on publiziert seine eigene Ingress-URL, damit
-  Deep-Links im Dashboard ohne manuell eingetragenen Slug funktionieren (die Doku
-  verlangt aktuell `<your-ingress-slug>`). Bis dahin trägt die HA-Seite den Slug
-  einmalig selbst ein.
+- `sensor.mtg_ingress_url` publiziert die eigene Ingress-URL samt fertiger Links
+  je UI-Route als Attribute — Deep-Links im Dashboard brauchen keinen manuell
+  eingetragenen Slug mehr und überleben eine Neuinstallation des Add-ons.

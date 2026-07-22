@@ -40,6 +40,7 @@ rather than assuming a number is always there.
 | `sensor.mtg_total_decks` | – | – | measurement | |
 | `sensor.mtg_last_sync_status` | – | – | – | |
 | `sensor.mtg_last_sync_at` | – | timestamp | – | |
+| `sensor.mtg_ingress_url` | – | – | – | one link per UI route (see §2.3) |
 | `sensor.mtg_active_price_alerts` | – | – | measurement | |
 | `sensor.mtg_spending_30d` | EUR | monetary | total | |
 | `sensor.mtg_spending_30d_value` | EUR | monetary | total | |
@@ -218,18 +219,25 @@ Suggested structure — adapt to the conventions already used in this config
 
 ### 2.3 Deep links into the add-on UI
 
-Cards should link into the relevant tab of the add-on (`/inbox`, `/cardmarket`,
-`/wishlist`, `/decks`). The URL is an ingress path:
+The add-on publishes its own ingress link, so **no slug has to be hardcoded**:
 
-```
-/api/hassio_ingress/<slug>/inbox
+| Entity | State | Attributes |
+|---|---|---|
+| `sensor.mtg_ingress_url` | `/api/hassio_ingress/<token>` | one link per UI route |
+
+Attribute keys: `dashboard`, `decks`, `collection`, `inbox`, `duplicates`,
+`cardmarket`, `wishlist`, `settings` — each already a complete path.
+
+```yaml
+tap_action:
+  action: url
+  url_path: "{{ state_attr('sensor.mtg_ingress_url', 'inbox') }}"
 ```
 
-The add-on does **not** publish its own ingress URL yet (that is the one open
-item on the add-on side). Read the slug once from
-Settings → Add-ons → MTG Collection Manager → the browser URL, and keep it in a
-single place (e.g. one `input_text` or a variable in the package) so it is easy
-to swap later.
+The sensor is `unknown` when the add-on runs outside a Supervisor environment
+(standalone Docker), so guard cards with `has_value()` if that is a possibility
+here. The ingress token changes when the add-on is reinstalled — reading it
+from the sensor rather than copying it keeps the dashboard working.
 
 ---
 

@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.31.0 |
+| App version | 0.32.0 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -236,6 +236,7 @@ mtg-collection-ha/                     # GitHub repository root
     │           ├── ha_metrics.py        # Inbox / sell / deck metrics behind the HA sensors
     │           ├── ha_mqtt.py           # Shared MQTT connection, availability, subscriptions
     │           ├── ha_publisher.py      # MQTT sensor discovery and publishing
+    │           ├── ingress.py           # Resolve deep links into the add-on UI
     │           ├── listing_health.py    # Listing vs trend health analysis
     │           ├── notifications.py     # Price-spike notifications
     │           ├── queries.py           # Shared DB query helpers (incl. basic-land exclusion)
