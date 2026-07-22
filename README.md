@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.32.1 |
+| App version | 0.32.2 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -202,7 +202,8 @@ mtg-collection-ha/                     # GitHub repository root
     │       ├── config.py        # Pydantic settings (from options.json)
     │       ├── database.py      # SQLite schema, init, migrations, connection
     │       ├── scheduler.py     # APScheduler for daily sync
-    │       ├── version.py       # VERSION = "0.22.0"
+    │       ├── static_files.py  # SPA fallback + cache headers for the built frontend
+    │       ├── version.py       # VERSION = "0.32.2"
     │       ├── mcp_server.py    # MCP server (27 tools, 3 resources, 2 prompts)
     │       ├── logging_config.py # Structured JSON logging to stdout
     │       ├── clients/

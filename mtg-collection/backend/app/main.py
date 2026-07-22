@@ -6,12 +6,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .database import init_db, close_db
 from .logging_config import setup_logging
 from .scheduler import start_scheduler, stop_scheduler
+from .static_files import SpaStaticFiles
 from .version import VERSION
 from .routers import decks, collection, cardmarket, sync, cards, stats, wishlist, backup, mcp_setup, voice, acquisitions, mtgstocks
 
@@ -148,4 +148,4 @@ if _mcp_available:
 # Serve frontend (must be last)
 static_dir = Path(__file__).parent.parent / "static"
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/", SpaStaticFiles(directory=str(static_dir), html=True), name="static")

@@ -1,3 +1,11 @@
+## 0.32.2
+
+### Fixed
+- **White page and a 404 after every add-on update** — `index.html` keeps its name while the asset filenames carry a content hash that changes with every build, so a browser-cached copy kept requesting bundles the new container no longer had. The HTML (and every other unhashed file) is now served with `Cache-Control: no-cache, must-revalidate`; only the content-hashed files under `/assets/` are cached long-term, where it is safe. No more clearing the browser cache by hand after an update.
+- **Reloading a sub-page 404'd** — `/inbox`, `/settings`, `/decks/42` and friends are client-side routes with no file behind them, so a reload or a bookmark hit a 404. Unknown paths now fall back to the app shell. Requests that name a file (`.js`, `.css`, …) and anything under `/api` or `/mcp` keep returning a real 404, so a missing asset stays a clear error instead of becoming a confusing MIME-type failure, and API errors are not swallowed by the shell.
+
+New `app/static_files.py` (`SpaStaticFiles`) replaces the plain `StaticFiles` mount.
+
 ## 0.32.1
 
 ### Fixed
