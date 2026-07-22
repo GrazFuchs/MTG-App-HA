@@ -1,3 +1,19 @@
+## 0.28.0 — Sprint 28 (MQTT foundation)
+
+Groundwork for the HA dashboard integration planned in [docs/ha-dashboard-sprints.md](../docs/ha-dashboard-sprints.md). No new entities — the existing ones get more reliable instead.
+
+### Added
+- **Availability / online state** — The add-on now holds a single long-lived MQTT connection (`services/ha_mqtt.py`) that publishes a retained `online` on `mtg-collection/status` and registers `offline` as its Last Will; a graceful stop publishes `offline` explicitly. Every discovery config references that topic, so all MTG entities go *unavailable* in HA while the add-on is down instead of showing stale values.
+- **Entity abstraction** — `services/ha_entities.py` builds the discovery payloads for all component types (`sensor` today, `select`/`number`/`switch`/`text`/`button` for the upcoming game-logger form).
+- **Discovery snapshot tests** (`tests/test_ha_discovery.py`) pinning every `unique_id`, plus end-to-end tests of the publish/subscribe paths against a fake broker.
+
+### Changed
+- **One MQTT connection instead of one per publish** — Publishers and the service subscriber share the manager's connection; calls made before the manager is up (e.g. from a request handler during startup) fall back to a single short-lived connection per batch. Behaviour of all existing topics, entity names and `unique_id`s is unchanged.
+- **Long-term statistics for the count sensors** — `total_cards`, `unique_cards`, `total_decks`, `active_price_alerts`, `acquired_count_30d` and the three `listings_*` sensors now declare `state_class: measurement`, so HA records history and can chart them. They previously had none.
+
+### Fixed
+- **"Impossible state class" on the monetary sensors** — `total_value_eur/usd`, `spending_30d` and `spending_30d_value` combined `device_class: monetary` with `state_class: measurement`, which HA rejects (monetary only accepts `total`); they were logged as invalid and got no statistics. Now `total`.
+
 ## 0.27.0 — Sprint 27 (MTGStocks integration)
 
 ### Added

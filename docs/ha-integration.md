@@ -2,6 +2,7 @@
 
 This guide covers all the ways **MTG Collection Manager** integrates deeply with Home Assistant:
 
+- [Availability](#availability)
 - [Wishlist Item Sensors](#wishlist-item-sensors)
 - [Aggregate Sensors (Spending, Listing Health)](#aggregate-sensors)
 - [MQTT-Based Service Registry](#mqtt-based-service-registry)
@@ -10,6 +11,25 @@ This guide covers all the ways **MTG Collection Manager** integrates deeply with
 - [Example Automations](#example-automations)
 - [Example Dashboard Cards](#example-dashboard-cards)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Availability
+
+The add-on keeps one MQTT connection open and reports its state on
+`mtg-collection/status` (retained):
+
+| Payload | Meaning |
+|---------|---------|
+| `online` | Published on every (re)connect |
+| `offline` | Published on a graceful stop, or by the broker via Last Will if the add-on dies |
+
+Every entity below references this topic, so all MTG entities show as
+**unavailable** in HA while the add-on is down instead of keeping their last value.
+
+```bash
+mosquitto_sub -h <mqtt_host> -t 'mtg-collection/status' -C 1
+```
 
 ---
 
@@ -79,6 +99,11 @@ These sensors are published once daily after the scheduled sync (and on startup)
 | `sensor.mtg_listings_fair` | Cardmarket listings within the fair band | – |
 
 All sensors are registered via MQTT Discovery under the `MTG Collection` device.
+
+The count sensors declare `state_class: measurement` and the monetary ones
+`state_class: total`, so HA records long-term statistics for them — you can chart
+the collection value or card count over time with a `statistics-graph` card
+without any template sensors.
 
 ---
 
@@ -308,8 +333,14 @@ chips:
 
 1. Check that `mqtt_enabled: true` is set in add-on options.
 2. Verify the broker credentials (`mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`).
-3. Check add-on logs for `"MQTT discovery configs published"`.
+3. Check add-on logs for `"MQTT manager connected"` and `"MQTT discovery configs published"`.
 4. In HA → Developer Tools → MQTT, subscribe to `homeassistant/sensor/mtg_#` and restart the add-on.
+
+### All MTG entities show "unavailable"
+
+The add-on is not connected to the broker. Check `mtg-collection/status` — if it
+reads `offline`, look for `"MQTT manager disconnected, reconnecting in 30s"` in
+the add-on log; the connection is retried automatically every 30 seconds.
 
 ### Service commands are not processed
 

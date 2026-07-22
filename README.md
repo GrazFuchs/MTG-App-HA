@@ -6,7 +6,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
 
 | Component | Value |
 |-----------|-------|
-| App version | 0.27.0 |
+| App version | 0.28.0 |
 | Python runtime | 3.12 (`python:3.12-alpine`) |
 | Node.js build | 20 (`node:20-alpine`) |
 | Ingress port | 8099 |
@@ -230,6 +230,8 @@ mtg-collection-ha/                     # GitHub repository root
     │           ├── cardmarket_prices.py # Cardmarket price sync and alerts
     │           ├── combo_sync.py        # Commander Spellbook combo sync
     │           ├── deck_performance.py  # Deck game-result aggregation
+    │           ├── ha_entities.py       # HA MQTT Discovery entity descriptions
+    │           ├── ha_mqtt.py           # Shared MQTT connection, availability, subscriptions
     │           ├── ha_publisher.py      # MQTT sensor discovery and publishing
     │           ├── listing_health.py    # Listing vs trend health analysis
     │           ├── notifications.py     # Price-spike notifications
@@ -671,7 +673,8 @@ Configuration in `backend/pyproject.toml` (line-length 100, strict mypy).
 
 ## 📚 Detailed Guides
 
-- [Home Assistant Integration](docs/ha-integration.md) — MQTT sensors, voice integration, automations, dashboard cards
+- [Home Assistant Integration](docs/ha-integration.md) — MQTT sensors, availability, voice integration, automations, dashboard cards
+- [HA Dashboard Sprint Plan](docs/ha-dashboard-sprints.md) — Roadmap for inbox/sell sensors and logging games from HA (Sprints 28–32)
 - [MCP Setup für Claude Desktop](docs/mcp-setup.md) — How to connect this add-on to Claude Desktop
 - [Cardmarket Workflow](docs/cardmarket-workflow.md) — CSV-based listing management
 

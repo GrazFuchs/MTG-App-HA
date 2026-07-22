@@ -32,12 +32,13 @@ async def lifespan(app: FastAPI):
 
     start_scheduler()
 
-    # Publish MQTT discovery configs at startup
+    # Hold the MQTT connection open (availability + service calls) and publish
+    # the discovery configs once the DB is populated.
     if settings.mqtt_enabled:
         import asyncio
-        from .services.ha_publisher import publish_discovery, publish_stats
+        from .services.ha_publisher import start_ha_mqtt
+        start_ha_mqtt()
         asyncio.create_task(_startup_mqtt_publish())
-        asyncio.create_task(_start_service_subscriber())
 
     # Start MCP session manager (required for streamable HTTP transport)
     if _mcp_available and mcp_server is not None:
@@ -47,6 +48,9 @@ async def lifespan(app: FastAPI):
         yield
 
     stop_scheduler()
+    if settings.mqtt_enabled:
+        from .services import ha_mqtt
+        await ha_mqtt.shutdown()
     await close_db()
 
 
@@ -62,16 +66,6 @@ async def _startup_mqtt_publish():
     except Exception as e:
         import logging
         logging.getLogger(__name__).error("Startup MQTT publish failed: %s", e)
-
-
-async def _start_service_subscriber():
-    """Start the long-running MQTT service subscriber."""
-    try:
-        from .services.ha_publisher import service_subscriber_loop
-        await service_subscriber_loop()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error("MQTT service subscriber exited unexpectedly: %s", e)
 
 
 app = FastAPI(

@@ -4,123 +4,98 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from ..config import get_settings
-from ..version import VERSION
+from . import ha_mqtt
+from .ha_entities import (
+    WISHLIST_DEVICE_INFO,
+    Entity,
+    discovery_payload,
+    discovery_topic,
+)
 
 logger = logging.getLogger(__name__)
 
-DEVICE_INFO = {
-    "identifiers": ["mtg-collection-ha"],
-    "name": "MTG Collection",
-    "manufacturer": "mtg-collection-ha",
-    "model": "Add-on",
-}
-
-# Device block used for per-item wishlist sensors
-_WISHLIST_DEVICE_INFO = {
-    "identifiers": ["mtg_collection_manager"],
-    "name": "MTG Collection Manager",
-    "model": f"v{VERSION}",
-}
-
-SENSOR_DEFINITIONS = [
-    {"key": "total_cards", "name": "Total Cards", "icon": "mdi:cards"},
-    {"key": "unique_cards", "name": "Unique Cards", "icon": "mdi:cards-outline"},
-    {
-        "key": "total_value_eur", "name": "Total Value EUR",
-        "device_class": "monetary", "unit": "EUR", "state_class": "measurement",
-    },
-    {
-        "key": "total_value_usd", "name": "Total Value USD",
-        "device_class": "monetary", "unit": "USD", "state_class": "measurement",
-    },
-    {"key": "total_decks", "name": "Total Decks", "icon": "mdi:cards-playing-outline"},
-    {"key": "last_sync_status", "name": "Last Sync Status", "icon": "mdi:sync"},
-    {"key": "last_sync_at", "name": "Last Sync At", "device_class": "timestamp"},
-    {
-        "key": "active_price_alerts", "name": "Active Price Alerts",
-        "icon": "mdi:alert-decagram",
-    },
+# `state_class` drives HA's long-term statistics.  Counts use `measurement`;
+# `device_class: monetary` only accepts `total` (HA rejects `measurement` there
+# with an "impossible state class" warning).
+AGGREGATE_SENSORS = [
+    Entity(key="total_cards", name="Total Cards", icon="mdi:cards", state_class="measurement"),
+    Entity(
+        key="unique_cards", name="Unique Cards",
+        icon="mdi:cards-outline", state_class="measurement",
+    ),
+    Entity(
+        key="total_value_eur", name="Total Value EUR",
+        device_class="monetary", unit="EUR", state_class="total",
+    ),
+    Entity(
+        key="total_value_usd", name="Total Value USD",
+        device_class="monetary", unit="USD", state_class="total",
+    ),
+    Entity(
+        key="total_decks", name="Total Decks",
+        icon="mdi:cards-playing-outline", state_class="measurement",
+    ),
+    Entity(key="last_sync_status", name="Last Sync Status", icon="mdi:sync"),
+    Entity(key="last_sync_at", name="Last Sync At", device_class="timestamp"),
+    Entity(
+        key="active_price_alerts", name="Active Price Alerts",
+        icon="mdi:alert-decagram", state_class="measurement",
+    ),
     # Spending / acquisition sensors (last 30 days)
-    {
-        "key": "spending_30d", "name": "MTG Spending 30d",
-        "device_class": "monetary", "unit": "EUR", "state_class": "measurement",
-        "icon": "mdi:cash-multiple",
-    },
-    {
-        "key": "spending_30d_value", "name": "MTG Acquired Value 30d",
-        "device_class": "monetary", "unit": "EUR", "state_class": "measurement",
-        "icon": "mdi:trending-up",
-    },
-    {
-        "key": "acquired_count_30d", "name": "MTG Acquired Count 30d",
-        "icon": "mdi:cards-playing-heart-multiple",
-    },
+    Entity(
+        key="spending_30d", name="MTG Spending 30d",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:cash-multiple",
+    ),
+    Entity(
+        key="spending_30d_value", name="MTG Acquired Value 30d",
+        device_class="monetary", unit="EUR", state_class="total",
+        icon="mdi:trending-up",
+    ),
+    Entity(
+        key="acquired_count_30d", name="MTG Acquired Count 30d",
+        icon="mdi:cards-playing-heart-multiple", state_class="measurement",
+    ),
     # Listing health sensors
-    {"key": "listings_underpriced", "name": "MTG Listings Underpriced", "icon": "mdi:tag-arrow-down"},
-    {"key": "listings_overpriced", "name": "MTG Listings Overpriced", "icon": "mdi:tag-arrow-up"},
-    {"key": "listings_fair", "name": "MTG Listings Fair", "icon": "mdi:tag-check"},
+    Entity(
+        key="listings_underpriced", name="MTG Listings Underpriced",
+        icon="mdi:tag-arrow-down", state_class="measurement",
+    ),
+    Entity(
+        key="listings_overpriced", name="MTG Listings Overpriced",
+        icon="mdi:tag-arrow-up", state_class="measurement",
+    ),
+    Entity(
+        key="listings_fair", name="MTG Listings Fair",
+        icon="mdi:tag-check", state_class="measurement",
+    ),
 ]
 
 
 async def publish_discovery():
-    """Publish HA MQTT Discovery config for all sensors."""
-    settings = get_settings()
-    if not settings.mqtt_enabled:
+    """Publish HA MQTT Discovery config for all aggregate sensors."""
+    if not ha_mqtt.is_available():
         return
 
-    try:
-        import aiomqtt
-    except ImportError:
-        logger.warning("aiomqtt not installed, MQTT publishing disabled")
-        return
-
-    prefix = settings.mqtt_topic_prefix
+    prefix = ha_mqtt.topic_prefix()
+    availability = ha_mqtt.status_topic()
 
     try:
-        async with aiomqtt.Client(
-            hostname=settings.mqtt_host,
-            port=settings.mqtt_port,
-            username=settings.mqtt_username or None,
-            password=settings.mqtt_password or None,
-        ) as client:
-            for sensor in SENSOR_DEFINITIONS:
-                key = sensor["key"]
-                config_topic = f"homeassistant/sensor/mtg_collection_{key}/config"
-                config_payload = {
-                    "name": sensor["name"],
-                    "unique_id": f"mtg_collection_{key}",
-                    "state_topic": f"{prefix}/{key}",
-                    "device": DEVICE_INFO,
-                }
-                if "device_class" in sensor:
-                    config_payload["device_class"] = sensor["device_class"]
-                if "unit" in sensor:
-                    config_payload["unit_of_measurement"] = sensor["unit"]
-                if "state_class" in sensor:
-                    config_payload["state_class"] = sensor["state_class"]
-                if "icon" in sensor:
-                    config_payload["icon"] = sensor["icon"]
-
+        async with ha_mqtt.session() as client:
+            for entity in AGGREGATE_SENSORS:
                 await client.publish(
-                    config_topic,
-                    payload=json.dumps(config_payload),
+                    discovery_topic(entity),
+                    payload=json.dumps(discovery_payload(entity, prefix, availability)),
                     retain=True,
                 )
-            logger.info("MQTT discovery configs published for %d sensors", len(SENSOR_DEFINITIONS))
+        logger.info("MQTT discovery configs published for %d sensors", len(AGGREGATE_SENSORS))
     except Exception:
         logger.exception("Failed to publish MQTT discovery configs")
 
 
 async def publish_stats():
     """Fetch stats from DB and publish to MQTT state topics."""
-    settings = get_settings()
-    if not settings.mqtt_enabled:
-        return
-
-    try:
-        import aiomqtt
-    except ImportError:
+    if not ha_mqtt.is_available():
         return
 
     from ..database import get_db
@@ -188,7 +163,7 @@ async def publish_stats():
         except Exception:
             logger.debug("Could not fetch listing health for MQTT")
 
-        prefix = settings.mqtt_topic_prefix
+        prefix = ha_mqtt.topic_prefix()
         values = {
             "total_cards": int(row[0]),
             "unique_cards": int(row[1]),
@@ -206,12 +181,7 @@ async def publish_stats():
             "listings_fair": listings_fair,
         }
 
-        async with aiomqtt.Client(
-            hostname=settings.mqtt_host,
-            port=settings.mqtt_port,
-            username=settings.mqtt_username or None,
-            password=settings.mqtt_password or None,
-        ) as client:
+        async with ha_mqtt.session() as client:
             for key, value in values.items():
                 await client.publish(
                     f"{prefix}/{key}",
@@ -259,31 +229,31 @@ def _build_wishlist_state(row) -> dict:
     }
 
 
-def _build_wishlist_discovery(item_id: int, card_name: str, set_code: str, prefix: str) -> dict:
-    """Build the MQTT discovery config payload for a wishlist item sensor."""
+def _wishlist_entity(item_id: int, card_name: str, set_code: str, prefix: str) -> Entity:
+    """Describe the HA entity for one wishlist item.
+
+    No `state_class`: a per-item price is not a meaningful long-term statistic,
+    and `monetary` would force `total` (running-sum) semantics onto it.
+    """
     display_set = f" ({set_code})" if set_code else ""
-    return {
-        "name": f"MTG Wishlist {card_name}{display_set}",
-        "unique_id": f"mtg_wishlist_{item_id}",
-        "state_topic": f"{prefix}/wishlist/{item_id}/state",
-        "value_template": "{{ value_json.current_price_eur }}",
-        "json_attributes_topic": f"{prefix}/wishlist/{item_id}/state",
-        "unit_of_measurement": "EUR",
-        "icon": "mdi:cards",
-        "device_class": "monetary",
-        "device": _WISHLIST_DEVICE_INFO,
-    }
+    state_topic = f"{prefix}/wishlist/{item_id}/state"
+    return Entity(
+        key=f"wishlist_{item_id}",
+        name=f"MTG Wishlist {card_name}{display_set}",
+        unique_id=f"mtg_wishlist_{item_id}",
+        state_topic=state_topic,
+        value_template="{{ value_json.current_price_eur }}",
+        json_attributes_topic=state_topic,
+        unit="EUR",
+        icon="mdi:cards",
+        device_class="monetary",
+        device=WISHLIST_DEVICE_INFO,
+    )
 
 
 async def publish_wishlist_sensor_by_id(item_id: int) -> None:
     """Fetch one wishlist item from DB and publish its MQTT discovery + state."""
-    settings = get_settings()
-    if not settings.mqtt_enabled:
-        return
-
-    try:
-        import aiomqtt
-    except ImportError:
+    if not ha_mqtt.is_available():
         return
 
     from ..database import get_db
@@ -306,21 +276,18 @@ async def publish_wishlist_sensor_by_id(item_id: int) -> None:
         if not row:
             return
 
-        prefix = settings.mqtt_topic_prefix
+        prefix = ha_mqtt.topic_prefix()
         card_name = row["card_name"] or ""
         set_code = row["set_code"] or ""
         state = _build_wishlist_state(row)
-        discovery = _build_wishlist_discovery(item_id, card_name, set_code, prefix)
+        entity = _wishlist_entity(item_id, card_name, set_code, prefix)
 
-        async with aiomqtt.Client(
-            hostname=settings.mqtt_host,
-            port=settings.mqtt_port,
-            username=settings.mqtt_username or None,
-            password=settings.mqtt_password or None,
-        ) as client:
+        async with ha_mqtt.session() as client:
             await client.publish(
-                f"homeassistant/sensor/mtg_wishlist_{item_id}/config",
-                payload=json.dumps(discovery),
+                discovery_topic(entity),
+                payload=json.dumps(
+                    discovery_payload(entity, prefix, ha_mqtt.status_topic())
+                ),
                 retain=True,
             )
             await client.publish(
@@ -344,13 +311,7 @@ async def publish_wishlist_sensors() -> None:
     A 50 ms delay is inserted between individual item publishes to avoid
     overwhelming HA's MQTT processor on large wishlists.
     """
-    settings = get_settings()
-    if not settings.mqtt_enabled:
-        return
-
-    try:
-        import aiomqtt
-    except ImportError:
+    if not ha_mqtt.is_available():
         return
 
     from ..database import get_db
@@ -375,23 +336,19 @@ async def publish_wishlist_sensors() -> None:
             logger.info("No active wishlist items to publish")
             return
 
-        prefix = settings.mqtt_topic_prefix
-        async with aiomqtt.Client(
-            hostname=settings.mqtt_host,
-            port=settings.mqtt_port,
-            username=settings.mqtt_username or None,
-            password=settings.mqtt_password or None,
-        ) as client:
+        prefix = ha_mqtt.topic_prefix()
+        availability = ha_mqtt.status_topic()
+        async with ha_mqtt.session() as client:
             for i, row in enumerate(rows):
                 item_id = row["id"]
                 card_name = row["card_name"] or ""
                 set_code = row["set_code"] or ""
                 state = _build_wishlist_state(row)
-                discovery = _build_wishlist_discovery(item_id, card_name, set_code, prefix)
+                entity = _wishlist_entity(item_id, card_name, set_code, prefix)
 
                 await client.publish(
-                    f"homeassistant/sensor/mtg_wishlist_{item_id}/config",
-                    payload=json.dumps(discovery),
+                    discovery_topic(entity),
+                    payload=json.dumps(discovery_payload(entity, prefix, availability)),
                     retain=True,
                 )
                 await client.publish(
@@ -416,30 +373,15 @@ async def delete_wishlist_sensor(item_id: int) -> None:
     leave the old retained message in the broker and the entity would reappear after
     HA or the broker restarts (ghost sensor).
     """
-    settings = get_settings()
-    if not settings.mqtt_enabled:
+    if not ha_mqtt.is_available():
         return
 
-    try:
-        import aiomqtt
-    except ImportError:
-        return
-
-    try:
-        async with aiomqtt.Client(
-            hostname=settings.mqtt_host,
-            port=settings.mqtt_port,
-            username=settings.mqtt_username or None,
-            password=settings.mqtt_password or None,
-        ) as client:
-            await client.publish(
-                f"homeassistant/sensor/mtg_wishlist_{item_id}/config",
-                payload="",
-                retain=True,  # Must be True to overwrite and clear the retained config
-            )
-        logger.debug("Deleted wishlist MQTT sensor for item %d", item_id)
-    except Exception:
-        logger.exception("Failed to delete wishlist MQTT sensor for item %d", item_id)
+    await ha_mqtt.publish(
+        f"homeassistant/sensor/mtg_wishlist_{item_id}/config",
+        payload="",
+        retain=True,  # Must be True to overwrite and clear the retained config
+    )
+    logger.debug("Deleted wishlist MQTT sensor for item %d", item_id)
 
 
 # ---------------------------------------------------------------------------
@@ -561,53 +503,32 @@ async def _service_mark_acquired(payload: dict) -> dict:
     return {"status": "acquired", "item_id": item_id}
 
 
-async def service_subscriber_loop() -> None:
-    """Long-running MQTT subscriber for HA service calls.
-
-    Subscribes to ``{prefix}/service/+`` and dispatches commands to internal
-    handlers. Publishes results back to ``{prefix}/service/{cmd}/response``.
-    Reconnects automatically after failures.
-    """
-    settings = get_settings()
-    if not settings.mqtt_enabled:
+async def _on_service_message(topic: str, payload: bytes) -> None:
+    """Dispatch one ``{prefix}/service/{cmd}`` message and answer on ``/response``."""
+    topic_parts = topic.split("/")
+    cmd = topic_parts[-1]
+    # Skip response topics to avoid loops
+    if "response" in topic_parts:
         return
 
     try:
-        import aiomqtt
-    except ImportError:
-        logger.warning("aiomqtt not installed, service subscriber disabled")
+        raw = payload.decode() if payload else "{}"
+        result = await _handle_service_cmd(cmd, json.loads(raw or "{}"))
+    except Exception as exc:
+        result = {"error": str(exc), "cmd": cmd}
+
+    await ha_mqtt.publish(
+        f"{ha_mqtt.topic_prefix()}/service/{cmd}/response", payload=json.dumps(result)
+    )
+
+
+def start_ha_mqtt() -> None:
+    """Register the HA service subscriptions and start the MQTT manager.
+
+    Subscribes to ``{prefix}/service/+``; results go back to
+    ``{prefix}/service/{cmd}/response``.  The manager handles reconnects.
+    """
+    if not ha_mqtt.is_available():
         return
-
-    prefix = settings.mqtt_topic_prefix
-    service_topic = f"{prefix}/service/+"
-
-    while True:
-        try:
-            async with aiomqtt.Client(
-                hostname=settings.mqtt_host,
-                port=settings.mqtt_port,
-                username=settings.mqtt_username or None,
-                password=settings.mqtt_password or None,
-            ) as client:
-                await client.subscribe(service_topic)
-                logger.info("MQTT service subscriber listening on %s", service_topic)
-                async for msg in client.messages:
-                    topic_parts = msg.topic.value.split("/")
-                    cmd = topic_parts[-1]
-                    # Skip response topics to avoid loops
-                    if "response" in topic_parts:
-                        continue
-                    try:
-                        raw = msg.payload.decode() if msg.payload else "{}"
-                        payload = json.loads(raw or "{}")
-                        result = await _handle_service_cmd(cmd, payload)
-                    except Exception as exc:
-                        result = {"error": str(exc), "cmd": cmd}
-                    response_topic = f"{prefix}/service/{cmd}/response"
-                    try:
-                        await client.publish(response_topic, payload=json.dumps(result))
-                    except Exception:
-                        logger.exception("Failed to publish service response for %s", cmd)
-        except Exception:
-            logger.exception("MQTT service subscriber disconnected, retrying in 30s")
-            await asyncio.sleep(30)
+    ha_mqtt.register_handler(f"{ha_mqtt.topic_prefix()}/service/+", _on_service_message)
+    ha_mqtt.start()
