@@ -24,8 +24,11 @@ async def analyze_listings(threshold_pct: float = 15.0) -> dict:
             cl.price AS my_price,
             ph.trend AS trend_price
         FROM cardmarket_listings cl
+        -- Joined on the linked card, not the name: a name match multiplied
+        -- each listing by every printing of that card and compared its price
+        -- against whichever one the planner happened to return.
         LEFT JOIN cardmarket_products cp
-            ON LOWER(cp.card_name) = LOWER(cl.card_name)
+            ON cp.card_id = cl.card_id
         LEFT JOIN cardmarket_price_history ph
             ON ph.cm_product_id = cp.cm_product_id
            AND ph.date = (

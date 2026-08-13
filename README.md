@@ -409,6 +409,7 @@ Base URL: `http://<ha-host>:8123/api/hassio_ingress/<token>`
 | `GET` | `/api/cardmarket/price-history/{id}` | Price history for a Cardmarket product |
 | `GET` | `/api/cardmarket/price-alerts` | Price-spike alerts for unused cards |
 | `POST` | `/api/cardmarket/sync-prices` | Trigger a manual Cardmarket price sync |
+| `POST` | `/api/cardmarket/backfill-links` | Fetch each printing's Cardmarket product id from Scryfall (`max_cards`, 0 = all) |
 | `GET` | `/api/cardmarket/products` | List matched Cardmarket products |
 | `POST` | `/api/cardmarket/add-listing` | Create a manual listing (body: `card_name`, `quantity`, `price`, …) |
 | `DELETE` | `/api/cardmarket/clear-listings` | Delete all listings |

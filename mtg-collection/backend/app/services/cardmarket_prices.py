@@ -1,4 +1,13 @@
-"""Cardmarket price data sync from public JSON feeds."""
+"""Cardmarket price data sync from public JSON feeds.
+
+Cardmarket prices are per *product*, and a product is one printing: the Alpha
+"Terror" and the Tenth Edition "Terror" are two products with two price
+histories that differ by four orders of magnitude. The only printing-exact
+bridge from our collection to those products is `cards.cardmarket_id`, which
+Scryfall supplies per printing. Matching on the card name instead collapses all
+31 "Terror" products into one and reports the spike of a printing you do not
+own against the copies of one you do — see `_migration_19`.
+"""
 import logging
 from datetime import date
 from typing import Any
@@ -9,123 +18,177 @@ from ..database import get_db
 
 logger = logging.getLogger(__name__)
 
-CM_PRODUCTS_URL = "https://downloads.s3.cardmarket.com/productCatalog/productList/products_singles_{n}.json"
-CM_PRICES_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_{n}.json"
+# The `_1` is Cardmarket's game id (Magic), not a page number. Games 2, 3, ...
+# are World of Warcraft, Yu-Gi-Oh! and friends — different products entirely.
+CM_PRICES_URL = "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_1.json"
+
+# Within the Magic guide, products are split by category: 1 is "Magic Single",
+# the rest are boosters, displays and other sealed product we never price.
+MAGIC_SINGLE_CATEGORY = 1
+
+# Scryfall lookups per POST /cards/collection are capped at 75 identifiers.
+_SCRYFALL_CHUNK = 75
+
+# `cardmarket_id = 0` marks a card Scryfall has no Cardmarket product for
+# (tokens, some promos). Distinguishing that from NULL keeps the backfill from
+# asking about the same hopeless cards on every run.
+_NO_CARDMARKET_PRODUCT = 0
 
 
-async def _fetch_json_pages(url_template: str) -> list[dict[str, Any]]:
-    """Fetch all numbered JSON pages until 404."""
-    all_items: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        n = 1
-        while True:
-            url = url_template.format(n=n)
-            try:
-                resp = await client.get(url)
-                if resp.status_code in (403, 404):
-                    break
-                resp.raise_for_status()
-                data = resp.json()
-                if isinstance(data, list):
-                    all_items.extend(data)
-                elif isinstance(data, dict):
-                    # Some formats wrap in a dict
-                    items = data.get("products", data.get("priceGuides", data.get("data", [])))
-                    if isinstance(items, list):
-                        all_items.extend(items)
-                    else:
-                        all_items.append(data)
-                logger.info("Fetched %s (%d items)", url, len(data) if isinstance(data, list) else 1)
-                n += 1
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code in (403, 404):
-                    break
-                logger.warning("HTTP error fetching %s: %s", url, e)
-                break
-            except Exception as e:
-                logger.warning("Error fetching %s: %s", url, e)
-                break
-    return all_items
+async def _fetch_price_guide() -> list[dict[str, Any]]:
+    """Fetch the Magic price guide, restricted to single cards."""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.get(CM_PRICES_URL)
+        resp.raise_for_status()
+        data = resp.json()
+
+    entries = data.get("priceGuides", []) if isinstance(data, dict) else data
+    if not isinstance(entries, list):
+        logger.warning("Unexpected price guide shape: %s", type(entries).__name__)
+        return []
+
+    singles = [e for e in entries if e.get("idCategory") == MAGIC_SINGLE_CATEGORY]
+    logger.info(
+        "Fetched price guide: %d entries, %d Magic singles", len(entries), len(singles)
+    )
+    return singles
+
+
+async def backfill_cardmarket_ids(max_cards: int | None = None) -> dict[str, Any]:
+    """Fill `cards.cardmarket_id` from Scryfall for cards that still lack it.
+
+    Only touches rows where the column is NULL, so a completed backfill costs
+    one cheap query. Cards Scryfall has no Cardmarket product for are marked
+    with 0 rather than left NULL, so they are asked about once and not again.
+    """
+    from ..clients.scryfall import scryfall
+
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT id, scryfall_id FROM cards
+        WHERE cardmarket_id IS NULL AND COALESCE(scryfall_id, '') != ''
+        ORDER BY id"""
+        + (" LIMIT ?" if max_cards else ""),
+        (max_cards,) if max_cards else (),
+    )
+    pending = await cursor.fetchall()
+    if not pending:
+        return {"status": "completed", "checked": 0, "linked": 0, "unavailable": 0}
+
+    by_scryfall_id = {row[1]: row[0] for row in pending}
+    identifiers = [{"id": sid} for sid in by_scryfall_id]
+    logger.info("Backfilling Cardmarket ids for %d cards", len(identifiers))
+
+    linked = 0
+    unavailable = 0
+    for i in range(0, len(identifiers), _SCRYFALL_CHUNK):
+        chunk = identifiers[i:i + _SCRYFALL_CHUNK]
+        try:
+            cards, _not_found = await scryfall.get_cards_collection(chunk)
+        except Exception:
+            logger.exception("Scryfall lookup failed, stopping backfill early")
+            break
+
+        resolved: set[str] = set()
+        for card in cards:
+            scryfall_id = card.get("id")
+            card_id = by_scryfall_id.get(scryfall_id)
+            if card_id is None:
+                continue
+            resolved.add(scryfall_id)
+            cm_id = card.get("cardmarket_id") or _NO_CARDMARKET_PRODUCT
+            await db.execute(
+                "UPDATE cards SET cardmarket_id = ? WHERE id = ?", (cm_id, card_id)
+            )
+            if cm_id:
+                linked += 1
+            else:
+                unavailable += 1
+
+        # Cards Scryfall could not resolve at all get the same "asked, nothing
+        # there" marker — otherwise every run re-requests them forever.
+        for identifier in chunk:
+            scryfall_id = identifier["id"]
+            if scryfall_id not in resolved:
+                await db.execute(
+                    "UPDATE cards SET cardmarket_id = ? WHERE id = ?",
+                    (_NO_CARDMARKET_PRODUCT, by_scryfall_id[scryfall_id]),
+                )
+                unavailable += 1
+
+        await db.commit()
+
+    logger.info(
+        "Cardmarket id backfill: %d linked, %d without a product", linked, unavailable
+    )
+    return {
+        "status": "completed",
+        "checked": len(identifiers),
+        "linked": linked,
+        "unavailable": unavailable,
+    }
 
 
 async def sync_cardmarket_prices() -> dict[str, Any]:
-    """Download Cardmarket price data and store for owned cards only."""
+    """Download Cardmarket price data and store it for owned printings only.
+
+    The set of products we care about comes from `cards.cardmarket_id` of the
+    printings actually held, so no product catalog download is needed: name,
+    set and the card link all come from our own `cards` row, which is both
+    cheaper and printing-exact.
+    """
     db = await get_db()
     today = date.today().isoformat()
 
-    # Get all card names we own (from collection + cardmarket listings)
-    cursor = await db.execute(
-        """SELECT DISTINCT LOWER(c.name) FROM collection col
-        JOIN cards c ON c.id = col.card_id
-        UNION
-        SELECT DISTINCT LOWER(card_name) FROM cardmarket_listings"""
+    # Cards without a Cardmarket id yet cannot be priced, so top the link table
+    # up first. After the initial run this is a single indexed lookup.
+    backfill = await backfill_cardmarket_ids()
+
+    # Rebuild the links from scratch each run. Clearing first is what makes a
+    # printing sold out of the collection let go of its product, instead of
+    # keeping a stale claim that later shows up as somebody else's price spike.
+    await db.execute("UPDATE cardmarket_products SET card_id = NULL WHERE card_id IS NOT NULL")
+
+    # `MIN(c.id)` picks a stable winner on the rare occasion that two printings
+    # share one Cardmarket product.
+    await db.execute(
+        f"""INSERT INTO cardmarket_products (cm_product_id, card_name, expansion_name, card_id)
+        SELECT c.cardmarket_id, MIN(c.name), COALESCE(MIN(c.set_name), ''), MIN(c.id)
+        FROM cards c
+        WHERE c.cardmarket_id > {_NO_CARDMARKET_PRODUCT}
+        AND (EXISTS (SELECT 1 FROM collection col WHERE col.card_id = c.id)
+             OR EXISTS (SELECT 1 FROM cardmarket_listings cl WHERE cl.card_id = c.id))
+        GROUP BY c.cardmarket_id
+        ON CONFLICT(cm_product_id) DO UPDATE SET
+            card_name=excluded.card_name,
+            expansion_name=excluded.expansion_name,
+            card_id=excluded.card_id,
+            updated_at=CURRENT_TIMESTAMP"""
     )
-    owned_names = {row[0] for row in await cursor.fetchall()}
-    if not owned_names:
-        logger.info("No owned cards found, skipping price sync")
-        return {"status": "skipped", "reason": "no owned cards", "products_matched": 0, "prices_stored": 0}
-
-    logger.info("Found %d unique owned card names for price matching", len(owned_names))
-
-    # Fetch product catalog
-    products = await _fetch_json_pages(CM_PRODUCTS_URL)
-    logger.info("Total product catalog entries: %d", len(products))
-
-    # Build product ID -> product mapping for owned cards only
-    matched_products: dict[int, dict[str, Any]] = {}
-    for p in products:
-        pid = p.get("idProduct")
-        # Try different field names Cardmarket uses
-        name = p.get("name", p.get("enName", ""))
-        if not name:
-            # Check localization array
-            locs = p.get("localization", [])
-            for loc in locs:
-                if loc.get("idLanguage") == 1:  # English
-                    name = loc.get("name", "")
-                    break
-            if not name and locs:
-                name = locs[0].get("name", "")
-
-        if pid and name and name.lower() in owned_names:
-            expansion = p.get("expansionName", p.get("expansion", ""))
-            matched_products[pid] = {"name": name, "expansion": expansion}
-
-            # Upsert into cardmarket_products
-            # Try to link to a card in our cards table
-            card_id = None
-            card_cursor = await db.execute(
-                "SELECT id FROM cards WHERE LOWER(name) = ? LIMIT 1", (name.lower(),)
-            )
-            card_row = await card_cursor.fetchone()
-            if card_row:
-                card_id = card_row[0]
-
-            await db.execute(
-                """INSERT INTO cardmarket_products (cm_product_id, card_name, expansion_name, card_id)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(cm_product_id) DO UPDATE SET
-                    card_name=excluded.card_name,
-                    expansion_name=excluded.expansion_name,
-                    card_id=COALESCE(excluded.card_id, cardmarket_products.card_id),
-                    updated_at=CURRENT_TIMESTAMP""",
-                (pid, name, expansion, card_id),
-            )
-
     await db.commit()
-    logger.info("Matched %d products to owned cards", len(matched_products))
 
-    if not matched_products:
-        return {"status": "completed", "products_matched": 0, "prices_stored": 0}
+    cursor = await db.execute(
+        "SELECT cm_product_id FROM cardmarket_products WHERE card_id IS NOT NULL"
+    )
+    owned_products = {row[0] for row in await cursor.fetchall()}
+    if not owned_products:
+        logger.info("No owned cards with a Cardmarket product, skipping price sync")
+        return {
+            "status": "skipped",
+            "reason": "no owned cards linked to Cardmarket",
+            "backfill": backfill,
+            "products_matched": 0,
+            "prices_stored": 0,
+        }
 
-    # Fetch price guide
-    prices = await _fetch_json_pages(CM_PRICES_URL)
-    logger.info("Total price guide entries: %d", len(prices))
+    logger.info("Pricing %d owned printings", len(owned_products))
+
+    prices = await _fetch_price_guide()
 
     prices_stored = 0
     for pg in prices:
         pid = pg.get("idProduct")
-        if pid not in matched_products:
+        if pid not in owned_products:
             continue
 
         avg = pg.get("avg", pg.get("avgSellPrice", 0)) or 0
@@ -151,7 +214,8 @@ async def sync_cardmarket_prices() -> dict[str, Any]:
 
     return {
         "status": "completed",
-        "products_matched": len(matched_products),
+        "backfill": backfill,
+        "products_matched": len(owned_products),
         "prices_stored": prices_stored,
     }
 
@@ -174,22 +238,33 @@ async def get_price_history(cm_product_id: int, days: int = 30) -> list[dict[str
     ]
 
 
+def _printing_label(card_name: str, set_name: str) -> str:
+    """Card name qualified by its set, so an alert names one printing."""
+    return f"{card_name} ({set_name})" if set_name else card_name
+
+
 async def get_price_alerts() -> list[dict[str, Any]]:
-    """Detect price spikes on owned cards that are unused in decks.
+    """Detect price spikes on owned printings that no deck needs.
 
-    A spike is defined as: current trend > avg30 * 1.3 (30% increase).
-    Only flags cards with copies not used in any deck.
+    A spike is `trend > avg30 * 1.3` (30% up) on the latest priced day.
 
-    Grouped per Cardmarket product (i.e. per edition/set), so a spike in a
-    Revised dual land is NOT conflated with a cheaper reprint of the same name.
-    Basic Lands (type_line LIKE '%Basic Land%') are excluded.
+    Every number in an alert describes the *same printing*: the product only
+    enters the list if `cardmarket_products.card_id` links it to a specific
+    `cards` row, and the owned count is taken from that row alone. A spike in
+    an Alpha original can therefore no longer be reported against the copies of
+    a bulk reprint you actually hold — that mismatch is exactly what made this
+    notification untrustworthy before.
+
+    Deck usage is counted the other way round, across all printings sharing an
+    oracle id, because any printing fills a deck slot. Counting it per printing
+    would advertise a card as spare while a deck is playing another copy of it.
+    The asymmetry is deliberate and errs towards staying quiet.
+
+    Basic lands are excluded, by type line and by name (the type line of a snow
+    basic reads "Basic Snow Land", which the type filter alone would miss).
     """
     db = await get_db()
 
-    # Get latest price entries with spike detection.
-    # LEFT JOIN to cards gives us type_line (for Basic Land filter) and
-    # set_code/set_name (for display) when the product was linked during sync.
-    # Dual filter: type_line check (linked cards) + explicit name list (unlinked).
     BASIC_LAND_NAMES = (
         'plains', 'island', 'swamp', 'mountain', 'forest', 'wastes',
         'snow-covered plains', 'snow-covered island', 'snow-covered swamp',
@@ -200,14 +275,27 @@ async def get_price_alerts() -> list[dict[str, Any]]:
         f"""SELECT
             cp.cm_product_id, cp.card_name, cp.expansion_name, cp.card_id,
             ph.trend, ph.avg30, ph.low, ph.avg, ph.date,
-            CASE WHEN ph.avg30 > 0 THEN (ph.trend - ph.avg30) / ph.avg30 * 100 ELSE 0 END as spike_pct,
-            c.set_code, c.set_name
+            CASE WHEN ph.avg30 > 0
+                 THEN (ph.trend - ph.avg30) / ph.avg30 * 100 ELSE 0 END as spike_pct,
+            c.set_code, c.set_name,
+            COALESCE((
+                SELECT SUM(col.quantity + col.foil_quantity)
+                FROM collection col WHERE col.card_id = c.id
+            ), 0) AS total_owned,
+            COALESCE((
+                SELECT SUM(dc.quantity)
+                FROM deck_cards dc JOIN cards dcc ON dcc.id = dc.card_id
+                WHERE CASE
+                    WHEN COALESCE(c.oracle_id, '') != '' THEN dcc.oracle_id = c.oracle_id
+                    ELSE LOWER(dcc.name) = LOWER(c.name)
+                END
+            ), 0) AS in_decks
         FROM cardmarket_products cp
         JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-        LEFT JOIN cards c ON c.id = cp.card_id
+        JOIN cards c ON c.id = cp.card_id
         WHERE ph.date = (SELECT MAX(date) FROM cardmarket_price_history)
         AND ph.avg30 > 0 AND ph.trend > ph.avg30 * 1.3
-        AND (c.type_line IS NULL OR c.type_line NOT LIKE '%Basic Land%')
+        AND c.type_line NOT LIKE '%Basic Land%'
         AND LOWER(cp.card_name) NOT IN ({placeholders})
         ORDER BY spike_pct DESC""",
         BASIC_LAND_NAMES,
@@ -217,40 +305,8 @@ async def get_price_alerts() -> list[dict[str, Any]]:
     alerts = []
     for r in spiking:
         card_name = r["card_name"]
-        card_id = r["card_id"]  # may be None if matching failed during sync
-
-        # Count total owned copies — use exact card_id (per-edition) when available,
-        # fall back to name-match across all editions.
-        if card_id:
-            owned_cursor = await db.execute(
-                "SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0) FROM collection col WHERE col.card_id = ?",
-                (card_id,),
-            )
-        else:
-            owned_cursor = await db.execute(
-                """SELECT COALESCE(SUM(col.quantity + col.foil_quantity), 0)
-                FROM collection col JOIN cards c ON c.id = col.card_id
-                WHERE LOWER(c.name) = LOWER(?)""",
-                (card_name,),
-            )
-        owned_row = await owned_cursor.fetchone()
-        total_owned = owned_row[0] if owned_row else 0
-
-        # Count copies in decks — same precision logic.
-        if card_id:
-            deck_cursor = await db.execute(
-                "SELECT COALESCE(SUM(dc.quantity), 0) FROM deck_cards dc WHERE dc.card_id = ?",
-                (card_id,),
-            )
-        else:
-            deck_cursor = await db.execute(
-                """SELECT COALESCE(SUM(dc.quantity), 0)
-                FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-                WHERE LOWER(c.name) = LOWER(?)""",
-                (card_name,),
-            )
-        deck_row = await deck_cursor.fetchone()
-        in_decks = deck_row[0] if deck_row else 0
+        total_owned = r["total_owned"]
+        in_decks = r["in_decks"]
 
         unused = total_owned - in_decks
         if unused <= 0:
@@ -270,12 +326,16 @@ async def get_price_alerts() -> list[dict[str, Any]]:
             "total_owned": total_owned,
             "in_decks": in_decks,
             "unused_copies": unused,
+            # The printing belongs in the text: "Terror" alone was ambiguous
+            # across 31 Cardmarket products with wildly different prices.
             "suggestion": (
-                f"Consider selling {unused} unused cop{'y' if unused == 1 else 'ies'} of {card_name} — "
+                f"Consider selling {unused} unused cop{'y' if unused == 1 else 'ies'} of "
+                f"{_printing_label(card_name, expansion)} — "
                 f"price spiked {spike_pct:.0f}% (€{r['avg30']:.2f} → €{r['trend']:.2f}), "
                 f"not used in any deck"
                 if in_decks == 0 else
-                f"Consider selling {unused} extra cop{'y' if unused == 1 else 'ies'} of {card_name} — "
+                f"Consider selling {unused} extra cop{'y' if unused == 1 else 'ies'} of "
+                f"{_printing_label(card_name, expansion)} — "
                 f"price spiked {spike_pct:.0f}% (€{r['avg30']:.2f} → €{r['trend']:.2f}), "
                 f"only {in_decks} needed in decks"
             ),

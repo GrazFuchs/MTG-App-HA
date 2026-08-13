@@ -18,34 +18,40 @@ async def suggest_sells(
     """
     db = await get_db()
 
-    # Get all collection entries with price data and deck usage
+    # One row per card. Price and product come from correlated subqueries
+    # rather than joins: joining cardmarket_products multiplied every
+    # collection row by the number of matching products, so `total_owned`
+    # counted a 3-copy playset as 93 when the card had 31 Cardmarket products.
     cursor = await db.execute(
         """SELECT
             c.name as card_name,
             c.set_name,
             COALESCE(SUM(col.quantity + col.foil_quantity), 0) as total_owned,
             COALESCE(deck_use.in_decks, 0) as in_decks,
-            cp.cm_product_id,
-            ph.trend,
-            ph.avg30,
-            CASE WHEN ph.avg30 > 0 THEN (ph.trend - ph.avg30) / ph.avg30 * 100 ELSE 0 END as spike_pct
+            (SELECT cp.cm_product_id FROM cardmarket_products cp
+             WHERE cp.card_id = c.id LIMIT 1) as cm_product_id,
+            (SELECT ph.trend FROM cardmarket_products cp
+             JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+             WHERE cp.card_id = c.id
+             ORDER BY ph.date DESC LIMIT 1) as trend,
+            (SELECT ph.avg30 FROM cardmarket_products cp
+             JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
+             WHERE cp.card_id = c.id
+             ORDER BY ph.date DESC LIMIT 1) as avg30
         FROM collection col
         JOIN cards c ON c.id = col.card_id
         LEFT JOIN (
             SELECT dc.card_id, SUM(dc.quantity) as in_decks
             FROM deck_cards dc GROUP BY dc.card_id
         ) deck_use ON deck_use.card_id = c.id
-        LEFT JOIN cardmarket_products cp ON cp.card_id = c.id
-        LEFT JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-            AND ph.date = (SELECT MAX(date) FROM cardmarket_price_history)
         GROUP BY c.id
         -- COALESCE spelled out: a bare `in_decks` in HAVING/ORDER BY binds to
         -- deck_use.in_decks (NULL for cards in no deck), not to the SELECT
         -- alias, which silently dropped every card that isn't in a deck.
-        HAVING total_owned > COALESCE(deck_use.in_decks, 0) AND ph.trend > 0
-        ORDER BY (total_owned - COALESCE(deck_use.in_decks, 0)) * ph.trend
-                 * (1 + CASE WHEN ph.avg30 > 0
-                             THEN (ph.trend - ph.avg30) / ph.avg30 ELSE 0 END) DESC"""
+        HAVING total_owned > COALESCE(deck_use.in_decks, 0) AND trend > 0
+        ORDER BY (total_owned - COALESCE(deck_use.in_decks, 0)) * trend
+                 * (1 + CASE WHEN avg30 > 0
+                             THEN (trend - avg30) / avg30 ELSE 0 END) DESC"""
     )
     rows = await cursor.fetchall()
 
@@ -63,7 +69,8 @@ async def suggest_sells(
             continue
 
         trend = float(row["trend"])
-        spike_pct = float(row["spike_pct"])
+        avg30 = float(row["avg30"] or 0)
+        spike_pct = (trend - avg30) / avg30 * 100 if avg30 > 0 else 0.0
 
         # Determine how many to sell (enough to reach target, but not more than unused)
         if target_amount_eur is None or trend <= 0:

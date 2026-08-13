@@ -13,7 +13,12 @@ from ..database import get_db
 from ..models.schemas import CardmarketListing, CardmarketImportResult, CardResponse
 from ..services.queries import parse_color_identity
 from ..services.cardmarket_import import import_cardmarket_csv
-from ..services.cardmarket_prices import get_price_history, get_price_alerts, sync_cardmarket_prices
+from ..services.cardmarket_prices import (
+    backfill_cardmarket_ids,
+    get_price_history,
+    get_price_alerts,
+    sync_cardmarket_prices,
+)
 from ..services.listing_health import analyze_listings
 
 logger = logging.getLogger(__name__)
@@ -312,20 +317,38 @@ async def trigger_price_sync():
     return result
 
 
+@router.post("/backfill-links")
+async def trigger_cardmarket_backfill(
+    max_cards: int = Query(0, ge=0, description="0 = every card still missing a link"),
+):
+    """Fetch the Cardmarket product id of each printing from Scryfall.
+
+    The price sync calls this itself; the endpoint exists to run the first,
+    large backfill on demand instead of waiting for the nightly sync.
+    """
+    return await backfill_cardmarket_ids(max_cards or None)
+
+
 @router.get("/products")
 async def list_matched_products(search: str = Query("", description="Filter by card name")):
-    """List Cardmarket products matched to owned cards."""
+    """List Cardmarket products matched to owned cards.
+
+    `card_id IS NOT NULL` is what "matched" means: rows left over from the old
+    name-based matching are unlinked and describe printings that were never in
+    the collection.
+    """
     db = await get_db()
     if search:
         cursor = await db.execute(
             """SELECT cm_product_id, card_name, expansion_name
-            FROM cardmarket_products WHERE card_name LIKE ?
+            FROM cardmarket_products WHERE card_id IS NOT NULL AND card_name LIKE ?
             ORDER BY card_name LIMIT 100""",
             (f"%{search}%",),
         )
     else:
         cursor = await db.execute(
-            "SELECT cm_product_id, card_name, expansion_name FROM cardmarket_products ORDER BY card_name LIMIT 100"
+            "SELECT cm_product_id, card_name, expansion_name FROM cardmarket_products "
+            "WHERE card_id IS NOT NULL ORDER BY card_name LIMIT 100"
         )
     rows = await cursor.fetchall()
     return [{"cm_product_id": r[0], "card_name": r[1], "expansion": r[2]} for r in rows]

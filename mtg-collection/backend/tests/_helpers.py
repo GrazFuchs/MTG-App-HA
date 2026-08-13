@@ -19,18 +19,25 @@ async def insert_card(
     price_eur: str = "1.00",
     price_eur_foil: str = "2.00",
     rarity: str = "common",
+    oracle_id: str | None = None,
+    cardmarket_id: int | None = None,
 ) -> int:
-    """Insert a card row and return its id."""
+    """Insert a card row and return its id.
+
+    Pass the same `oracle_id` to two rows to model two printings of one card,
+    and `cardmarket_id` to give a printing its Cardmarket product.
+    """
     _counter["n"] += 1
     n = _counter["n"]
     cursor = await db.execute(
         """INSERT INTO cards
         (scryfall_id, oracle_id, name, type_line, color_identity, set_code,
-         set_name, collector_number, rarity, price_eur, price_eur_foil)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+         set_name, collector_number, rarity, price_eur, price_eur_foil,
+         cardmarket_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             f"sf-{n}",
-            f"or-{n}",
+            oracle_id or f"or-{n}",
             name,
             type_line,
             json.dumps(color_identity or []),
@@ -40,6 +47,7 @@ async def insert_card(
             rarity,
             price_eur,
             price_eur_foil,
+            cardmarket_id,
         ),
     )
     await db.commit()

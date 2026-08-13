@@ -109,7 +109,7 @@ _BASE_SELECT = """
            d.name AS deck_name,
            (SELECT ph.trend FROM cardmarket_products cp
             JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-            WHERE LOWER(cp.card_name) = LOWER(c.name)
+            WHERE cp.card_id = c.id
             ORDER BY ph.date DESC LIMIT 1) AS cm_trend
     FROM wishlist w
     LEFT JOIN cards c ON c.id = w.card_id
@@ -684,7 +684,7 @@ async def acquisition_stats(days: int = Query(365, ge=1, le=3650)):
                 COALESCE(
                     (SELECT ph.trend FROM cardmarket_products cp
                      JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                     WHERE LOWER(cp.card_name) = LOWER(c.name)
+                     WHERE cp.card_id = c.id
                      ORDER BY ph.date DESC LIMIT 1),
                     CAST(NULLIF(c.price_eur, '') AS REAL),
                     0
@@ -711,7 +711,7 @@ async def acquisition_stats(days: int = Query(365, ge=1, le=3650)):
                 COALESCE(
                     (SELECT ph.trend FROM cardmarket_products cp
                      JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                     WHERE LOWER(cp.card_name) = LOWER(c.name)
+                     WHERE cp.card_id = c.id
                      ORDER BY ph.date DESC LIMIT 1),
                     CAST(NULLIF(c.price_eur, '') AS REAL),
                     0

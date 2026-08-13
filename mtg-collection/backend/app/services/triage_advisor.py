@@ -22,20 +22,24 @@ async def compute_keep_score(price_eur: str, is_foil: bool) -> float:
     return base * (1.5 if is_foil else 1.0)
 
 
-async def _get_suggested_sell_price(db, card_name: str) -> float:
-    """Return suggested sell price: prefer Cardmarket trend, fallback Scryfall price_eur."""
+async def _get_suggested_sell_price(db, card_id: int) -> float:
+    """Suggested sell price for one printing: Cardmarket trend, else Scryfall.
+
+    Keyed on the card row rather than the name — printings of one name range
+    from bulk to hundreds of euros, so a name lookup returns a price for some
+    other version of the card.
+    """
     cm_cursor = await db.execute("""
         SELECT cph.trend FROM cardmarket_price_history cph
         JOIN cardmarket_products cp ON cp.cm_product_id = cph.cm_product_id
-        JOIN cards c ON c.id = cp.card_id
-        WHERE LOWER(c.name) = LOWER(?)
+        WHERE cp.card_id = ?
         ORDER BY cph.date DESC LIMIT 1
-    """, (card_name,))
+    """, (card_id,))
     cm_row = await cm_cursor.fetchone()
     if cm_row and cm_row["trend"]:
         return round(float(cm_row["trend"]), 2)
 
-    scry_cursor = await db.execute("SELECT price_eur FROM cards WHERE LOWER(name) = LOWER(?) LIMIT 1", (card_name,))
+    scry_cursor = await db.execute("SELECT price_eur FROM cards WHERE id = ?", (card_id,))
     scry_row = await scry_cursor.fetchone()
     try:
         return round(float(scry_row["price_eur"]), 2) if scry_row and scry_row["price_eur"] else 0.0
@@ -145,7 +149,7 @@ async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[Ex
     total_owned = sum(p.quantity + p.foil_quantity for p in printings) + qty_delta + sibling_qty
     sellable = total_owned - in_decks
 
-    suggested_price = await _get_suggested_sell_price(db, card_name)
+    suggested_price = await _get_suggested_sell_price(db, new_card["id"])
 
     # 6. Decision logic — sibling_qty makes later events in same sync see earlier ones as "existing"
     effective_existing = len(printings) + (1 if sibling_qty > 0 else 0)

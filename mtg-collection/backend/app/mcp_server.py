@@ -331,7 +331,8 @@ async def get_price_history(card_name: str, days: int = 30) -> str:
     try:
         db = await get_db()
         cursor = await db.execute(
-            "SELECT cm_product_id, card_name, expansion_name FROM cardmarket_products WHERE card_name LIKE ? LIMIT 5",
+            "SELECT cm_product_id, card_name, expansion_name FROM cardmarket_products "
+            "WHERE card_id IS NOT NULL AND card_name LIKE ? LIMIT 5",
             (f"%{card_name}%",),
         )
         products = await cursor.fetchall()
@@ -614,7 +615,7 @@ async def get_wishlist(
                       d.name AS deck_name,
                       (SELECT ph.trend FROM cardmarket_products cp
                        JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                       WHERE LOWER(cp.card_name) = LOWER(c.name)
+                       WHERE cp.card_id = c.id
                        ORDER BY ph.date DESC LIMIT 1) AS cm_trend
                FROM wishlist w
                LEFT JOIN cards c ON c.id = w.card_id
@@ -812,7 +813,7 @@ async def wishlist_summary() -> str:
                       d.name AS deck_name,
                       (SELECT ph.trend FROM cardmarket_products cp
                        JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                       WHERE LOWER(cp.card_name) = LOWER(c.name)
+                       WHERE cp.card_id = c.id
                        ORDER BY ph.date DESC LIMIT 1) AS cm_trend
                FROM wishlist w
                LEFT JOIN cards c ON c.id = w.card_id
@@ -1152,7 +1153,7 @@ async def get_acquisition_stats(days: int = 30) -> str:
                     COALESCE(
                         (SELECT ph.trend FROM cardmarket_products cp
                          JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                         WHERE LOWER(cp.card_name) = LOWER(c.name)
+                         WHERE cp.card_id = c.id
                          ORDER BY ph.date DESC LIMIT 1),
                         CAST(NULLIF(c.price_eur, '') AS REAL),
                         0

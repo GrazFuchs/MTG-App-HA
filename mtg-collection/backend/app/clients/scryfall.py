@@ -209,6 +209,10 @@ def parse_scryfall_card(data: dict[str, Any]) -> dict[str, Any]:
         "price_eur": prices.get("eur") or "",
         "price_usd_foil": prices.get("usd_foil") or "",
         "price_eur_foil": prices.get("eur_foil") or "",
+        # Cardmarket idProduct for this exact printing. Absent for printings
+        # Cardmarket does not carry (tokens, some promos) — those simply get no
+        # Cardmarket price rather than a guessed one.
+        "cardmarket_id": data.get("cardmarket_id"),
     }
 
 

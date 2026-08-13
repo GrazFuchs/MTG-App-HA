@@ -651,7 +651,7 @@ async def publish_wishlist_sensor_by_id(item_id: int) -> None:
                    c.name AS card_name, c.set_code, c.price_eur, c.price_eur_foil,
                    (SELECT ph.trend FROM cardmarket_products cp
                     JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                    WHERE LOWER(cp.card_name) = LOWER(c.name)
+                    WHERE cp.card_id = c.id
                     ORDER BY ph.date DESC LIMIT 1) AS cm_trend
                FROM wishlist w
                LEFT JOIN cards c ON c.id = w.card_id
@@ -709,7 +709,7 @@ async def publish_wishlist_sensors() -> None:
                    c.name AS card_name, c.set_code, c.price_eur, c.price_eur_foil,
                    (SELECT ph.trend FROM cardmarket_products cp
                     JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                    WHERE LOWER(cp.card_name) = LOWER(c.name)
+                    WHERE cp.card_id = c.id
                     ORDER BY ph.date DESC LIMIT 1) AS cm_trend
                FROM wishlist w
                LEFT JOIN cards c ON c.id = w.card_id

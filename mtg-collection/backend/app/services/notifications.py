@@ -105,8 +105,21 @@ async def send_price_spike_notifications(alerts: list[dict[str, Any]]) -> int:
             continue
 
         card_name = alert["card_name"]
+        set_name = alert.get("set_name") or alert.get("expansion") or ""
+        set_code = (alert.get("set_code") or "").upper()
 
-        # Anti-duplicate: check if already notified today
+        # The set belongs in the identity of the alert, not just its text: a
+        # price spike is a property of one printing, and "Terror" alone names
+        # 31 Cardmarket products whose prices span four orders of magnitude.
+        if set_code and set_name:
+            printing = f"{card_name} ({set_name}, {set_code})"
+        elif set_name:
+            printing = f"{card_name} ({set_name})"
+        else:
+            printing = card_name
+
+        # Anti-duplicate: one notification per card per day. Keyed on the name
+        # so two printings of the same card cannot both fire on one morning.
         cursor = await db.execute(
             "SELECT 1 FROM notification_log WHERE card_name = ? AND alert_date = ?",
             (card_name, today),
@@ -116,10 +129,10 @@ async def send_price_spike_notifications(alerts: list[dict[str, Any]]) -> int:
 
         # Build notification payload
         message = (
-            f"Price spike: {card_name} — "
+            f"Price spike: {printing} — "
             f"€{alert.get('avg30', 0):.2f} → €{trend:.2f} "
             f"(+{alert.get('spike_pct', 0):.0f}%), "
-            f"{alert.get('unused_copies', 0)} unused copies"
+            f"{alert.get('unused_copies', 0)} unused copies of this printing"
         )
 
         success = False
@@ -133,6 +146,9 @@ async def send_price_spike_notifications(alerts: list[dict[str, Any]]) -> int:
                         json={
                             "card_name": card_name,
                             "expansion": alert.get("expansion", ""),
+                            "set_name": set_name,
+                            "set_code": set_code,
+                            "cm_product_id": alert.get("cm_product_id"),
                             "trend": trend,
                             "avg30": alert.get("avg30", 0),
                             "spike_pct": alert.get("spike_pct", 0),

@@ -75,7 +75,7 @@ async def voice_active_deals():
             COALESCE(
                 (SELECT ph.trend FROM cardmarket_products cp
                  JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
-                 WHERE LOWER(cp.card_name) = LOWER(c.name)
+                 WHERE cp.card_id = c.id
                  ORDER BY ph.date DESC LIMIT 1),
                 CAST(NULLIF(
                     CASE WHEN w.is_foil THEN c.price_eur_foil ELSE c.price_eur END,

@@ -1,3 +1,26 @@
+## 0.33.0 — Cardmarket prices per printing
+
+Cardmarket prices a *product*, and a product is one printing. Everything here follows from the add-on having matched those products to cards by name alone.
+
+### Fixed
+- **Price-spike notifications described two different cards at once** — Cardmarket products were matched to the collection by card name, with no set, printing or expansion involved. All 31 "Terror" products — from the €0.08 reprint to the €1177.41 original — therefore collapsed onto whichever `cards` row `SELECT … WHERE LOWER(name) = ? LIMIT 1` happened to return. The morning notification read *"3 unused copies of Terror, +356%, €258.23 → €1177.41"*: the price of a printing that was never in the collection, beside the count of one that was. 1987 alerts were produced, 107 of them above the €5 notification threshold, so up to 107 persistent notifications could arrive after a single 03:00 sync.
+
+  Printings are now joined on `cards.cardmarket_id`, the Cardmarket product id Scryfall publishes per printing. Every figure in an alert describes the same printing, and the message names its set.
+- **`sensor.mtg_sell_potential_eur` reported €361,607 against a €6,772 collection** — the sell advisor joined `cardmarket_products` directly, so each collection row was multiplied by the number of products matching its name and `SUM(quantity)` counted a 3-copy playset as 93. Price and product now come from correlated subqueries; the aggregate counts each copy once. `sensor.mtg_active_price_alerts` showed the same inflated 1987 and is corrected by the same change.
+- **Nine other price lookups took a random printing's price** — wishlist valuation, the inbox and spending sensors, the voice endpoint, the triage advisor's suggested sell price and the listing-health comparison all resolved a Cardmarket trend through `LOWER(cp.card_name) = LOWER(c.name)`, i.e. whichever printing the query planner returned first. Listing health additionally emitted one row per matching product, so a listing could appear several times in the buckets. All of them now join on the linked card, and fall back to the printing's own Scryfall price when Cardmarket has none.
+- **Three games were downloaded on every sync** — `price_guide_{n}.json` numbers Cardmarket's *games*, not pages; the fetch loop read `{n}` as a page counter and merged Magic, World of Warcraft and Yu-Gi-Oh! into one list before stopping at the 403 from game 4 (games 5–8 exist and were reached only by accident of that error). The sync now fetches the Magic guide alone and keeps category 1, "Magic Single" — the guide carries twelve product categories, the rest being sealed product. The 20 MB product catalogue download is gone entirely: name, set and card link all come from our own `cards` row.
+
+### Added
+- **`cards.cardmarket_id`** — the Cardmarket product id of each printing, from Scryfall. Populated on card ingest, and backfilled for existing cards in batches of 75 via `POST /cards/collection`. Printings Cardmarket does not carry (tokens, some promos) are marked `0`, so the backfill asks about them once rather than on every run.
+- **`POST /api/cardmarket/backfill-links`** — runs that backfill on demand instead of waiting for the nightly sync. The price sync calls it itself.
+
+### Changed
+- Deck usage behind an alert is counted across all printings sharing an oracle id, while ownership stays per printing: any printing fills a deck slot, so counting deck usage per printing would advertise a card as spare while a deck plays another copy of it. The asymmetry is deliberate and errs towards staying quiet.
+- Migration 19 drops every existing product→card link; the next sync rebuilds them, and each sync now clears the links first so a printing sold out of the collection releases its product instead of keeping a stale claim. Price history is keyed by Cardmarket product and stays valid, so it is kept. Rows left unlinked are leftovers of the old name matching and are filtered out of `/api/cardmarket/products` and the MCP price-history lookup.
+
+### Upgrading
+`notify_min_alert_value_eur` was raised to `999999` to silence the broken notifications. Set it back to `5.0` in the add-on options and restart — `get_settings()` is `@lru_cache`d, so a restart is required. The first sync after the update runs the full backfill and takes noticeably longer.
+
 ## 0.32.3
 
 ### Fixed

@@ -58,6 +58,7 @@ async def upsert_card(db, card_data: dict) -> int:
         card_data.get("price_eur", ""),
         card_data.get("price_usd_foil", ""),
         card_data.get("price_eur_foil", ""),
+        card_data.get("cardmarket_id"),
     )
 
     cursor = await db.execute(
@@ -66,8 +67,8 @@ async def upsert_card(db, card_data: dict) -> int:
             colors, color_identity, set_code, set_name, collector_number,
             rarity, image_uri, image_art_crop, power, toughness, loyalty,
             keywords, legalities, edhrec_rank, price_usd, price_eur,
-            price_usd_foil, price_eur_foil
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            price_usd_foil, price_eur_foil, cardmarket_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(scryfall_id) DO UPDATE SET
             oracle_id=excluded.oracle_id, name=excluded.name,
             mana_cost=excluded.mana_cost, cmc=excluded.cmc,
@@ -80,7 +81,11 @@ async def upsert_card(db, card_data: dict) -> int:
             keywords=excluded.keywords, legalities=excluded.legalities,
             edhrec_rank=excluded.edhrec_rank, price_usd=excluded.price_usd,
             price_eur=excluded.price_eur, price_usd_foil=excluded.price_usd_foil,
-            price_eur_foil=excluded.price_eur_foil, updated_at=CURRENT_TIMESTAMP
+            price_eur_foil=excluded.price_eur_foil,
+            -- Archidekt payloads carry no Cardmarket id, so a sync must not
+            -- wipe one the Scryfall backfill already established.
+            cardmarket_id=COALESCE(excluded.cardmarket_id, cards.cardmarket_id),
+            updated_at=CURRENT_TIMESTAMP
         RETURNING id""",
         params,
     )

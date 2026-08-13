@@ -62,12 +62,17 @@ CREATE TABLE IF NOT EXISTS cards (
     price_eur TEXT DEFAULT '',
     price_usd_foil TEXT DEFAULT '',
     price_eur_foil TEXT DEFAULT '',
+    -- Cardmarket idProduct of THIS printing, straight from Scryfall. The only
+    -- printing-exact bridge we have between our cards and Cardmarket's price
+    -- feed; a card name is not one (see cardmarket_prices.py).
+    cardmarket_id INTEGER,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
 CREATE INDEX IF NOT EXISTS idx_cards_oracle_id ON cards(oracle_id);
 CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(set_code);
+CREATE INDEX IF NOT EXISTS idx_cards_cardmarket_id ON cards(cardmarket_id);
 
 CREATE TABLE IF NOT EXISTS decks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -586,6 +591,30 @@ async def _migration_18(db: aiosqlite.Connection):
     """)
 
 
+async def _migration_19(db: aiosqlite.Connection):
+    """Printing-exact Cardmarket linkage.
+
+    Until now a Cardmarket product was tied to a card by name alone, so every
+    printing of "Terror" — from the 0.08 EUR bulk reprint to the 1177 EUR
+    original — resolved to whichever row `LIMIT 1` happened to return. Price
+    spikes were then reported against the wrong printing, with the owned count
+    of a different one beside them.
+
+    Scryfall hands us `cardmarket_id` per printing, so that becomes the join
+    key. The existing name-based links are all suspect and are dropped here;
+    the next price sync rebuilds them from `cards.cardmarket_id`. Price history
+    itself is keyed by Cardmarket product and stays valid, so it is kept.
+    """
+    cursor = await db.execute("PRAGMA table_info(cards)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if "cardmarket_id" not in columns:
+        await db.execute("ALTER TABLE cards ADD COLUMN cardmarket_id INTEGER")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cards_cardmarket_id ON cards(cardmarket_id)"
+    )
+    await db.execute("UPDATE cardmarket_products SET card_id = NULL")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -604,6 +633,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     16: _migration_16,
     17: _migration_17,
     18: _migration_18,
+    19: _migration_19,
 }
 
 
