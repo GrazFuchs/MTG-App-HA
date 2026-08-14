@@ -1,3 +1,10 @@
+## 0.33.1
+
+### Fixed
+- **0.33.0 would not start on an existing installation** — the add-on crash-looped, and its ingress panel answered 502 behind Home Assistant. `init_db()` runs `SCHEMA_SQL` first and the migrations after it, and 0.33.0 added `CREATE INDEX … ON cards(cardmarket_id)` to that script alongside the new column. `CREATE TABLE IF NOT EXISTS` leaves an existing `cards` table untouched, so on every database created before 0.33.0 the index named a column that was not there yet: `sqlite3.OperationalError: no such column: cardmarket_id`, raised before `_migration_19` — which adds the column properly — was ever reached. A fresh database was unaffected, since there `CREATE TABLE` does carry the column; that is why the test suite stayed green while every real upgrade failed.
+
+  The index is now created only by migration 19, for upgrades and fresh databases alike (a fresh one starts at schema version 1, so every migration runs). `tests/test_schema_upgrade.py` builds a pre-0.33.0 database and starts against it, and asserts the index is absent from `SCHEMA_SQL` so it cannot be reintroduced.
+
 ## 0.33.0 — Cardmarket prices per printing
 
 Cardmarket prices a *product*, and a product is one printing. Everything here follows from the add-on having matched those products to cards by name alone.

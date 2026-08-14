@@ -72,7 +72,13 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
 CREATE INDEX IF NOT EXISTS idx_cards_oracle_id ON cards(oracle_id);
 CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(set_code);
-CREATE INDEX IF NOT EXISTS idx_cards_cardmarket_id ON cards(cardmarket_id);
+-- No index on cards(cardmarket_id) here. This whole script runs before the
+-- migrations, and on a database that predates 0.33.0 the column does not exist
+-- yet -- `CREATE TABLE IF NOT EXISTS` above leaves an existing table untouched,
+-- so the index would fail with "no such column: cardmarket_id" and take the
+-- startup down before _migration_19 ever gets to add the column. Migration 19
+-- creates the index itself, for upgrades and for fresh databases alike (a fresh
+-- one starts at version 1, so every migration runs).
 
 CREATE TABLE IF NOT EXISTS decks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
