@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
 import {
@@ -57,6 +58,33 @@ interface CardGroup {
   totalCopies: number;
   inDecks: number;
 }
+
+/** Colour chips, in WUBRG order plus colourless. */
+const COLOR_CHIPS = [
+  { value: 'W', label: 'White', symbol: '⚪' },
+  { value: 'U', label: 'Blue', symbol: '🔵' },
+  { value: 'B', label: 'Black', symbol: '⚫' },
+  { value: 'R', label: 'Red', symbol: '🔴' },
+  { value: 'G', label: 'Green', symbol: '🟢' },
+  { value: 'C', label: 'Colorless', symbol: '◆' },
+] as const;
+
+/**
+ * How a multi-colour selection is read. Several colours are ambiguous on their
+ * own — "green and blue" can mean either of these — so the mode is explicit
+ * rather than guessed.
+ */
+const COLOR_MODES = [
+  { value: 'any', label: 'has any of', hint: 'Cards containing at least one selected colour' },
+  { value: 'all', label: 'has all of', hint: 'Cards containing every selected colour (and possibly more)' },
+  { value: 'exact', label: 'is exactly', hint: 'Cards whose colour identity is precisely the selection' },
+  { value: 'exclude', label: 'has none of', hint: 'Cards containing none of the selected colours' },
+] as const;
+
+const CARD_TYPES = [
+  'Creature', 'Instant', 'Sorcery', 'Enchantment',
+  'Artifact', 'Planeswalker', 'Land', 'Battle', 'Kindred',
+] as const;
 
 const useStyles = makeStyles({
   controls: {
@@ -134,20 +162,83 @@ const useStyles = makeStyles({
     padding: '12px',
     marginBottom: '8px',
   },
+  filterBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginBottom: '16px',
+    paddingBottom: '14px',
+    borderBottom: `1px solid ${sothera.glassBorder}`,
+  },
+  filterLine: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+  },
+  filterLabel: {
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    letterSpacing: '2px',
+    color: sothera.fgFaint,
+    textTransform: 'uppercase',
+    minWidth: '54px',
+  },
+  chipRow: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
+  chip: {
+    padding: '4px 10px',
+    fontSize: '11px',
+    fontFamily: sothera.fontMono,
+    letterSpacing: '0.5px',
+    cursor: 'pointer',
+    border: `1px solid ${sothera.glassBorder}`,
+    borderRadius: '2px',
+    background: 'transparent',
+    color: sothera.fgMuted,
+    transitionProperty: 'border-color, color, background-color',
+    transitionDuration: '140ms',
+    ':hover': {
+      color: sothera.fg,
+    },
+  },
+  chipClear: {
+    fontFamily: sothera.fontMono,
+    fontSize: '10px',
+    letterSpacing: '1px',
+    color: sothera.fgFaint,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px 2px',
+    textDecoration: 'underline',
+    ':hover': {
+      color: sothera.fg,
+    },
+  },
 });
 
 export default function Collection() {
   const styles = useStyles();
   const { accent } = useAccent();
+  // Seeded from the URL so the Dashboard tiles and alert rows can deep-link
+  // here ("show me this card", "sort by value").
+  const [urlParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('added_at');
-  const [sortDir, setSortDir] = useState('desc');
+  const [searchInput, setSearchInput] = useState(() => urlParams.get('search') ?? '');
+  const [searchQuery, setSearchQuery] = useState(() => urlParams.get('search') ?? '');
+  const [sortBy, setSortBy] = useState(() => urlParams.get('sort_by') ?? 'added_at');
+  const [sortDir, setSortDir] = useState(() => urlParams.get('sort_dir') ?? 'desc');
   const [selectedSet, setSelectedSet] = useState('');
   const [selectedDeck, setSelectedDeck] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [colorMode, setColorMode] = useState('any');
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const isMobile = useMediaQuery('(max-width: 600px)');
 
@@ -175,12 +266,18 @@ export default function Collection() {
     if (selectedSet) params.set('set_code', selectedSet);
     if (selectedDeck) params.set('deck_id', selectedDeck);
     if (selectedTag) params.set('collection_tag', selectedTag);
+    if (selectedColors.length) {
+      params.set('color', selectedColors.join(','));
+      params.set('color_mode', colorMode);
+    }
+    if (selectedTypes.length) params.set('card_type', selectedTypes.join(','));
     params.set('sort_by', sortBy);
     params.set('sort_dir', sortDir);
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
     return params;
-  }, [searchQuery, selectedSet, selectedDeck, selectedTag, sortBy, sortDir, page, pageSize]);
+  }, [searchQuery, selectedSet, selectedDeck, selectedTag, selectedColors, colorMode,
+      selectedTypes, sortBy, sortDir, page, pageSize]);
 
   const { data: collectionData, isLoading: loading } = useQuery({
     queryKey: ['collection', collectionParams.toString()],
@@ -196,6 +293,35 @@ export default function Collection() {
   const handleSetChange = (value: string) => { setPage(1); setSelectedSet(value); };
   const handleDeckChange = (value: string) => { setPage(1); setSelectedDeck(value); };
   const handleTagChange = (value: string) => { setPage(1); setSelectedTag(value); };
+
+  const toggleColor = (value: string) => {
+    setPage(1);
+    setSelectedColors(prev =>
+      prev.includes(value) ? prev.filter(c => c !== value) : [...prev, value]
+    );
+  };
+  const toggleType = (value: string) => {
+    setPage(1);
+    setSelectedTypes(prev =>
+      prev.includes(value) ? prev.filter(c => c !== value) : [...prev, value]
+    );
+  };
+
+  const activeFilterCount =
+    (searchQuery ? 1 : 0) + (selectedSet ? 1 : 0) + (selectedDeck ? 1 : 0) +
+    (selectedTag ? 1 : 0) + (selectedColors.length ? 1 : 0) + (selectedTypes.length ? 1 : 0);
+
+  const resetFilters = () => {
+    setPage(1);
+    setSearchInput('');
+    setSearchQuery('');
+    setSelectedSet('');
+    setSelectedDeck('');
+    setSelectedTag('');
+    setSelectedColors([]);
+    setColorMode('any');
+    setSelectedTypes([]);
+  };
 
   const groups = useMemo(() => {
     const map = new Map<string, CardGroup>();
@@ -278,11 +404,96 @@ export default function Collection() {
         </Select>
       </div>
 
+      {/* Colour + type filters. Colours are chips rather than a dropdown
+          because the selection is a set, and the mode selector next to them is
+          what makes "green and blue" unambiguous. */}
+      <div className={styles.filterBlock}>
+        <div className={styles.filterLine}>
+          <span className={styles.filterLabel}>Colour</span>
+          <Select
+            value={colorMode}
+            onChange={(_, d) => { setPage(1); setColorMode(d.value); }}
+            aria-label="How to combine the selected colours"
+            title={COLOR_MODES.find(m => m.value === colorMode)?.hint}
+            style={{ minWidth: 130 }}
+          >
+            {COLOR_MODES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </Select>
+          <div className={styles.chipRow}>
+            {COLOR_CHIPS.map(c => {
+              const on = selectedColors.includes(c.value);
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={styles.chip}
+                  aria-pressed={on}
+                  title={c.label}
+                  onClick={() => toggleColor(c.value)}
+                  style={on ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+                >
+                  <span aria-hidden="true">{c.symbol}</span> {c.label}
+                </button>
+              );
+            })}
+          </div>
+          {selectedColors.length > 0 && (
+            <button type="button" className={styles.chipClear} onClick={() => { setPage(1); setSelectedColors([]); }}>
+              clear
+            </button>
+          )}
+        </div>
+
+        <div className={styles.filterLine}>
+          <span className={styles.filterLabel}>Type</span>
+          <div className={styles.chipRow}>
+            {CARD_TYPES.map(ct => {
+              const on = selectedTypes.includes(ct);
+              return (
+                <button
+                  key={ct}
+                  type="button"
+                  className={styles.chip}
+                  aria-pressed={on}
+                  onClick={() => toggleType(ct)}
+                  style={on ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
+                >
+                  {ct}
+                </button>
+              );
+            })}
+          </div>
+          {selectedTypes.length > 0 && (
+            <button type="button" className={styles.chipClear} onClick={() => { setPage(1); setSelectedTypes([]); }}>
+              clear
+            </button>
+          )}
+        </div>
+
+        {activeFilterCount > 0 && (
+          <div className={styles.filterLine}>
+            <span className={styles.filterLabel}>
+              {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} · {total} match{total === 1 ? '' : 'es'}
+            </span>
+            <button type="button" className={styles.chipClear} onClick={resetFilters}>
+              reset all
+            </button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <Spinner label="Loading collection..." style={{ marginTop: 24 }} />
       ) : entries.length === 0 ? (
         <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>
-          {searchQuery || selectedSet ? 'No cards found.' : 'Collection is empty. Sync your decks to populate it.'}
+          {activeFilterCount > 0 ? (
+            <>
+              No cards match these filters.{' '}
+              <button type="button" className={styles.chipClear} onClick={resetFilters}>reset all</button>
+            </>
+          ) : 'Collection is empty. Sync your decks to populate it.'}
         </div>
       ) : (
         <>

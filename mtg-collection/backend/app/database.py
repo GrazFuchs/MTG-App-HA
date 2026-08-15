@@ -1,6 +1,7 @@
 """SQLite database initialization and access."""
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import logging
 import aiosqlite
 from pathlib import Path
@@ -621,6 +622,43 @@ async def _migration_19(db: aiosqlite.Connection):
     await db.execute("UPDATE cardmarket_products SET card_id = NULL")
 
 
+async def _migration_20(db: aiosqlite.Connection):
+    """Canonicalise `cards.colors` / `cards.color_identity` to WUBRG letters.
+
+    Archidekt reports colours by name (["Green"]) where Scryfall reports
+    letters (["G"]), and until now whatever arrived was stored verbatim. On a
+    real collection that meant 6625 of 7540 cards held names, and every colour
+    feature read them wrong: the Inbox filed every card under "Colorless", the
+    SQL filter counted "Green" as green *and* red (it contains 'G' and 'r', and
+    LIKE is case-insensitive) so green cards were reported as multicolour while
+    the mono-green filter matched nothing, and the deck colour-identity strip
+    asked Scryfall for a nonexistent Green.svg.
+
+    Rewrites both columns through the same normaliser the write path now uses.
+    Only rows whose stored text actually differs are touched, so re-running is
+    a no-op, and a card whose colours are already canonical is left alone.
+    """
+    from .services.queries import normalize_color_identity
+
+    cursor = await db.execute("SELECT id, colors, color_identity FROM cards")
+    rows = await cursor.fetchall()
+
+    updates = []
+    for row in rows:
+        canonical_colors = json.dumps(normalize_color_identity(row[1]))
+        canonical_identity = json.dumps(normalize_color_identity(row[2]))
+        if canonical_colors != (row[1] or "") or canonical_identity != (row[2] or ""):
+            updates.append((canonical_colors, canonical_identity, row[0]))
+
+    if updates:
+        await db.executemany(
+            "UPDATE cards SET colors = ?, color_identity = ? WHERE id = ?", updates
+        )
+    logger.info(
+        "Migration 20: normalised colours on %d of %d cards", len(updates), len(rows)
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -640,6 +678,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     17: _migration_17,
     18: _migration_18,
     19: _migration_19,
+    20: _migration_20,
 }
 
 

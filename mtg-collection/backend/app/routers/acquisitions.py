@@ -56,8 +56,13 @@ def _pending_order_by(sort: str) -> str:
 
 
 def _build_card_response(r) -> CardResponse:
+    # `SELECT ae.*, c.*` puts two `id` columns in the row and sqlite3.Row hands
+    # back the first, which is the acquisition event's. The card queries alias
+    # the real one as `real_card_id`; fall back for callers that do not.
+    keys = r.keys()
+    card_id = r["real_card_id"] if "real_card_id" in keys else r["id"]
     return CardResponse(
-        id=r["id"],
+        id=card_id,
         scryfall_id=r["scryfall_id"],
         oracle_id=r["oracle_id"],
         name=r["name"],
@@ -121,7 +126,7 @@ async def list_pending(
     if needs_suggestion_filter:
         # Load all pending (no pagination at SQL level)
         cursor = await db.execute(
-            f"""SELECT ae.*, c.*,
+            f"""SELECT ae.*, c.*, c.id as real_card_id,
                 ae.id as event_id, ae.condition as event_condition,
                 ae.language as event_language, ae.created_at as event_created_at,
                 ae.notes as event_notes
@@ -182,7 +187,7 @@ async def list_pending(
     query_params.extend([page_size, offset])
 
     cursor = await db.execute(
-        f"""SELECT ae.*, c.*,
+        f"""SELECT ae.*, c.*, c.id as real_card_id,
             ae.id as event_id, ae.condition as event_condition,
             ae.language as event_language, ae.created_at as event_created_at,
             ae.notes as event_notes
@@ -469,28 +474,43 @@ async def undo_triage(event_id: int):
 async def list_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    search: str = Query("", description="Filter by card name"),
+    state: str = Query("", description="keep | sold_new | swapped | dismiss"),
 ):
     """The booking archive: decided acquisition events with the snapshot of how
     each was booked and how it was presented at confirmation time."""
     db = await get_db()
     offset = (page - 1) * page_size
 
+    conditions = ["ae.triage_state != 'pending'"]
+    params: list = []
+    if search:
+        conditions.append("c.name LIKE ?")
+        params.append(f"%{search}%")
+    if state:
+        conditions.append("ae.triage_state = ?")
+        params.append(state)
+    where_clause = " AND ".join(conditions)
+
     count_cur = await db.execute(
-        "SELECT COUNT(*) FROM acquisition_events WHERE triage_state != 'pending'"
+        f"""SELECT COUNT(*) FROM acquisition_events ae
+        JOIN cards c ON c.id = ae.card_id
+        WHERE {where_clause}""",
+        list(params),
     )
     total = (await count_cur.fetchone())[0]
 
     cursor = await db.execute(
-        """SELECT ae.id, ae.triage_state, ae.triage_decision_at, ae.source,
+        f"""SELECT ae.id, ae.triage_state, ae.triage_decision_at, ae.source,
                   ae.qty_delta, ae.is_foil, ae.condition, ae.language,
                   ae.linked_listing_id, ae.notes, ae.decision_snapshot, ae.created_at,
                   c.name AS card_name, c.set_code, c.set_name, c.image_uri
            FROM acquisition_events ae
            JOIN cards c ON c.id = ae.card_id
-           WHERE ae.triage_state != 'pending'
+           WHERE {where_clause}
            ORDER BY ae.triage_decision_at DESC, ae.id DESC
            LIMIT ? OFFSET ?""",
-        (page_size, offset),
+        list(params) + [page_size, offset],
     )
     rows = await cursor.fetchall()
 

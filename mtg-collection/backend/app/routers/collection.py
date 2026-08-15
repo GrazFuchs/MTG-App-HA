@@ -5,10 +5,13 @@ from ..database import get_db
 from ..models.schemas import CollectionEntry, CollectionAddRequest, CardResponse
 from ..clients.scryfall import scryfall, parse_scryfall_card
 from ..services.queries import (
+    COLOR_MODES,
     DUPLICATES_CTE,
     DUPLICATES_FINAL_CTE,
     basic_land_exclusion_sql,
+    card_type_condition,
     color_identity_condition,
+    color_multi_condition,
     color_order_case_sql,
     parse_color_identity,
 )
@@ -20,7 +23,13 @@ router = APIRouter()
 @router.get("/")
 async def list_collection(
     search: str = Query("", description="Search by card name"),
-    color: str = Query("", description="Filter by color (W,U,B,R,G)"),
+    color: str = Query("", description="Colours as CSV: W,U,B,R,G,C"),
+    color_mode: str = Query(
+        "any", description="How to combine colours: any | all | exact | exclude"
+    ),
+    card_type: str = Query(
+        "", description="Card types as CSV: Creature,Instant,Sorcery,… (OR-ed)"
+    ),
     rarity: str = Query("", description="Filter by rarity"),
     set_code: str = Query("", description="Filter by set code"),
     collection_tag: str = Query("", description="Filter by collection (Archidekt) tag"),
@@ -38,12 +47,21 @@ async def list_collection(
         conditions.append("c.name LIKE ?")
         params.append(f"%{search}%")
     if color:
-        # Single colours mean "INCLUDES this colour"; M/C/L also supported.
-        # Format-robust matching (see color_identity_condition).
-        for clr in color.split(","):
-            cond = color_identity_condition(clr, "c", mono_singles=False)
-            if cond:
-                conditions.append(cond)
+        # Several colours combine per `color_mode`, so the same selection can
+        # mean "has any of these", "has all of these", "is exactly these" or
+        # "has none of these". Unknown modes fall back to "any" rather than
+        # dropping the filter, so a typo narrows nothing instead of silently
+        # showing everything.
+        mode = color_mode.strip().lower()
+        if mode not in COLOR_MODES:
+            mode = "any"
+        cond = color_multi_condition(color.split(","), mode, "c")
+        if cond:
+            conditions.append(cond)
+    if card_type:
+        cond = card_type_condition(card_type.split(","), "c")
+        if cond:
+            conditions.append(cond)
     if rarity:
         conditions.append("c.rarity = ?")
         params.append(rarity.lower())

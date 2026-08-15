@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { makeStyles, shorthands } from '@griffel/react';
+import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 import { Spinner } from '@fluentui/react-components';
-import { api, CollectionStats, PriceAlert, ValueSnapshot, MtgStocksMover, MtgStocksSignals } from '../api';
+import { api, CollectionStats, InboxAcquisitionStats, PriceAlert, ValueSnapshot, MtgStocksMover, MtgStocksSignals, WishlistSummary } from '../api';
 import { Sparkline } from '../components/Sparkline';
 import { t } from '../i18n';
 import { sothera } from '../theme/sothera';
@@ -80,19 +81,32 @@ const useStyles = makeStyles({
   },
   statCards: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(5, 1fr)',
     gap: '14px',
     marginBottom: '36px',
+    '@media (max-width: 1100px)': {
+      gridTemplateColumns: 'repeat(3, 1fr)',
+    },
     '@media (max-width: 768px)': {
       gridTemplateColumns: 'repeat(2, 1fr)',
     },
   },
   statCardInner: {
     cursor: 'pointer',
-    transitionProperty: 'border-color',
+    transitionProperty: 'border-color, transform',
     transitionDuration: '160ms',
     ':hover': {
       ...shorthands.borderColor(sothera.fgFaint),
+    },
+    ':focus-visible': {
+      ...shorthands.borderColor(sothera.fg),
+      outlineStyle: 'none',
+    },
+  },
+  clickableRow: {
+    cursor: 'pointer',
+    ':hover': {
+      backgroundColor: 'rgba(255,255,255,0.03)',
     },
   },
   statLabel: {
@@ -171,6 +185,7 @@ const useStyles = makeStyles({
 
 export default function Dashboard() {
   const styles = useStyles();
+  const navigate = useNavigate();
   const { accent } = useAccent();
   const { data: stats, isLoading: statsLoading } = useQuery<CollectionStats>({
     queryKey: ['stats'],
@@ -205,6 +220,16 @@ export default function Dashboard() {
     staleTime: 5 * 60_000,
     enabled: mtgStocksOn,
   });
+  const { data: inbox } = useQuery<InboxAcquisitionStats>({
+    queryKey: ['inbox-stats'],
+    queryFn: () => api.getInboxStats(),
+    staleTime: 30_000,
+  });
+  const { data: wishlist } = useQuery<WishlistSummary>({
+    queryKey: ['wishlist-summary'],
+    queryFn: () => api.getWishlistSummary(),
+    staleTime: 5 * 60_000,
+  });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   if (statsLoading || alertsLoading) return <Spinner label="Loading..." />;
@@ -215,6 +240,12 @@ export default function Dashboard() {
     const t = getPriceTier(a.trend);
     tierMap.get(t)?.push(a);
   }
+
+  const pendingCount = inbox?.pending_count ?? 0;
+
+  /** Open the collection filtered to one card — where an alert row leads. */
+  const openCard = (name: string) =>
+    navigate(`/collection?search=${encodeURIComponent(name)}`);
 
   return (
     <div>
@@ -236,9 +267,20 @@ export default function Dashboard() {
         }
       />
 
-      {/* Hero value panel */}
+      {/* Hero value panel — the headline number is the collection, so it opens it */}
       <Panel corners glow accent={accent.oklch} className={styles.heroPanel}
-        style={{ background: `linear-gradient(135deg, ${accent.soft} 0%, transparent 50%)` }}>
+        style={{ background: `linear-gradient(135deg, ${accent.soft} 0%, transparent 50%)`, cursor: 'pointer' }}
+        role="link"
+        tabIndex={0}
+        title="Open the collection"
+        onClick={() => navigate('/collection?sort_by=price_eur&sort_dir=desc')}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigate('/collection?sort_by=price_eur&sort_dir=desc');
+          }
+        }}
+      >
         <div className={styles.heroGrid}>
           <div>
             <div className={styles.eyebrowLabel}>AGGREGATE HOLDINGS · EUR</div>
@@ -273,20 +315,70 @@ export default function Dashboard() {
         </div>
       </Panel>
 
-      {/* Stat cards */}
+      {/* Stat cards — each one is the entrance to the page it summarises.
+          Inbox sits first when something is pending: it is the only tile that
+          represents work waiting, and it was missing from here entirely. */}
       <div className={styles.statCards}>
         {[
-          { l: 'Total Cards', g: '☷', v: (stats?.total_cards ?? 0).toLocaleString(), sub: `${(stats?.unique_cards ?? 0).toLocaleString()} unique` },
-          { l: 'Decks', g: '⌬', v: String(stats?.total_decks ?? 0), sub: 'synced from Archidekt' },
-          { l: 'On Market', g: '⌖', v: `€${(stats?.cardmarket_total_value ?? 0).toFixed(2)}`, sub: `${stats?.total_cardmarket_listings ?? 0} listings` },
-          { l: 'Wishlist', g: '✧', v: '—', sub: 'tracking' },
-        ].map((m, i) => (
-          <Panel key={i} style={{ cursor: 'pointer' }}>
+          {
+            l: 'Inbox',
+            g: '⊕',
+            v: String(pendingCount),
+            sub: pendingCount > 0 ? 'waiting for triage' : 'all triaged',
+            to: '/inbox',
+            urgent: pendingCount > 0,
+          },
+          {
+            l: 'Total Cards',
+            g: '☷',
+            v: (stats?.total_cards ?? 0).toLocaleString(),
+            sub: `${(stats?.unique_cards ?? 0).toLocaleString()} unique`,
+            to: '/collection',
+          },
+          {
+            l: 'Decks',
+            g: '⌬',
+            v: String(stats?.total_decks ?? 0),
+            sub: 'synced from Archidekt',
+            to: '/decks',
+          },
+          {
+            l: 'On Market',
+            g: '⌖',
+            v: `€${(stats?.cardmarket_total_value ?? 0).toFixed(2)}`,
+            sub: `${stats?.total_cardmarket_listings ?? 0} listings`,
+            to: '/cardmarket',
+          },
+          {
+            l: 'Wishlist',
+            g: '✧',
+            v: String(wishlist?.total_items ?? 0),
+            sub: wishlist
+              ? `€${wishlist.total_current_eur.toFixed(2)} to buy`
+              : 'tracking',
+            to: '/wishlist',
+          },
+        ].map(m => (
+          <Panel
+            key={m.l}
+            className={styles.statCardInner}
+            role="link"
+            tabIndex={0}
+            title={`Open ${m.l}`}
+            onClick={() => navigate(m.to)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigate(m.to);
+              }
+            }}
+            style={m.urgent ? { borderColor: accent.oklch } : undefined}
+          >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span className={styles.statLabel}>{m.l}</span>
-              <span style={{ fontSize: 14, color: sothera.fgFainter }}>{m.g}</span>
+              <span style={{ fontSize: 14, color: m.urgent ? accent.oklch : sothera.fgFainter }}>{m.g}</span>
             </div>
-            <div className={styles.statValue}>{m.v}</div>
+            <div className={styles.statValue} style={m.urgent ? { color: accent.oklch } : undefined}>{m.v}</div>
             <div className={styles.statSub}>{m.sub}</div>
           </Panel>
         ))}
@@ -317,7 +409,17 @@ export default function Dashboard() {
                       <span>{tier.emoji} {tier.label} ({tierAlerts.length})</span>
                     </div>
                     {isOpen && tierAlerts.map((a, i) => (
-                      <div key={i} className={styles.alertRow}>
+                      <div
+                        key={i}
+                        className={mergeClasses(styles.alertRow, styles.clickableRow)}
+                        role="link"
+                        tabIndex={0}
+                        title={`Show ${a.card_name} in the collection`}
+                        onClick={() => openCard(a.card_name)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(a.card_name); }
+                        }}
+                      >
                         <div>
                           <span className={styles.alertName}>{a.card_name}</span>
                           {a.set_code && (
@@ -349,7 +451,17 @@ export default function Dashboard() {
               const up = m.direction === 'up';
               const color = up ? sothera.positive : sothera.negative;
               return (
-                <div key={i} className={styles.alertRow}>
+                <div
+                  key={i}
+                  className={mergeClasses(styles.alertRow, styles.clickableRow)}
+                  role="link"
+                  tabIndex={0}
+                  title={`Show ${m.card_name} in the collection`}
+                  onClick={() => openCard(m.card_name)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(m.card_name); }
+                  }}
+                >
                   <div>
                     <span className={styles.alertName}>{m.card_name}</span>
                     {m.is_foil && <span style={{ marginLeft: 6, fontSize: 11 }}>◆</span>}
@@ -383,7 +495,17 @@ export default function Dashboard() {
           <SectionHeader num="03" title="Trade Signals" right={`${signals.buy.length} BUY · ${signals.sell.length} SELL`} accent={accent.oklch} />
           <Panel>
             {signals.buy.map((b, i) => (
-              <div key={`b${i}`} className={styles.alertRow}>
+              <div
+                key={`b${i}`}
+                className={mergeClasses(styles.alertRow, styles.clickableRow)}
+                role="link"
+                tabIndex={0}
+                title={`Show ${b.card_name} in the collection`}
+                onClick={() => openCard(b.card_name)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(b.card_name); }
+                }}
+              >
                 <div>
                   <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.positive}`, color: sothera.positive }}>BUY</span>
                   <span className={styles.alertName}>{b.card_name}</span>
@@ -396,7 +518,17 @@ export default function Dashboard() {
               </div>
             ))}
             {signals.sell.map((s, i) => (
-              <div key={`s${i}`} className={styles.alertRow}>
+              <div
+                key={`s${i}`}
+                className={mergeClasses(styles.alertRow, styles.clickableRow)}
+                role="link"
+                tabIndex={0}
+                title={`Show ${s.card_name} in the collection`}
+                onClick={() => openCard(s.card_name)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(s.card_name); }
+                }}
+              >
                 <div>
                   <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.negative}`, color: sothera.negative }}>SELL</span>
                   <span className={styles.alertName}>{s.card_name}</span>

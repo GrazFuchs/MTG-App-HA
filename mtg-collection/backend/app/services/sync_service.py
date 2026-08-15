@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from ..database import get_db
 from ..config import get_settings
 from ..clients.archidekt import archidekt, parse_archidekt_deck, parse_archidekt_card
+from .queries import normalize_color_identity
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +21,17 @@ def is_sync_running() -> bool:
 
 async def upsert_card(db, card_data: dict) -> int:
     """Insert or update a card, return its DB id."""
-    colors = card_data.get("colors", [])
-    color_identity = card_data.get("color_identity", [])
     keywords = card_data.get("keywords", [])
 
-    if isinstance(colors, list):
-        colors = json.dumps(colors)
-    if isinstance(color_identity, list):
-        color_identity = json.dumps(color_identity)
+    # The single write path for cards, and therefore the only place colours can
+    # be canonicalised once for every ingest source. Archidekt sends full names
+    # (["Green"]) and Scryfall sends letters (["G"]); storing both formats is
+    # what broke colour grouping and every colour filter (see queries.py).
+    colors = json.dumps(normalize_color_identity(card_data.get("colors", [])))
+    color_identity = json.dumps(
+        normalize_color_identity(card_data.get("color_identity", []))
+    )
+
     if isinstance(keywords, list):
         keywords = json.dumps(keywords)
 

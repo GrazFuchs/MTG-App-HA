@@ -89,3 +89,52 @@ describe('groupByColorBucket', () => {
     expect(result.get('Multi')?.length).toBe(1);
   });
 });
+
+describe('getColorBucket with Archidekt colour names', () => {
+  // The Inbox showed every one of 140 pending cards under "Colorless" because
+  // Archidekt sends colour *names* where Scryfall sends letters, and this
+  // classifier only knew letters. The backend normalises on write now, but a
+  // browser with a cached response must still bucket them correctly.
+  it('buckets a named single colour by its letter', () => {
+    expect(getColorBucket({ color_identity: ['Green'] })).toBe('G');
+    expect(getColorBucket({ color_identity: ['Blue'] })).toBe('U');
+    expect(getColorBucket({ color_identity: ['White'] })).toBe('W');
+    expect(getColorBucket({ color_identity: ['Black'] })).toBe('B');
+    expect(getColorBucket({ color_identity: ['Red'] })).toBe('R');
+  });
+
+  it('does not read a name as the letters it contains', () => {
+    // "Green" holds a G and an r; "Blue" holds a B and a u. Reading them
+    // letter-by-letter is what reported mono-green Beorn as Multicolor.
+    expect(getColorBucket({ color_identity: ['Green'] })).not.toBe('Multi');
+    expect(getColorBucket({ color_identity: ['Blue'] })).not.toBe('Multi');
+  });
+
+  it('buckets several names as Multi', () => {
+    expect(getColorBucket({ color_identity: ['Black', 'Red'] })).toBe('Multi');
+  });
+
+  it('handles the stored JSON form', () => {
+    expect(getColorBucket({ color_identity: '["Green"]' })).toBe('G');
+    expect(getColorBucket({ color_identity: '["White","Blue"]' })).toBe('Multi');
+  });
+
+  it('deduplicates a repeated colour instead of calling it Multi', () => {
+    expect(getColorBucket({ color_identity: ['Red', 'R'] })).toBe('R');
+  });
+
+  it('still buckets canonical letters', () => {
+    expect(getColorBucket({ color_identity: ['G'] })).toBe('G');
+    expect(getColorBucket({ color_identity: ['U', 'G'] })).toBe('Multi');
+  });
+
+  it('ignores an unmappable token', () => {
+    expect(getColorBucket({ color_identity: ['Puce'] })).toBe('Colorless');
+  });
+
+  it('groups a named green card under G, not Colorless', () => {
+    const result = groupByColorBucket([{ card: { color_identity: ['Green'] } }]);
+    expect(result.get('G')?.length).toBe(1);
+    expect(result.get('Colorless')?.length).toBe(0);
+  });
+});

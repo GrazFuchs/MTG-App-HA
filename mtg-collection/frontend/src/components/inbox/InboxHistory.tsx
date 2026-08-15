@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { makeStyles } from '@griffel/react';
-import { Button, Spinner, Badge } from '@fluentui/react-components';
-import { ChevronLeft24Regular, ChevronRight24Regular } from '@fluentui/react-icons';
+import { Button, Input, Select, Spinner, Badge } from '@fluentui/react-components';
+import { ChevronLeft24Regular, ChevronRight24Regular, Search24Regular } from '@fluentui/react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { api, AcquisitionHistoryItem } from '../../api';
 import { sothera } from '../../theme/sothera';
+import { t } from '../../i18n';
 
 const STATE_LABELS: Record<string, string> = {
   keep: 'Kept',
@@ -48,6 +49,13 @@ const useStyles = makeStyles({
   pagination: { display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '16px', alignItems: 'center' },
   pageInfo: { fontFamily: sothera.fontMono, fontSize: '12px', color: sothera.fgMuted },
   empty: { fontFamily: sothera.fontMono, fontSize: '12px', color: sothera.fgFaint, padding: '24px', textAlign: 'center' },
+  controls: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '12px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
 });
 
 function fmtDate(iso: string | null): string {
@@ -118,34 +126,88 @@ function HistoryRow({ item }: { item: AcquisitionHistoryItem }) {
   );
 }
 
+const STATE_FILTERS = ['keep', 'sold_new', 'swapped', 'dismiss'] as const;
+
 export default function InboxHistory() {
   const styles = useStyles();
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [state, setState] = useState('');
+
+  // Searching server-side, not in the loaded page: the archive is hundreds of
+  // rows deep and a client-side filter would only ever see the current 50.
   const { data, isLoading } = useQuery({
-    queryKey: ['inbox-history', page],
-    queryFn: () => api.getAcquisitionHistory(page, 50),
+    queryKey: ['inbox-history', page, searchQuery, state],
+    queryFn: () => api.getAcquisitionHistory(page, 50, searchQuery, state),
     staleTime: 30_000,
   });
 
-  if (isLoading) return <Spinner label="Loading history..." style={{ marginTop: 24 }} />;
+  const runSearch = (value: string) => {
+    setSearchQuery(value.trim());
+    setPage(1);
+  };
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / 50));
-
-  if (items.length === 0) {
-    return <div className={styles.empty}>No booked acquisitions yet — decisions you confirm in the Inbox appear here.</div>;
-  }
+  const isFiltered = Boolean(searchQuery || state);
 
   return (
     <div>
-      {items.map(it => <HistoryRow key={it.event_id} item={it} />)}
-      {totalPages > 1 && (
-        <div className={styles.pagination}>
-          <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
-          <span className={styles.pageInfo}>Page {page} of {totalPages}</span>
-          <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} />
+      <div className={styles.controls}>
+        <Input
+          placeholder={t('inbox.history.search')}
+          contentBefore={<Search24Regular />}
+          value={searchInput}
+          onChange={(_, d) => setSearchInput(d.value)}
+          onKeyDown={e => { if (e.key === 'Enter') runSearch(searchInput); }}
+          style={{ minWidth: 220, maxWidth: 340, flex: 1 }}
+        />
+        {searchQuery && (
+          <Button
+            size="small"
+            appearance="subtle"
+            onClick={() => { setSearchInput(''); runSearch(''); }}
+          >
+            ✕ {searchQuery}
+          </Button>
+        )}
+        <Select
+          value={state}
+          onChange={(_, d) => { setState(d.value); setPage(1); }}
+          aria-label="Decision filter"
+          style={{ minWidth: 160 }}
+        >
+          <option value="">{t('inbox.history.state_all')}</option>
+          {STATE_FILTERS.map(s => (
+            <option key={s} value={s}>{STATE_LABELS[s]}</option>
+          ))}
+        </Select>
+        <span className={styles.pageInfo}>
+          {total} {total === 1 ? 'entry' : 'entries'}
+        </span>
+      </div>
+
+      {isLoading ? (
+        <Spinner label="Loading history..." style={{ marginTop: 24 }} />
+      ) : items.length === 0 ? (
+        <div className={styles.empty}>
+          {isFiltered
+            ? t('inbox.history.no_matches')
+            : 'No booked acquisitions yet — decisions you confirm in the Inbox appear here.'}
         </div>
+      ) : (
+        <>
+          {items.map(it => <HistoryRow key={it.event_id} item={it} />)}
+          {totalPages > 1 && (
+            <div className={styles.pagination}>
+              <Button icon={<ChevronLeft24Regular />} appearance="subtle" size="small" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} />
+              <span className={styles.pageInfo}>Page {page} of {totalPages}</span>
+              <Button icon={<ChevronRight24Regular />} appearance="subtle" size="small" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

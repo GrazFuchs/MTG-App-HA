@@ -1,3 +1,28 @@
+## 0.34.0 — Colours, and a dashboard you can click
+
+Archidekt reports a card's colours by name where Scryfall reports them by letter. Everything else here is downstream of the add-on having stored whichever arrived.
+
+### Fixed
+- **Every card in the Inbox was filed under "Colorless"** — `cards.color_identity` held Archidekt's `["Green"]` on 6625 of 7540 cards, where the rest of the app expected Scryfall's `["G"]`. The frontend classifier matched tokens against the set `{W,U,B,R,G}`, a full name matched nothing, and a card with no recognised colour is colourless. Pressing "Fix colors" could not help: it only re-fetched cards whose colour identity was *empty*, and these were not empty, just unreadable.
+- **Mono-coloured cards were reported as multicolour, and their colour filter returned nothing** — the SQL tested a bare `LIKE '%G%'`. "Green" satisfies that twice: the 'G', and the 'r', because SQLite's LIKE is case-insensitive. A green card therefore counted as two colours and read as multicolour, while the mono-green filter — "has G and not R" — excluded it by its own 'r' and matched nothing at all. "Blue" broke identically through its 'B' and 'u'. White, Black and Red each contain exactly one colour letter and so worked by accident, which is why this survived unnoticed. Reported against *Beorn the Fierce*, mono-green, shown as Multicolor and missing from the green filter.
+
+  Colours are now normalised to WUBRG letters at the single write path (`upsert_card`), so both ingest sources converge, and **migration 20** rewrites the existing rows. The SQL matches a comma-delimited token rather than a bare letter, so a name that somehow slips through reads as colourless — wrong by omission rather than by invention. The same normalisation also repairs the deck colour-identity strip, which had been asking Scryfall for a nonexistent `Green.svg`.
+- **"No results" was reported as a backend failure** — filtering the Inbox to a colour that matched nothing produced *"Could not load inbox — the backend reported 140 pending cards but they could not be fetched. Check the add-on logs."* The page inferred an error from an empty list whenever the pending count was non-zero, so a working filter looked like a broken add-on. An empty result is now an empty state naming the filters and offering to clear them; the error banner is reserved for a request that actually failed.
+- **`card.id` in the Inbox payload was the acquisition event's id** — `SELECT ae.*, c.*` puts two `id` columns in the row and `sqlite3.Row` returns the first. Latent, since nothing on the page read it yet.
+- **`version.py`, `config.yaml` and `package.json` reported three different versions** (0.33.0, 0.33.1, 0.32.3). Realigned; `/healthz` had been a release behind since 0.33.1.
+
+### Added
+- **The Dashboard tiles are links.** Every stat card opens the page it summarises — Inbox, Collection, Decks, Cardmarket, Wishlist — and the hero value panel opens the collection sorted by price. Price-spike, mover and buy/sell rows open the collection filtered to that card. All keyboard-reachable.
+- **An Inbox tile on the Dashboard**, showing the pending count and highlighted in the accent colour while anything is waiting. The Inbox was the one section with no presence there at all.
+- **The Wishlist tile shows real numbers** instead of the placeholder `—`: item count and outstanding value.
+- **Search and a decision filter in the Inbox history.** The archive is 2873 entries deep and could previously only be paged through 50 at a time. `GET /api/acquisitions/history` takes `search` and `state`; filtering happens in SQL, so it covers the whole archive rather than the loaded page.
+- **Card-type filter on the Collection page** — Creature, Instant, Sorcery, Enchantment, Artifact, Planeswalker, Land, Battle, Kindred; several types OR together. Matching is restricted to the part of the type line before the em dash, so a "Creature — Human Artificer" does not answer an Artifact filter and a planeswalker with the Bear subtype does not answer a Creature one.
+- **Multi-colour selection on the Collection page, with an explicit mode.** Several colours are ambiguous on their own, so the reading is chosen rather than assumed: *has any of*, *has all of*, *is exactly*, *has none of*. Colourless is selectable alongside the five colours. `GET /api/collection/` takes `color` (CSV) and `color_mode`.
+- The Collection page reads `search`, `sort_by` and `sort_dir` from the URL, which is what makes the Dashboard deep links land on a filtered view.
+
+### Upgrading
+Migration 20 runs at startup and rewrites the colour columns of every affected card — 6629 of 7540 rows in about a third of a second on a Pi 5. No sync is required afterwards; the colours are corrected in place.
+
 ## 0.33.1
 
 ### Fixed

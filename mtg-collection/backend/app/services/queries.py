@@ -31,31 +31,57 @@ def basic_land_exclusion_sql(alias: str = "c") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Colour-identity filtering
+# Colour-identity storage and filtering
 #
-# `cards.color_identity` SHOULD be stored as a JSON array (e.g. ["W","U"]), but
-# historically it has also been seen as CSV ("W,U"), space-separated ("W U"),
-# bare ("W") or concatenated ("WU") — the frontend (utils/colors.ts) already
-# parses all of these defensively. The old SQL filters matched the literal JSON
-# form `LIKE '%"W"%'`, so any non-JSON row silently dropped out → single-colour
-# filters returned nothing (multicolour still matched via the comma-based test).
+# The canonical storage form is a JSON array of WUBRG letters: ["W","U"].
+# Getting there took a while, because the two ingest paths disagree:
 #
-# These helpers match on the bare colour letter instead. `color_identity` only
-# ever contains the letters WUBRG plus punctuation, so `LIKE '%R%'` is reliable
-# regardless of delimiter format. Mono/multi/colourless are derived by counting
-# how many distinct WUBRG letters are present, which is format-independent.
+#   Scryfall  "color_identity": ["G"]        <- letters
+#   Archidekt "colorIdentity":  ["Green"]    <- full English names
+#
+# Archidekt is the bulk source, so 6625 of 7540 cards were stored as names.
+# Every consumer then broke in a different way. The frontend classifier only
+# knew letters, so every card fell into the "Colorless" bucket. The SQL filter
+# matched a bare `LIKE '%G%'`, which "Green" satisfies twice over — 'G' *and*
+# the 'r' (LIKE is case-insensitive) — so a green card counted as two colours
+# and was reported as multicolour, while the mono-green filter, which demands
+# "has G and not R", matched nothing at all. "Blue" broke identically via its
+# 'u' and 'B'; White/Black/Red happened to contain exactly one colour letter
+# and so worked by luck, which is why this survived so long.
+#
+# The fix is one canonical form enforced at the only write path
+# (sync_service.upsert_card) plus a migration that rewrites existing rows, so
+# `normalize_color_identity` is the single place that knows about names.
+# Readers stay tolerant: `parse_color_identity` still accepts every historical
+# format, and the SQL now matches the quoted JSON token `'%"G"%'` rather than a
+# bare letter, so a name that somehow slips through reads as colourless — quiet
+# and wrong-by-omission instead of loud and wrong-by-invention.
 # ---------------------------------------------------------------------------
 _WUBRG = ("W", "U", "B", "R", "G")
 
+#: Every spelling of a colour we have seen in an ingest payload → its letter.
+COLOR_NAME_TO_LETTER: dict[str, str] = {
+    "W": "W", "WHITE": "W",
+    "U": "U", "BLUE": "U",
+    "B": "B", "BLACK": "B",
+    "R": "R", "RED": "R",
+    "G": "G", "GREEN": "G",
+}
+
 
 def parse_color_identity(raw: Any) -> list[str]:
-    """Parse a stored color_identity value into a list of colour letters.
+    """Parse a stored color_identity value into canonical WUBRG letters.
 
     Robust to every format the data has been seen in: JSON (["W","U"]), CSV
-    ("W,U"), space-separated ("W U"), bare ("W") and concatenated ("WU").
-    Mirrors the frontend's defensive parser (utils/colors.ts) so the backend
-    never crashes on a non-JSON row. Returns [] for null/empty/garbage.
+    ("W,U"), space-separated ("W U"), bare ("W"), concatenated ("WU") and
+    Archidekt's full colour names (["Green"]). Mirrors the frontend's
+    defensive parser (utils/colors.ts). Returns [] for null/empty/garbage.
     """
+    return normalize_color_identity(raw)
+
+
+def _split_color_tokens(raw: Any) -> list[str]:
+    """Split a stored colour value into raw tokens, without interpreting them."""
     if raw is None:
         return []
     if isinstance(raw, list):
@@ -76,14 +102,51 @@ def parse_color_identity(raw: Any) -> list[str]:
     return [s]
 
 
+def normalize_color_identity(raw: Any) -> list[str]:
+    """Canonicalise any stored/ingested colour value to WUBRG letters.
+
+    Deduplicates and returns the letters in WUBRG order, so two cards with the
+    same identity always compare and sort the same regardless of the order the
+    source listed them in. Unrecognised tokens are dropped rather than passed
+    through — a token we cannot map is not a colour we can filter on, and
+    keeping it is what produced the "Green" = G+R misreading in the first place.
+    """
+    letters = {
+        COLOR_NAME_TO_LETTER[t]
+        for t in (str(tok).strip().upper() for tok in _split_color_tokens(raw))
+        if t in COLOR_NAME_TO_LETTER
+    }
+    return [letter for letter in _WUBRG if letter in letters]
+
+
 def _ci_col(alias: str) -> str:
     """The color_identity column, optionally table-qualified (alias='' = bare)."""
     return f"{alias}.color_identity" if alias else "color_identity"
 
 
+def _ci_haystack(alias: str) -> str:
+    """SQL expression reducing any stored colour value to `,TOKEN,TOKEN,`.
+
+    Strips the JSON punctuation and fences the result in commas, so a token can
+    be tested for as a whole. `["U","W"]`, `U,W` and `U W` all collapse to
+    `,U,W,`; a bare `R` becomes `,R,`; an empty identity becomes `,,`.
+    """
+    stripped = f"COALESCE({_ci_col(alias)}, '')"
+    for char in ("[", "]", '"', "'", " "):
+        literal = char.replace("'", "''")  # an apostrophe doubles inside a SQL string
+        stripped = f"REPLACE({stripped}, '{literal}', '')"
+    return f"(',' || {stripped} || ',')"
+
+
 def _ci_has(alias: str, letter: str) -> str:
-    """Boolean: does the colour identity contain this WUBRG letter?"""
-    return f"COALESCE({_ci_col(alias)}, '') LIKE '%{letter}%'"
+    """Boolean: does the colour identity contain this WUBRG letter?
+
+    Tests for a whole comma-delimited token, which is what keeps a colour
+    *name* from being read as the letters it happens to contain: `,Green,`
+    matches neither `,G,` nor `,R,`. Matching a bare `LIKE '%G%'` — as this did
+    until 0.34.0 — is what made every green card read as multicolour.
+    """
+    return f"({_ci_haystack(alias)} LIKE '%,{letter},%')"
 
 
 def _ci_distinct_count(alias: str) -> str:
@@ -143,6 +206,124 @@ def color_identity_condition(
     if t in ("L", "LAND"):
         return f"{alias}.type_line LIKE '%Land%'"
     return None
+
+
+# ---------------------------------------------------------------------------
+# Multi-colour filtering (Collection page)
+#
+# A single token answers "is it this colour?". Picking several colours raises a
+# question a single token cannot: does the selection mean *any of these*, *all
+# of these*, *exactly these* or *none of these*? Rather than guess, the caller
+# names the mode. "exclude" is what makes the filter subtractive — "show me the
+# collection without red and blue" — which is otherwise impossible to express.
+# ---------------------------------------------------------------------------
+COLOR_MODES = ("any", "all", "exact", "exclude")
+
+
+def color_multi_condition(
+    tokens: list[str], mode: str = "any", alias: str = "c"
+) -> str | None:
+    """Return a SQL boolean for a multi-colour selection.
+
+    Tokens are WUBRG letters plus C/COLORLESS. Modes:
+      any      identity contains at least one of the selected colours
+      all      identity contains every selected colour (may contain others)
+      exact    identity is precisely the selected set, nothing more
+      exclude  identity contains none of the selected colours
+
+    Returns None when nothing selectable was passed, so the caller can leave
+    the filter out entirely rather than emit a tautology.
+    """
+    upper = [str(t).strip().upper() for t in tokens if str(t).strip()]
+    letters = [t for t in upper if t in _WUBRG]
+    wants_colorless = any(t in ("C", "COLORLESS") for t in upper)
+    if not letters and not wants_colorless:
+        return None
+
+    count = _ci_distinct_count(alias)
+    colorless = f"(({count}) = 0)"
+
+    if mode == "exclude":
+        parts = [f"NOT {_ci_has(alias, letter)}" for letter in letters]
+        if wants_colorless:
+            # "without colourless" = it must have at least one colour.
+            parts.append(f"(({count}) > 0)")
+        return "(" + " AND ".join(parts) + ")"
+
+    if mode == "exact":
+        if not letters:
+            return colorless
+        included = " AND ".join(_ci_has(alias, letter) for letter in letters)
+        excluded = " AND ".join(
+            f"NOT {_ci_has(alias, letter)}" for letter in _WUBRG if letter not in letters
+        )
+        exact = f"({included} AND {excluded})" if excluded else f"({included})"
+        # Colourless alongside colours reads as "either", since no single card
+        # can be both.
+        return f"({exact} OR {colorless})" if wants_colorless else exact
+
+    if mode == "all":
+        if not letters:
+            return colorless
+        return "(" + " AND ".join(_ci_has(alias, letter) for letter in letters) + ")"
+
+    parts = [_ci_has(alias, letter) for letter in letters]
+    if wants_colorless:
+        parts.append(colorless)
+    return "(" + " OR ".join(parts) + ")"
+
+
+# ---------------------------------------------------------------------------
+# Card-type filtering
+#
+# Only the part of the type line BEFORE the em dash names card types; what
+# follows are subtypes. The distinction matters: "Creature — Human Artificer"
+# would otherwise match an Artifact filter, and "Land — Urza's Mine" is not an
+# instant just because a subtype spells one. Both ingest paths agree on the
+# em dash — Scryfall writes "Legendary Creature — Human Wizard", the Archidekt
+# parser assembles "Legendary, Creature — Human, Artificer" — so splitting on
+# it is safe for either.
+# ---------------------------------------------------------------------------
+CARD_TYPES: tuple[str, ...] = (
+    "Artifact", "Battle", "Creature", "Enchantment", "Instant",
+    "Kindred", "Land", "Planeswalker", "Sorcery",
+)
+
+#: Types renamed by Wizards; both spellings live in the data.
+_TYPE_ALIASES = {"KINDRED": ("Kindred", "Tribal"), "TRIBAL": ("Kindred", "Tribal")}
+
+
+def type_line_head_sql(alias: str = "c") -> str:
+    """SQL expression yielding the supertype/type part of the type line."""
+    col = f"COALESCE({alias}.type_line, '')" if alias else "COALESCE(type_line, '')"
+    return (
+        f"CASE WHEN INSTR({col}, '—') > 0 "
+        f"THEN SUBSTR({col}, 1, INSTR({col}, '—') - 1) ELSE {col} END"
+    )
+
+
+def card_type_condition(tokens: list[str], alias: str = "c") -> str | None:
+    """Return a SQL boolean matching any of the given card types.
+
+    Several types OR together — picking Instant and Sorcery means "either",
+    which is what a type filter is asked for in practice. The type names are a
+    fixed allowlist (no user input reaches the SQL), so inlining them is safe.
+    """
+    head = type_line_head_sql(alias)
+    parts: list[str] = []
+    for token in tokens:
+        key = str(token).strip().upper()
+        if key in _TYPE_ALIASES:
+            spellings = _TYPE_ALIASES[key]
+        else:
+            match = next((t for t in CARD_TYPES if t.upper() == key), None)
+            if match is None:
+                continue
+            spellings = (match,)
+        parts.extend(f"{head} LIKE '%{s}%'" for s in spellings)
+    if not parts:
+        return None
+    return "(" + " OR ".join(parts) + ")"
 
 
 # ---------------------------------------------------------------------------

@@ -810,8 +810,12 @@ export const api = {
   },
   getInboxStats: () =>
     request<InboxAcquisitionStats>('/api/acquisitions/stats'),
-  getAcquisitionHistory: (page = 1, pageSize = 50) =>
-    request<PaginatedAcquisitionHistory>(`/api/acquisitions/history?page=${page}&page_size=${pageSize}`),
+  getAcquisitionHistory: (page = 1, pageSize = 50, search = '', state = '') => {
+    const p = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) p.set('search', search);
+    if (state) p.set('state', state);
+    return request<PaginatedAcquisitionHistory>(`/api/acquisitions/history?${p.toString()}`);
+  },
   backfillInboxColors: () =>
     request<{ candidates: number; enriched: number; failed: number }>('/api/acquisitions/backfill-colors', { method: 'POST' }),
   decideTriage: (eventId: number, body: TriageDecisionPayload) =>

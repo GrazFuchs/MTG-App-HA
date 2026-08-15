@@ -47,3 +47,60 @@ async def test_decide_records_history_snapshot(client):
     assert item["snapshot"]["card"]["name"] == "History Card"
     # Pending events are excluded from the archive.
     assert all(i["triage_state"] != "pending" for i in body["items"])
+
+
+async def _decided(client, db, name, action="keep"):
+    """Create a card, book a decision on it and return its event id."""
+    cid = await insert_card(db, name, type_line="Instant", color_identity=["R"],
+                            price_eur="1.00")
+    await add_collection(db, cid, quantity=1)
+    ev_id = await add_acquisition_event(db, cid, qty_delta=1)
+    resp = await client.post(
+        f"/api/acquisitions/{ev_id}/decide",
+        json={"action": action, "source": "cardmarket"},
+    )
+    assert resp.status_code == 200, resp.text
+    return ev_id
+
+
+async def test_history_search_by_name(client):
+    """The archive grows past a page very quickly; without a search it can only
+    be paged through."""
+    db = await get_db()
+    async with client:
+        await _decided(client, db, "Lightning Bolt")
+        await _decided(client, db, "Lightning Greaves")
+        await _decided(client, db, "Counterspell")
+
+        hit = await client.get("/api/acquisitions/history?search=lightning")
+        one = await client.get("/api/acquisitions/history?search=greaves")
+        miss = await client.get("/api/acquisitions/history?search=zzzz")
+
+    assert {i["card_name"] for i in hit.json()["items"]} == {
+        "Lightning Bolt", "Lightning Greaves"
+    }
+    assert hit.json()["total"] == 2          # total reflects the filter, not the archive
+    assert {i["card_name"] for i in one.json()["items"]} == {"Lightning Greaves"}
+    assert miss.json()["items"] == []
+    assert miss.json()["total"] == 0
+
+
+async def test_history_search_is_case_insensitive(client):
+    db = await get_db()
+    async with client:
+        await _decided(client, db, "Counterspell")
+        resp = await client.get("/api/acquisitions/history?search=COUNTER")
+    assert {i["card_name"] for i in resp.json()["items"]} == {"Counterspell"}
+
+
+async def test_history_filter_by_state(client):
+    db = await get_db()
+    async with client:
+        await _decided(client, db, "Kept Card", action="keep")
+        await _decided(client, db, "Dropped Card", action="dismiss")
+
+        kept = await client.get("/api/acquisitions/history?state=keep")
+        dismissed = await client.get("/api/acquisitions/history?state=dismiss")
+
+    assert {i["card_name"] for i in kept.json()["items"]} == {"Kept Card"}
+    assert {i["card_name"] for i in dismissed.json()["items"]} == {"Dropped Card"}

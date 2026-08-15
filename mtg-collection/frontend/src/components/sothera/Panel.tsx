@@ -35,17 +35,20 @@ const useStyles = makeStyles({
   },
 });
 
-interface PanelProps {
+/**
+ * Extends the plain div props so a panel can be made interactive by the
+ * caller — the Dashboard tiles are links, and that needs onClick/onKeyDown/
+ * role/tabIndex to reach the underlying element.
+ */
+interface PanelProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   corners?: boolean;
   glow?: boolean;
   tag?: string;
   accent?: string;
-  className?: string;
-  style?: React.CSSProperties;
 }
 
-export function Panel({ children, corners, glow, tag, accent, className, style }: PanelProps) {
+export function Panel({ children, corners, glow, tag, accent, className, style, ...rest }: PanelProps) {
   const styles = useStyles();
   const accentColor = accent || sothera.fgFaint;
 
@@ -53,6 +56,7 @@ export function Panel({ children, corners, glow, tag, accent, className, style }
     <div
       className={mergeClasses(styles.root, glow && styles.glow, className)}
       style={style}
+      {...rest}
     >
       {corners && <CornerTicks color={accent} />}
       {tag && (

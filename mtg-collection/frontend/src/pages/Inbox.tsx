@@ -229,6 +229,22 @@ export default function Inbox() {
   const visibleEvents = events.filter(e => !skipped.has(e.id));
   const pendingCount = stats?.pending_count ?? total;
 
+  // Whether the empty result is something the user asked for. Without this the
+  // page cannot tell "your filter matched nothing" from "the backend failed",
+  // and reported the first as the second.
+  const hasActiveFilters = Boolean(
+    searchQuery || colorFilter || activeFilter || minValue > 0
+  );
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearchQuery('');
+    setColorFilter('');
+    setMinValue(0);
+    setSearchParams({});
+    setPage(1);
+  };
+
   // Group by color bucket — pre-filled map prevents undefined.push crash
   const grouped = groupByColorBucket(visibleEvents.map(e => ({ card: e.card, _ev: e })));
   // activeBuckets: maintain BUCKET_KEYS order, skip empty
@@ -342,22 +358,37 @@ export default function Inbox() {
 
       {loading ? (
         <Spinner label="Loading inbox..." style={{ marginTop: 24 }} />
-      ) : loadError && (stats?.pending_count ?? 0) > 0 ? (
+      ) : loadError ? (
+        /* A failed request is the ONLY thing that earns the error banner.
+           A filter that matches nothing is a normal, expected answer — it used
+           to land here too and accused the backend of losing 140 cards. */
         <ErrorBanner
           title={t('inbox.error.title')}
-          message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
+          message={t('inbox.error.api_failed', { count: String(stats?.pending_count ?? 0) })}
           action={<Button onClick={() => refetchEvents()}>{t('common.retry')}</Button>}
         />
-      ) : visibleEvents.length === 0 && (stats?.pending_count ?? 0) === 0 ? (
+      ) : visibleEvents.length === 0 && hasActiveFilters ? (
+        <div className={styles.empty}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
+          <div>{t('inbox.no_matches')}</div>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgFaint, marginTop: 8, letterSpacing: '0.5px' }}>
+            {t('inbox.no_matches_hint', { count: String(pendingCount) })}
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Button size="small" onClick={clearFilters}>{t('inbox.clear_filters')}</Button>
+          </div>
+        </div>
+      ) : visibleEvents.length === 0 && skipped.size > 0 ? (
+        <div className={styles.empty}>
+          <div>{t('inbox.all_skipped')}</div>
+          <div style={{ marginTop: 16 }}>
+            <Button size="small" onClick={() => setSkipped(new Set())}>{t('inbox.unskip')}</Button>
+          </div>
+        </div>
+      ) : visibleEvents.length === 0 ? (
         <div className={styles.empty}>
           {t('inbox.empty_celebration')}
         </div>
-      ) : visibleEvents.length === 0 && (stats?.pending_count ?? 0) > 0 ? (
-        <ErrorBanner
-          title={t('inbox.error.title')}
-          message={t('inbox.error.api_failed', { count: String(stats!.pending_count) })}
-          action={<Button onClick={() => refetchEvents()}>{t('common.retry')}</Button>}
-        />
       ) : (
         <ErrorBoundary fallback={(err, retry) => (
           <ErrorBanner
