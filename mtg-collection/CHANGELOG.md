@@ -1,3 +1,8 @@
+## 0.34.1
+
+### Fixed
+- **The Inbox sell dialog was buried under the cards that follow it** — its confirm button often unreachable. The dialog is a `position: fixed` overlay with `z-index: 1000`, but it was mounted inside the acquisition card's `Panel`, whose `backdrop-filter: blur(14px)` makes the panel both a containing block for fixed-position descendants and a stacking context. The overlay's z-index therefore only competed *within* its own card, and every later inbox card — each its own stacking context, painted later in DOM order — drew on top of it. The dialog now portals into `document.body` (the same escape `CardHoverPreview` already uses), where its z-index means what it says.
+
 ## 0.34.0 — Colours, and a dashboard you can click
 
 Archidekt reports a card's colours by name where Scryfall reports them by letter. Everything else here is downstream of the add-on having stored whichever arrived.

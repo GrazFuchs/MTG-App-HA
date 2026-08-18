@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { makeStyles } from '@griffel/react';
 import { Button, Input, Select } from '@fluentui/react-components';
 import { sothera } from '../../theme/sothera';
@@ -124,7 +125,10 @@ export default function TriageDecisionDialog({
     ? t('triage.sell_price_hint', { price: suggestedPrice.toFixed(2) })
     : undefined;
 
-  return (
+  // Portal into document.body: the dialog is mounted inside a Panel whose
+  // backdrop-filter creates a stacking context, trapping the fixed overlay
+  // beneath the following inbox cards.
+  return createPortal(
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.dialog} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <div className={styles.title}>
@@ -231,6 +235,7 @@ export default function TriageDecisionDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
