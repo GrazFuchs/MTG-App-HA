@@ -51,7 +51,9 @@ export function filtersToParams(f: WishlistFilters): URLSearchParams {
   if (f.color) p.set('color', f.color);
   if (f.ordered === 'ordered') p.set('is_ordered', 'true');
   else if (f.ordered === 'unordered') p.set('is_ordered', 'false');
-  if (f.isDealOnly) p.set('deals_only', 'true');
+  // The backend query param is `is_deal_only` — `deals_only` was a silent
+  // no-op because FastAPI never saw a parameter by that name.
+  if (f.isDealOnly) p.set('is_deal_only', 'true');
   p.set('sort', f.sort);
   return p;
 }
@@ -65,7 +67,7 @@ export function filtersFromSearchParams(sp: URLSearchParams): WishlistFilters {
     tag: sp.get('tag') || null,
     color: sp.get('color') || null,
     ordered: isOrdered === 'true' ? 'ordered' : isOrdered === 'false' ? 'unordered' : 'all',
-    isDealOnly: sp.get('deals_only') === 'true',
+    isDealOnly: sp.get('is_deal_only') === 'true' || sp.get('deals_only') === 'true',
     sort: (sp.get('sort') as WishlistFilters['sort']) || 'priority',
   };
 }

@@ -280,13 +280,24 @@ async def list_wishlist(
     order_by = sort_map.get(sort, sort_map["priority"])
 
     offset = (page - 1) * page_size
-    query = f"""
-        {_BASE_SELECT}
-        WHERE {where_clause}
-        ORDER BY {order_by}
-        LIMIT ? OFFSET ?
-    """
-    params.extend([page_size, offset])
+    if is_deal_only:
+        # The deal test needs the resolved price (CM trend with Scryfall
+        # fallback), which only exists in Python — so it cannot live in the
+        # WHERE clause. Filtering *after* LIMIT/OFFSET silently dropped deals
+        # beyond the first page; fetch unpaged, filter, then paginate.
+        query = f"""
+            {_BASE_SELECT}
+            WHERE {where_clause}
+            ORDER BY {order_by}
+        """
+    else:
+        query = f"""
+            {_BASE_SELECT}
+            WHERE {where_clause}
+            ORDER BY {order_by}
+            LIMIT ? OFFSET ?
+        """
+        params.extend([page_size, offset])
 
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
@@ -299,6 +310,9 @@ async def list_wishlist(
             if price is None or target <= 0 or price > target:
                 continue
         items.append(_build_item_response(row, price))
+
+    if is_deal_only:
+        items = items[offset:offset + page_size]
 
     return items
 
@@ -491,11 +505,32 @@ async def update_wishlist_item(item_id: int, updates: WishlistItemUpdate):
     if update_data.get("status") == "acquired":
         fields.append("acquired_at = CURRENT_TIMESTAMP")
 
+    # Re-opening an item ('wanted') resets the terminal-state bookkeeping —
+    # without this, a former not_received/acquired item keeps stale flags and
+    # the order/acquire endpoints reject it. (The only prior UI path back to
+    # 'wanted' called POST /restore, which un-soft-deletes and always answered
+    # 400 "Item is not deleted" — the state machine had no way back.)
+    if update_data.get("status") == "wanted":
+        fields.append("acquired_at = NULL")
+        fields.append("not_received_at = NULL")
+        fields.append("is_ordered = 0")
+        fields.append("ordered_at = NULL")
+
     params.append(item_id)
-    await db.execute(
-        f"UPDATE wishlist SET {', '.join(fields)} WHERE id = ?",
-        params,
-    )
+    try:
+        await db.execute(
+            f"UPDATE wishlist SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+    except Exception as e:
+        # Partial unique index on active wanted items (card_id, set, foil):
+        # re-opening can collide with an existing wanted entry for the same printing.
+        if "UNIQUE" in str(e):
+            raise HTTPException(
+                status_code=409,
+                detail="An active wishlist entry for this printing already exists",
+            )
+        raise
     # If the set/version changed, point the item at that printing so the
     # displayed set name, image and price follow the choice.
     await _repoint_card_to_set(db, item_id, update_data.get("set_code"))

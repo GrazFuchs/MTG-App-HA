@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
 import { Spinner } from '@fluentui/react-components';
-import { api, CollectionStats, InboxAcquisitionStats, PriceAlert, ValueSnapshot, MtgStocksMover, MtgStocksSignals, WishlistSummary } from '../api';
+import { api, CollectionStats, InboxAcquisitionStats, PriceAlert, SyncStatus, ValueSnapshot, MtgStocksMover, MtgStocksSignals, WishlistSummary } from '../api';
+import { ErrorBanner } from '../components/ErrorBanner';
 import { Sparkline } from '../components/Sparkline';
 import { t } from '../i18n';
 import { sothera } from '../theme/sothera';
@@ -187,15 +188,20 @@ export default function Dashboard() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { accent } = useAccent();
-  const { data: stats, isLoading: statsLoading } = useQuery<CollectionStats>({
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery<CollectionStats>({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
     staleTime: 30_000,
   });
-  const { data: alerts = [], isLoading: alertsLoading } = useQuery<PriceAlert[]>({
+  const { data: alerts = [], isLoading: alertsLoading, isError: alertsError } = useQuery<PriceAlert[]>({
     queryKey: ['priceAlerts'],
     queryFn: () => api.getPriceAlerts(),
     staleTime: 5 * 60_000,
+  });
+  const { data: syncStatus } = useQuery<SyncStatus>({
+    queryKey: ['syncStatus'],
+    queryFn: () => api.getSyncStatus(),
+    staleTime: 60_000,
   });
   const { data: valueHistory = [] } = useQuery<ValueSnapshot[]>({
     queryKey: ['valueHistory'],
@@ -237,11 +243,38 @@ export default function Dashboard() {
   const tierMap = new Map<string, PriceAlert[]>();
   for (const tier of PRICE_TIERS) tierMap.set(tier.label, []);
   for (const a of alerts) {
-    const t = getPriceTier(a.trend);
-    tierMap.get(t)?.push(a);
+    const tierLabel = getPriceTier(a.trend);
+    tierMap.get(tierLabel)?.push(a);
   }
 
   const pendingCount = inbox?.pending_count ?? 0;
+
+  // Real sync state for the header. SQLite timestamps are UTC but naive
+  // ("2026-08-23 01:15:13"), so the space→T + Z suffix makes Date() parse
+  // them as UTC instead of local time.
+  const lastSync = syncStatus?.last_sync ?? null;
+  const lastSyncDate = lastSync?.finished_at
+    ? new Date(lastSync.finished_at.includes('+') || lastSync.finished_at.endsWith('Z')
+        ? lastSync.finished_at
+        : lastSync.finished_at.replace(' ', 'T') + 'Z')
+    : null;
+  const syncState: { label: string; color: string; glow: string } = !lastSync
+    ? { label: 'NEVER SYNCED', color: sothera.fgMuted, glow: 'transparent' }
+    : lastSync.status === 'completed'
+      ? { label: 'SYNCED', color: sothera.positive, glow: 'oklch(0.78 0.17 150 / 0.6)' }
+      : lastSync.status === 'running'
+        ? { label: 'SYNCING…', color: sothera.fgMuted, glow: 'transparent' }
+        : { label: lastSync.status.toUpperCase(), color: sothera.negative, glow: 'oklch(0.70 0.20 25 / 0.6)' };
+
+  // Real 90-day performance from the value snapshots (oldest vs newest).
+  const firstSnap = valueHistory.length >= 2 ? valueHistory[0] : null;
+  const lastSnap = valueHistory.length >= 2 ? valueHistory[valueHistory.length - 1] : null;
+  const deltaPct = firstSnap && lastSnap && firstSnap.value_eur > 0
+    ? ((lastSnap.value_eur - firstSnap.value_eur) / firstSnap.value_eur) * 100
+    : null;
+  const deltaDays = firstSnap && lastSnap
+    ? Math.max(1, Math.round((new Date(lastSnap.date).getTime() - new Date(firstSnap.date).getTime()) / 86_400_000))
+    : null;
 
   /** Open the collection filtered to one card — where an alert row leads. */
   const openCard = (name: string) =>
@@ -257,15 +290,28 @@ export default function Dashboard() {
           <div style={{ textAlign: 'right' }}>
             <div className={styles.eyebrowLabel}>LAST SYNC</div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, letterSpacing: 1, marginTop: 4 }}>
-              {new Date().toISOString().slice(0, 10).replace(/-/g, '.')} · {new Date().toLocaleTimeString('en', { hour12: false })}
+              {lastSyncDate
+                ? `${lastSyncDate.toLocaleDateString('en-CA').replace(/-/g, '.')} · ${lastSyncDate.toLocaleTimeString('en', { hour12: false })}`
+                : '—'}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: sothera.positive, boxShadow: `0 0 8px oklch(0.78 0.17 150 / 0.6)` }} />
-              <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.positive, letterSpacing: 1.5 }}>SYNCED</span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: syncState.color, boxShadow: `0 0 8px ${syncState.glow}` }} />
+              <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: syncState.color, letterSpacing: 1.5 }}>{syncState.label}</span>
             </div>
           </div>
         }
       />
+
+      {(statsError || alertsError) && (
+        <div style={{ marginBottom: 16 }}>
+          <ErrorBanner
+            title="Backend unreachable"
+            message={statsError
+              ? 'Collection stats could not be loaded — the numbers below are placeholders, not facts. Check the add-on log.'
+              : 'Price alerts could not be loaded. Check the add-on log.'}
+          />
+        </div>
+      )}
 
       {/* Hero value panel — the headline number is the collection, so it opens it */}
       <Panel corners glow accent={accent.oklch} className={styles.heroPanel}
@@ -285,11 +331,19 @@ export default function Dashboard() {
           <div>
             <div className={styles.eyebrowLabel}>AGGREGATE HOLDINGS · EUR</div>
             <div className={styles.heroValue}>
-              €{(stats?.total_value_eur ?? 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {statsError
+                ? '—'
+                : `€${(stats?.total_value_eur ?? 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
-            <div style={{ marginTop: 14 }}>
-              <DeltaBadge value="+7.70%" sub="vs. 90d" positive />
-            </div>
+            {deltaPct !== null && (
+              <div style={{ marginTop: 14 }}>
+                <DeltaBadge
+                  value={`${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}%`}
+                  sub={`vs. ${deltaDays}d`}
+                  positive={deltaPct >= 0}
+                />
+              </div>
+            )}
             <div className={styles.subGrid}>
               <div>
                 <div className={styles.eyebrowLabel}>USD MIRROR</div>

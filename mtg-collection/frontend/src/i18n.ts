@@ -163,6 +163,7 @@ const translations: Record<string, Record<string, string>> = {
     'cardmarket.section.pending': 'Pending Listings — not yet on Cardmarket',
     'cardmarket.section.live': 'Live on Cardmarket',
     'cardmarket.draft_badge': 'Draft',
+    'common.loading': 'Loading...',
   },
   de: {
     'nav.dashboard': 'Übersicht',
@@ -346,6 +347,13 @@ function detectLanguage(): string {
 }
 
 const currentLang = detectLanguage();
+
+// Keep the document language in sync with the UI language — index.html is a
+// static file and hardcodes lang="en", which misleads screen readers and
+// browser translation for German users.
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = currentLang;
+}
 
 export function t(key: string, params?: Record<string, string | number>): string {
   const dict = translations[currentLang] || translations['en'];

@@ -28,37 +28,59 @@ async def download_proxy():
 
 @router.get("/setup-instructions")
 async def setup_instructions(request: Request):
-    """Generate ready-to-paste Claude Desktop config + download URL."""
-    base_url = str(request.base_url).rstrip("/")
+    """Generate ready-to-paste Claude Desktop config + download URL.
 
+    The proxy (mcp-proxy.mjs) takes POSITIONAL arguments:
+        node mcp-proxy.mjs <ha_url> <ha_token> <ingress_path>/mcp [mcp_auth_token]
+    An earlier version of this endpoint emitted MTG_* environment variables the
+    proxy never reads, and pointed at /mcp/sse, which does not exist — the
+    generated config could not work.
+    """
+    from ..config import get_settings
+    from ..services.ingress import ingress_base
+
+    base_url = str(request.base_url).rstrip("/")
     download_url = f"{base_url}/api/mcp/proxy.mjs"
-    sse_endpoint = f"{base_url}/mcp/sse"
+
+    ingress = ingress_base()  # "" outside a Supervisor environment
+    mcp_ingress_path = f"{ingress}/mcp" if ingress else "<INGRESS_PATH>/mcp"
+
+    auth_configured = bool(get_settings().mcp_auth_token)
+    args = [
+        "<PATH_TO>/mcp-proxy.mjs",
+        "<YOUR_HA_URL e.g. https://ha.example.net>",
+        "<YOUR_HA_LONG_LIVED_TOKEN>",
+        mcp_ingress_path,
+    ]
+    if auth_configured:
+        args.append("<MCP_AUTH_TOKEN from the add-on options>")
 
     config_example = {
         "mcpServers": {
             "mtg-collection": {
                 "command": "node",
-                "args": ["<PATH_TO>/mcp-proxy.mjs"],
-                "env": {
-                    "MTG_BASE_URL": base_url,
-                    "MTG_TOKEN": "<TODO: your long-lived token>",
-                    "MTG_SSE_ENDPOINT": sse_endpoint,
-                },
+                "args": args,
             }
         }
     }
 
+    steps = [
+        {"step": 1, "text": "Download mcp-proxy.mjs and save it to a permanent location"},
+        {"step": 2, "text": "Run 'npm install ws' once in that location (the proxy needs the ws package)"},
+        {"step": 3, "text": "Generate a long-lived access token in Home Assistant (profile → security)"},
+        {"step": 4, "text": "Copy the config snippet below into claude_desktop_config.json"},
+        {"step": 5, "text": "Replace <PATH_TO>, <YOUR_HA_URL> and <YOUR_HA_LONG_LIVED_TOKEN>"},
+    ]
+    if auth_configured:
+        steps.append({"step": 6, "text": "Append the mcp_auth_token from the add-on configuration as the last argument"})
+    steps.append({"step": len(steps) + 1, "text": "Restart Claude Desktop"})
+
     return {
         "download_url": download_url,
+        "mcp_ingress_path": mcp_ingress_path,
+        "auth_required": auth_configured,
         "config_example": config_example,
-        "instructions": [
-            {"step": 1, "text": "Download mcp-proxy.mjs and save to a permanent location"},
-            {"step": 2, "text": "Generate a long-lived token in Home Assistant"},
-            {"step": 3, "text": "Copy the config snippet below"},
-            {"step": 4, "text": "Open claude_desktop_config.json (location varies by OS)"},
-            {"step": 5, "text": "Paste and replace placeholders (<PATH_TO> and <TODO: your long-lived token>)"},
-            {"step": 6, "text": "Restart Claude Desktop"},
-        ],
+        "instructions": steps,
         "config_paths": {
             "macos": "~/Library/Application Support/Claude/claude_desktop_config.json",
             "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",

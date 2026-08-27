@@ -522,3 +522,24 @@ async def test_deck_sensors_publish_active_and_clear_inactive(fake_mqtt):
     # Inactive deck: retained config cleared, no state
     assert published[f"homeassistant/sensor/mtg_deck_{stale}_winrate/config"] == ""
     assert f"mtg-collection/deck/{stale}/state" not in published
+
+
+# ---------------------------------------------------------------------------
+# Sprint 01 (0.35.0): sensor.mtg_last_sync_at was permanently `unknown` because
+# SQLite's CURRENT_TIMESTAMP is naive ("2026-08-23 01:15:13") and HA rejects a
+# timezone-less state on a `device_class: timestamp` sensor.
+# ---------------------------------------------------------------------------
+
+
+def test_utc_iso_normalises_naive_sqlite_timestamp():
+    assert ha_publisher.utc_iso("2026-08-23 01:15:13") == "2026-08-23T01:15:13+00:00"
+
+
+def test_utc_iso_keeps_existing_offset():
+    assert ha_publisher.utc_iso("2026-08-23T01:15:13+02:00") == "2026-08-23T01:15:13+02:00"
+
+
+def test_utc_iso_none_and_garbage_stay_none():
+    assert ha_publisher.utc_iso(None) is None
+    assert ha_publisher.utc_iso("") is None
+    assert ha_publisher.utc_iso("not a timestamp") is None

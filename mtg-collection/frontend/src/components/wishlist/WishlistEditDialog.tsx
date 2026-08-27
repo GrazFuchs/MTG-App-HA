@@ -67,7 +67,10 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
         } else if (status === 'dropped') {
           await api.updateWishlistItem(item.id, { status: 'dropped' } as any);
         } else if (status === 'wanted') {
-          await api.restoreWishlistItem(item.id);
+          // PATCH re-opens the item and clears terminal-state flags.
+          // (POST /restore is for soft-deleted items only and always
+          // answered 400 here — this path was a dead end.)
+          await api.updateWishlistItem(item.id, { status: 'wanted' } as any);
         }
       }
       onSaved(updated);

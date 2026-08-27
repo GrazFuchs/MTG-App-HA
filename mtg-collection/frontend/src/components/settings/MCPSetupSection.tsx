@@ -50,9 +50,19 @@ export function MCPSetupSection() {
     <Card style={{ padding: 16, marginTop: 24 }}>
       <Title3>MCP Setup for Claude Desktop</Title3>
       <Body1 style={{ marginTop: 8 }}>
-        Status: <Badge appearance="filled" color="success">MCP Server running</Badge>
+        {/* This section only renders after /setup-instructions answered, so
+            "reachable" is earned, not hardcoded. The MCP endpoint is /mcp
+            (streamable HTTP) — an earlier version displayed a nonexistent
+            /mcp/sse here. */}
+        Status: <Badge appearance="filled" color="success">Add-on reachable</Badge>
         {' · '}
-        <Caption1>Endpoint: {data.download_url.replace('/api/mcp/proxy.mjs', '/mcp/sse')}</Caption1>
+        <Caption1>MCP-Endpoint (via Ingress): {data.mcp_ingress_path}</Caption1>
+        {data.auth_required && (
+          <>
+            {' · '}
+            <Badge appearance="outline" color="warning">Auth-Token erforderlich</Badge>
+          </>
+        )}
       </Body1>
 
       <div style={{ marginTop: 16 }}>

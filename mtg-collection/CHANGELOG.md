@@ -1,3 +1,19 @@
+## 0.35.0 — Sprint 01: the UI tells the truth again
+
+### Fixed
+- **`sensor.mtg_last_sync_at` was permanently `unknown`** — the one open bug in the HA bridge. SQLite's `CURRENT_TIMESTAMP` is UTC but *naive* (`2026-08-23 01:15:13`, no offset), and Home Assistant rejects a timezone-less state on a `device_class: timestamp` sensor. The publisher now normalises through `utc_iso()` (space→`T`, `+00:00` appended); a database that has never synced publishes nothing instead of inventing the current time as a "last sync".
+- **The Dashboard header fabricated its two headline judgements.** "LAST SYNC" printed the *browser clock* next to a hardcoded green "SYNCED" badge, and the hero's "+7.70% vs. 90d" delta was a string literal. The header now reads `/api/sync/status` (real timestamp, dot and label follow the actual status — SYNCED / SYNCING… / FAILED / NEVER SYNCED), and the delta is computed from the 90-day value snapshots that were already being fetched three lines below the fake badge. A failed `/api/stats` now shows an error banner and an em-dash instead of presenting €0.00 as a fact.
+- **The Archidekt bracket import read a key that does not exist.** The deck payload carries `edhBracket`; the code read `bracket`/`deckBracket` and the comment asserted that was correct — so every deck fell back to 0 regardless of what Archidekt held. (The field is also `null` on all currently synced decks, so no visible change until someone sets a bracket on Archidekt — the groundwork for computing brackets locally is Sprint 04.)
+- **Deck completeness counted basic lands as missing cards.** "Forest ×3" appeared in `missing_cards` — and in `most_expensive_missing` — and skewed the percentage. The endpoint now applies the same name-based basic-land exclusion the Duplicates and Inbox queries already use.
+- **The wishlist "Deals only" checkbox was a silent no-op** — the frontend sent `deals_only`, the backend reads `is_deal_only`; FastAPI never saw the parameter. Enabling it exposed a second latent bug: the deal filter ran *after* `LIMIT`/`OFFSET`, so deals beyond the first page were silently invisible. Deal filtering now fetches unpaged, filters, then paginates.
+- **Changing a wishlist item's status back to "Wanted" always failed** with `400 "Item is not deleted"` — the edit dialog called `POST /restore`, which un-soft-deletes rather than re-opens. An item in "Not received" was permanently stuck (`/order` rejects that state too). The dialog now PATCHes `status: wanted`, and the PATCH clears the terminal-state bookkeeping (`acquired_at`, `not_received_at`, `is_ordered`, `ordered_at`). A collision with an existing active entry for the same printing answers 409 instead of a raw UNIQUE error.
+- **The MCP setup wizard generated a config that could not work.** It emitted `MTG_BASE_URL`/`MTG_TOKEN`/`MTG_SSE_ENDPOINT` environment variables that `mcp-proxy.mjs` never reads (the proxy takes positional arguments), and pointed at `/mcp/sse`, a route that does not exist (the MCP mount is streamable HTTP at `/mcp`). The wizard now emits the real invocation — `node mcp-proxy.mjs <ha_url> <ha_token> <ingress_path>/mcp [mcp_auth_token]` — resolves the actual ingress path, mentions the `npm install ws` prerequisite, and appends the auth-token argument when `mcp_auth_token` is configured. The settings card no longer shows a hardcoded green "MCP Server running" badge next to the nonexistent SSE URL.
+- **English UI showed the literal string `common.loading`** — the key existed only in the German dictionary.
+- **`<html lang>` was hardcoded to `en`** while the UI renders German for German browsers; the language attribute now follows the detected UI language.
+
+### Upgrading
+No migration. `sensor.mtg_last_sync_at` shows a value after the next sync completes (or immediately after the add-on restart re-publishes stats, if a sync has ever completed).
+
 ## 0.34.1
 
 ### Fixed

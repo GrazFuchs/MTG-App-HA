@@ -623,6 +623,8 @@ export interface SyncStatus {
 
 export interface MCPSetupInstructions {
   download_url: string;
+  mcp_ingress_path: string;
+  auth_required: boolean;
   config_example: Record<string, unknown>;
   instructions: { step: number; text: string }[];
   config_paths: { macos: string; windows: string; linux: string };

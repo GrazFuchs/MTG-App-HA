@@ -254,14 +254,17 @@ async def get_deck_completeness(deck_id: int):
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Deck not found")
 
-    # Get unique cards in deck with quantities
+    # Get unique cards in deck with quantities. Basic lands are excluded:
+    # they are effectively unlimited and never an acquisition — counting them
+    # skewed the percentage and put "Forest ×3" into most_expensive_missing.
+    from ..services.queries import basic_land_exclusion_sql
     cursor = await db.execute(
-        """SELECT c.name, dc.quantity, c.price_eur,
+        f"""SELECT c.name, dc.quantity, c.price_eur,
            COALESCE((SELECT SUM(col.quantity + col.foil_quantity)
                      FROM collection col WHERE col.card_id = c.id), 0) as owned
         FROM deck_cards dc
         JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id = ?
+        WHERE dc.deck_id = ? AND {basic_land_exclusion_sql('c')}
         ORDER BY c.name""",
         (deck_id,),
     )

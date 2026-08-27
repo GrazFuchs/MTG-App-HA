@@ -14,6 +14,27 @@ from .ha_entities import (
 
 logger = logging.getLogger(__name__)
 
+
+def utc_iso(sqlite_ts: str | None) -> str | None:
+    """Normalise a SQLite ``CURRENT_TIMESTAMP`` string to timezone-aware ISO 8601.
+
+    SQLite stores ``YYYY-MM-DD HH:MM:SS`` in UTC but without an offset. HA
+    rejects such a naive value on a ``device_class: timestamp`` sensor, which
+    kept ``sensor.mtg_last_sync_at`` permanently ``unknown``. Values that
+    already carry an offset pass through unchanged; unparseable input returns
+    ``None`` so the sensor stays ``unknown`` instead of erroring in HA.
+    """
+    if not sqlite_ts:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(sqlite_ts).replace(" ", "T"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
+
+
 # `state_class` drives HA's long-term statistics.  Counts use `measurement`;
 # `device_class: monetary` only accepts `total` (HA rejects `measurement` there
 # with an "impossible state class" warning).
@@ -335,7 +356,7 @@ async def publish_stats():
             "total_value_usd": round(float(row[3]), 2),
             "total_decks": deck_count,
             "last_sync_status": sync_row["status"] if sync_row else "never",
-            "last_sync_at": sync_row["finished_at"] if sync_row else datetime.now(timezone.utc).isoformat(),
+            "last_sync_at": utc_iso(sync_row["finished_at"]) if sync_row else None,
             "active_price_alerts": alert_count,
             "spending_30d": spending_30d,
             "spending_30d_value": spending_30d_value,

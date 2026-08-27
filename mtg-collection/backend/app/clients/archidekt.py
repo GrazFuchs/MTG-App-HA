@@ -239,8 +239,11 @@ def parse_archidekt_deck(data: dict[str, Any]) -> dict[str, Any]:
             commander_name = oracle.get("name", card_info.get("displayName", ""))
             break
 
-    # Extract bracket (Archidekt stores it as "bracket" on the deck object)
-    bracket = data.get("bracket") or data.get("deckBracket") or 0
+    # Extract bracket. Archidekt's deck payload carries it as "edhBracket"
+    # (verified 2026-08-23 against GET /api/decks/{id}/ — neither "bracket"
+    # nor "deckBracket" exists there; both are kept only as legacy fallbacks).
+    # The value is null unless the deck owner set a bracket on Archidekt.
+    bracket = data.get("edhBracket") or data.get("bracket") or data.get("deckBracket") or 0
     if isinstance(bracket, str):
         try:
             bracket = int(bracket)
