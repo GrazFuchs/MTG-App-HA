@@ -280,9 +280,14 @@ def color_multi_condition(
 # follows are subtypes. The distinction matters: "Creature — Human Artificer"
 # would otherwise match an Artifact filter, and "Land — Urza's Mine" is not an
 # instant just because a subtype spells one. Both ingest paths agree on the
-# em dash — Scryfall writes "Legendary Creature — Human Wizard", the Archidekt
-# parser assembles "Legendary, Creature — Human, Artificer" — so splitting on
-# it is safe for either.
+# em dash, so splitting on it is safe for either.
+#
+# Since 0.36.0 both also agree on the canonical Scryfall spelling — the
+# Archidekt parser used to comma-join its type words ("Legendary, Creature —
+# Human, Artificer"), which `normalize_type_line` below now folds away on the
+# single write path, and migration 21 folded away for the existing rows. The
+# comma form still answers a type filter (this is a substring match on the
+# head), so a legacy row that somehow escaped the migration is not broken here.
 # ---------------------------------------------------------------------------
 CARD_TYPES: tuple[str, ...] = (
     "Artifact", "Battle", "Creature", "Enchantment", "Instant",
@@ -291,6 +296,25 @@ CARD_TYPES: tuple[str, ...] = (
 
 #: Types renamed by Wizards; both spellings live in the data.
 _TYPE_ALIASES = {"KINDRED": ("Kindred", "Tribal"), "TRIBAL": ("Kindred", "Tribal")}
+
+
+def normalize_type_line(value: str | None) -> str:
+    """Return a type line in Scryfall's canonical spelling.
+
+    Scryfall separates type words with spaces ("Legendary Creature — Pirate
+    Shark"); Archidekt hands us its supertype/type/subtype lists and the parser
+    used to comma-join them ("Legendary, Creature — Pirate, Shark"). A comma
+    never occurs in a Scryfall type line, so dropping commas is a
+    source-independent canonicalisation rather than a guess about the source.
+
+    Called from the single card write path, so both ingest sources converge —
+    the same arrangement `normalize_color_identity` has for colours.
+    """
+    if not value:
+        return ""
+    text = re.sub(r"\s*,\s*", " ", str(value))
+    # A types-only line arrived as "Legendary, Creature — " from the old parser.
+    return re.sub(r"\s+", " ", text).strip().rstrip(" —").strip()
 
 
 def type_line_head_sql(alias: str = "c") -> str:

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from ..database import get_db
 from ..config import get_settings
 from ..clients.archidekt import archidekt, parse_archidekt_deck, parse_archidekt_card
-from .queries import normalize_color_identity
+from .queries import normalize_color_identity, normalize_type_line
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,10 @@ async def upsert_card(db, card_data: dict) -> int:
         card_data.get("name", ""),
         card_data.get("mana_cost", ""),
         card_data.get("cmc", 0),
-        card_data.get("type_line", ""),
+        # Same reason as the colours above: Archidekt used to comma-join its
+        # type words, so the one write path is where the two sources are made
+        # to agree on Scryfall's spelling.
+        normalize_type_line(card_data.get("type_line", "")),
         card_data.get("oracle_text", ""),
         colors, color_identity,
         card_data.get("set_code", ""),
@@ -63,6 +66,8 @@ async def upsert_card(db, card_data: dict) -> int:
         card_data.get("price_usd_foil", ""),
         card_data.get("price_eur_foil", ""),
         card_data.get("cardmarket_id"),
+        card_data.get("game_changer"),
+        card_data.get("reserved"),
     )
 
     cursor = await db.execute(
@@ -71,24 +76,48 @@ async def upsert_card(db, card_data: dict) -> int:
             colors, color_identity, set_code, set_name, collector_number,
             rarity, image_uri, image_art_crop, power, toughness, loyalty,
             keywords, legalities, edhrec_rank, price_usd, price_eur,
-            price_usd_foil, price_eur_foil, cardmarket_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            price_usd_foil, price_eur_foil, cardmarket_id, game_changer, reserved
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(scryfall_id) DO UPDATE SET
             oracle_id=excluded.oracle_id, name=excluded.name,
             mana_cost=excluded.mana_cost, cmc=excluded.cmc,
-            type_line=excluded.type_line, oracle_text=excluded.oracle_text,
+            type_line=excluded.type_line,
             colors=excluded.colors, color_identity=excluded.color_identity,
             set_code=excluded.set_code, set_name=excluded.set_name,
             collector_number=excluded.collector_number, rarity=excluded.rarity,
             image_uri=excluded.image_uri, image_art_crop=excluded.image_art_crop,
             power=excluded.power, toughness=excluded.toughness, loyalty=excluded.loyalty,
-            keywords=excluded.keywords, legalities=excluded.legalities,
-            edhrec_rank=excluded.edhrec_rank, price_usd=excluded.price_usd,
+            price_usd=excluded.price_usd,
             price_eur=excluded.price_eur, price_usd_foil=excluded.price_usd_foil,
             price_eur_foil=excluded.price_eur_foil,
-            -- Archidekt payloads carry no Cardmarket id, so a sync must not
-            -- wipe one the Scryfall backfill already established.
+            -- Below: the fields an Archidekt payload cannot speak to. It is the
+            -- source for nearly every card row, so letting it write here means
+            -- letting the nightly sync undo the Scryfall enrichment
+            -- (card_enrichment.py) that the bracket and power-level work reads.
+            -- An empty payload never overwrites a known value.
+            --
+            -- Archidekt reports no legalities at all — the parser sends the
+            -- literal "{}" — so this is the difference between having format
+            -- legality and losing it every night.
+            legalities=CASE WHEN COALESCE(excluded.legalities, '') IN ('', '{}')
+                            THEN cards.legalities ELSE excluded.legalities END,
+            -- A thin Archidekt entry (no oracleCard) carries neither rank nor
+            -- rules text. Keeping a stale rank beats going back to unknown:
+            -- the rank is a popularity proxy and the enrichment refreshes it.
+            edhrec_rank=COALESCE(excluded.edhrec_rank, cards.edhrec_rank),
+            oracle_text=CASE WHEN COALESCE(excluded.oracle_text, '') = ''
+                             THEN cards.oracle_text ELSE excluded.oracle_text END,
+            -- Over half of the Archidekt entries send an empty keyword list
+            -- (45 of 98 cards in the deck-1 sample carried keywords at all), so
+            -- without this the enrichment's keywords would be blanked on the
+            -- next sync for the majority of cards and only return a week later.
+            -- A non-empty Archidekt list still wins here; the weekly refresh is
+            -- what corrects that, since keywords are static per card.
+            keywords=CASE WHEN COALESCE(excluded.keywords, '') IN ('', '[]')
+                          THEN cards.keywords ELSE excluded.keywords END,
             cardmarket_id=COALESCE(excluded.cardmarket_id, cards.cardmarket_id),
+            game_changer=COALESCE(excluded.game_changer, cards.game_changer),
+            reserved=COALESCE(excluded.reserved, cards.reserved),
             updated_at=CURRENT_TIMESTAMP
         RETURNING id""",
         params,
@@ -581,6 +610,19 @@ async def _do_full_sync(is_resync: bool = False) -> dict:
                 error_msg = f"Deck {did}: {e}"
                 errors.append(error_msg)
                 logger.error("Failed to sync deck %d: %s", did, e)
+
+        # Top up the facts only Scryfall has, for what this sync just brought
+        # in — and for the cards it just overwrote with an Archidekt reading.
+        # Best effort: Scryfall being unreachable must not fail an otherwise
+        # good sync, but it has to show up in the log rather than be swallowed.
+        try:
+            from .card_enrichment import POST_SYNC_MAX_CARDS, backfill_scryfall_fields
+
+            enrichment = await backfill_scryfall_fields(max_cards=POST_SYNC_MAX_CARDS)
+            if enrichment["checked"]:
+                logger.info("Scryfall enrichment after sync: %s", enrichment)
+        except Exception as e:
+            logger.warning("Scryfall enrichment after sync failed: %s", e)
 
         status = "completed" if not errors else "partial"
         await db.execute(

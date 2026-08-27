@@ -265,6 +265,27 @@ def parse_archidekt_deck(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _type_line(oracle: dict[str, Any]) -> str:
+    """Assemble a Scryfall-shaped type line from Archidekt's three type lists.
+
+    Archidekt hands the type line out in pieces (`superTypes`, `types`,
+    `subTypes`) and has no canonical string of its own. Scryfall's spelling is
+    the house form — "Legendary Creature — Pirate Shark" — so it is what we
+    build: type words separated by spaces, subtypes after an em dash.
+
+    Until 0.36.0 the pieces were comma-joined instead ("Legendary, Creature —
+    Pirate, Shark"). That form answered the card-type filter, so it looked
+    harmless, but any filter naming two type words in a row missed every
+    Archidekt-sourced card: `type_line NOT LIKE '%Basic Land%'` never excluded
+    a single basic land, because the row said "Basic, Land — Plains".
+    """
+    head = " ".join(t for t in (oracle.get("superTypes") or []) + (oracle.get("types") or []) if t)
+    subtypes = " ".join(t for t in (oracle.get("subTypes") or []) if t)
+    if head and subtypes:
+        return f"{head} — {subtypes}"
+    return head or subtypes
+
+
 def parse_archidekt_card(card_entry: dict[str, Any]) -> dict[str, Any]:
     """Parse a card entry from an Archidekt deck into Scryfall-compatible format."""
     card_info = card_entry.get("card", {})
@@ -288,11 +309,7 @@ def parse_archidekt_card(card_entry: dict[str, Any]) -> dict[str, Any]:
             "name": oracle.get("name", ""),
             "mana_cost": oracle.get("manaCost", ""),
             "cmc": oracle.get("cmc", 0),
-            "type_line": ", ".join(
-                oracle.get("superTypes", [])
-                + oracle.get("types", [])
-                + [" — "] + oracle.get("subTypes", [])
-            ).replace(",  — ,", " —").strip(" ,—").replace("  ", " "),
+            "type_line": _type_line(oracle),
             "oracle_text": oracle.get("text", ""),
             "colors": oracle.get("colors", []),
             "color_identity": oracle.get("colorIdentity", []),

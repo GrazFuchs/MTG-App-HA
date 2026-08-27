@@ -213,6 +213,14 @@ def parse_scryfall_card(data: dict[str, Any]) -> dict[str, Any]:
         # Cardmarket does not carry (tokens, some promos) — those simply get no
         # Cardmarket price rather than a guessed one.
         "cardmarket_id": data.get("cardmarket_id"),
+        # Scryfall carries the official WotC Game Changers list as a field on
+        # the card (53 cards as of 2026-02-09), which is why the bracket work
+        # needs no hardcoded list of its own — the one thing in a home-grown
+        # bracket calculator that is guaranteed to go stale. Both flags are
+        # stored as 0/1 because SQLite has no boolean; a card Scryfall answered
+        # for is never left NULL, since NULL means "never asked".
+        "game_changer": int(bool(data.get("game_changer"))),
+        "reserved": int(bool(data.get("reserved"))),
     }
 
 

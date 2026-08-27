@@ -24,6 +24,14 @@ DECK_COLUMN_MIGRATIONS = {
     "bracket": "ALTER TABLE decks ADD COLUMN bracket INTEGER DEFAULT 0",
 }
 
+CARD_COLUMN_MIGRATIONS = {
+    # Scryfall-only card facts. Archidekt's payload carries neither, so these
+    # can only ever come from the enrichment pass in card_enrichment.py.
+    "game_changer": "ALTER TABLE cards ADD COLUMN game_changer INTEGER",
+    "reserved": "ALTER TABLE cards ADD COLUMN reserved INTEGER",
+    "scryfall_enriched_at": "ALTER TABLE cards ADD COLUMN scryfall_enriched_at TIMESTAMP",
+}
+
 CARDMARKET_COLUMN_MIGRATIONS = {
     "article_id": "ALTER TABLE cardmarket_listings ADD COLUMN article_id TEXT DEFAULT ''",
     "expansion_code": "ALTER TABLE cardmarket_listings ADD COLUMN expansion_code TEXT DEFAULT ''",
@@ -67,6 +75,15 @@ CREATE TABLE IF NOT EXISTS cards (
     -- printing-exact bridge we have between our cards and Cardmarket's price
     -- feed; a card name is not one (see cardmarket_prices.py).
     cardmarket_id INTEGER,
+    -- Scryfall-only facts. NULL means "never asked", not "no": the WotC Game
+    -- Changers list and the Reserved List are fields on the Scryfall card
+    -- object and Archidekt reports neither, so a card that has never been
+    -- through the enrichment pass has no answer rather than a negative one.
+    -- `scryfall_enriched_at` is the stamp that pass sets; it is what keeps the
+    -- backfill from asking about the same 10,000 cards every night.
+    game_changer INTEGER,
+    reserved INTEGER,
+    scryfall_enriched_at TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -659,6 +676,51 @@ async def _migration_20(db: aiosqlite.Connection):
     )
 
 
+async def _migration_21(db: aiosqlite.Connection):
+    """Room for the Scryfall-only facts, and one canonical type-line form.
+
+    Two halves of the same problem: a card row is assembled from whichever
+    source last touched it, and Archidekt is the source for almost all of them.
+    It reports no legalities, no Reserved List flag and no Game Changer flag, so
+    the three columns added here start out NULL and are filled by
+    `card_enrichment.backfill_scryfall_fields()`.
+
+    It also writes the type line in its own shape: `Legendary, Creature —
+    Pirate, Shark` where Scryfall writes `Legendary Creature — Pirate Shark`.
+    Both forms answer the card-type filter, because that matches a substring of
+    the part before the em dash — which is why this survived unnoticed. What it
+    does break is every filter that spells a *pair* of type words: `type_line
+    NOT LIKE '%Basic Land%'` never matched a single Archidekt-sourced basic
+    land, because the row reads `Basic, Land — Plains`. Commas never occur in a
+    Scryfall type line, so stripping them is a safe, source-independent
+    canonicalisation, and `LIKE '%,%'` selects exactly the affected rows.
+    """
+    from .services.queries import normalize_type_line
+
+    cursor = await db.execute("PRAGMA table_info(cards)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, statement in CARD_COLUMN_MIGRATIONS.items():
+        if column_name not in columns:
+            await db.execute(statement)
+
+    cursor = await db.execute(
+        "SELECT id, type_line FROM cards WHERE type_line LIKE '%,%'"
+    )
+    rows = await cursor.fetchall()
+    updates = [
+        (canonical, row[0])
+        for row in rows
+        if (canonical := normalize_type_line(row[1])) != (row[1] or "")
+    ]
+    if updates:
+        await db.executemany("UPDATE cards SET type_line = ? WHERE id = ?", updates)
+    logger.info(
+        "Migration 21: canonicalised the type line of %d of %d comma-form cards",
+        len(updates),
+        len(rows),
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -679,6 +741,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     18: _migration_18,
     19: _migration_19,
     20: _migration_20,
+    21: _migration_21,
 }
 
 

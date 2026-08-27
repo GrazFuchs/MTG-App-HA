@@ -4,6 +4,11 @@ from ..clients.scryfall import scryfall
 from ..clients.edhrec import edhrec, parse_edhrec_recommendations, parse_edhrec_combos, slugify_commander
 from ..models.schemas import CardPrinting
 from ..database import get_db
+from ..services.card_enrichment import (
+    REFRESH_AFTER_DAYS,
+    backfill_scryfall_fields,
+    pending_count,
+)
 
 router = APIRouter()
 
@@ -109,6 +114,53 @@ async def get_card_by_name(name: str = Query(...), exact: bool = True):
 async def autocomplete(q: str = Query(..., min_length=2)):
     suggestions = await scryfall.autocomplete(q)
     return {"data": suggestions}
+
+
+@router.get("/enrichment")
+async def get_enrichment_status():
+    """How much of the collection carries the Scryfall-only card facts.
+
+    `game_changer IS NULL` is not "no": it is a printing that has never been
+    asked about. Reporting the two apart is the point of this endpoint.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT COUNT(*) AS total,
+                  SUM(scryfall_enriched_at IS NOT NULL) AS asked,
+                  SUM(game_changer = 1) AS game_changers,
+                  SUM(reserved = 1) AS reserved,
+                  SUM(COALESCE(legalities, '{}') NOT IN ('', '{}')) AS with_legalities,
+                  SUM(cardmarket_id IS NULL) AS without_cardmarket_id
+        FROM cards"""
+    )
+    row = await cursor.fetchone()
+    return {
+        "total_cards": row["total"],
+        # "asked", not "enriched": a printing Scryfall could not resolve is
+        # stamped too, so that it is not asked about again. It carries the
+        # stamp and no flags.
+        "asked": row["asked"] or 0,
+        "pending": await pending_count(),
+        "game_changers": row["game_changers"] or 0,
+        "reserved_list": row["reserved"] or 0,
+        "with_legalities": row["with_legalities"] or 0,
+        "without_cardmarket_id": row["without_cardmarket_id"] or 0,
+        "refresh_after_days": REFRESH_AFTER_DAYS,
+    }
+
+
+@router.post("/backfill-scryfall")
+async def trigger_scryfall_backfill(
+    max_cards: int = Query(0, description="0 = every pending printing"),
+    force: bool = Query(False, description="Re-ask about cards already enriched"),
+):
+    """Run the Scryfall enrichment now instead of waiting for the next sync.
+
+    The sync-time pass is capped so it cannot stretch a nightly run; this one is
+    not. A full collection of ~10,000 printings is ~137 requests, a few minutes
+    at the rate limit Scryfall asks for on `/cards/collection`.
+    """
+    return await backfill_scryfall_fields(max_cards=max_cards or None, force=force)
 
 
 @router.get("/edhrec/recommendations/{commander_name}")

@@ -13,6 +13,7 @@ Every other test starts from a fresh database, where `CREATE TABLE` does carry
 the new column. That is exactly why the suite stayed green while every real
 upgrade failed, and why this file builds an *old* database on purpose.
 """
+import re
 import sqlite3
 
 import pytest
@@ -74,6 +75,71 @@ async def test_startup_adds_cardmarket_id_to_an_existing_database(tmp_path, monk
     assert "idx_cards_cardmarket_id" in indexes, (
         "the index is gone from SCHEMA_SQL, so migration 19 has to create it"
     )
+
+
+def _write_pre_enrichment_database(path) -> None:
+    """Write a database as 0.35.0 left it: schema at version 20, none of the
+    Scryfall-only columns, and a type line in Archidekt's comma form.
+    """
+    schema = re.sub(
+        r"^\s*(game_changer|reserved|scryfall_enriched_at) .*\n",
+        "",
+        database.SCHEMA_SQL,
+        flags=re.MULTILINE,
+    )
+
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(schema)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
+        assert not columns & {"game_changer", "reserved", "scryfall_enriched_at"}, (
+            "legacy fixture still declares the enrichment columns — the "
+            "declarations in SCHEMA_SQL were reformatted and no longer match"
+        )
+        conn.execute(
+            "INSERT INTO cards (scryfall_id, name, type_line) VALUES (?, ?, ?)",
+            ("sf-legacy", "Ancient Copper Dragon", "Legendary, Creature — Dragon"),
+        )
+        # 20 is the last migration that existed before the enrichment columns.
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (20)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.anyio
+async def test_startup_adds_the_enrichment_columns_and_fixes_the_type_lines(
+    tmp_path, monkeypatch
+):
+    """Migration 21 on a database that predates it.
+
+    The columns are the easy half. The type line is the half worth a test: it
+    rewrites existing rows, so it has to be right on data it did not create.
+    """
+    await database.close_db()
+
+    data_dir = tmp_path / "pre21"
+    data_dir.mkdir()
+    _write_pre_enrichment_database(data_dir / "mtg.db")
+
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+    monkeypatch.setenv("OPTIONS_PATH", str(data_dir / "options.json"))
+    config.get_settings.cache_clear()
+
+    await database.init_db()
+
+    db = await database.get_db()
+    cursor = await db.execute("PRAGMA table_info(cards)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    assert {"game_changer", "reserved", "scryfall_enriched_at"} <= columns
+
+    cursor = await db.execute(
+        "SELECT type_line, game_changer, scryfall_enriched_at FROM cards"
+    )
+    row = await cursor.fetchone()
+    assert row[0] == "Legendary Creature — Dragon"
+    # Nothing has asked Scryfall yet, and the migration must not pretend it has.
+    assert row[1] is None and row[2] is None
 
 
 @pytest.mark.anyio
