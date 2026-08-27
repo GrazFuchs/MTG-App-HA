@@ -1,6 +1,6 @@
 # Sprint 01 — Wahrheit & Quick-Fixes
 
-**Status: ✅ umgesetzt in 0.35.0 (2026-08-23).** HA-seitige Pakete (unten, „Teil B") laufen in
+**Status: ✅ umgesetzt in 0.35.0, deployed + verifiziert am 2026-08-27.** HA-seitige Pakete (unten, „Teil B") laufen in
 Sprint 07 mit, weil sie dasselbe Repo (`ha-infrastructure`) betreffen wie dessen übrige Pakete.
 
 **Ziel:** Jede Stelle, an der die UI etwas Falsches behauptet oder ein Knopf still nichts tut,
@@ -36,7 +36,12 @@ Claude-Desktop-Proxy-Aufruf braucht danach das Token als 4. Argument.
 - [x] Backend: 211/213 Tests grün (2 Fehlschläge = Altbestand `test_static_files.py`, auch auf
   unverändertem Stand — siehe README).
 - [x] Frontend: `tsc -b && vite build` grün, 30 Vitest-Tests grün.
-- [ ] Nach Deploy: `healthz` → 0.35.0; `sensor.mtg_last_sync_at` zeigt Zeitstempel (Publish läuft
-  beim Start, wenn je ein Sync abgeschlossen wurde).
-- [ ] Wishlist: alle 6 Statusübergänge durchklicken, insbesondere `not_received` → `wanted`.
-- [ ] „Deals only" an: nur Einträge mit `current ≤ target` sichtbar.
+- [x] Nach Deploy (2026-08-27): `healthz` → 0.35.0, `db: true`, `scheduler_running: true`.
+- [x] `sensor.mtg_last_sync_at` = `2026-08-27T01:15:22+00:00` — **der letzte offene Add-on-Bug
+  aus CLAUDE.md ist damit behoben.** (Warnkarten-Rückbau: Sprint 07.)
+- [x] MCP: ohne Token HTTP 401, mit Token HTTP 200 (`mcp_auth_token` gesetzt; Wert steht in den
+  Add-on-Optionen und gehört als 4. Argument in den mcp-proxy-Aufruf).
+- [x] Completeness Deck 2: 100 %, `missing_cards: []` — der Forest-×3-Eintrag ist weg.
+- [x] „Deals only" (`is_deal_only=true`): liefert echte Deals (z. B. Coastal Peak 0,59 € bei Ziel 1 €).
+- [ ] Wishlist: alle 6 Statusübergänge in der UI durchklicken, insbesondere `not_received` → `wanted`
+  (Backend-Logik getestet; UI-Durchgang steht aus).
