@@ -596,13 +596,14 @@ async def _do_full_sync(is_resync: bool = False) -> dict:
                 total_synced += result["cards_synced"]
                 logger.info("Synced deck '%s' (%d cards)", result["name"], result["cards_synced"])
 
-                # Best-effort combo sync after successful deck sync
+                # Best-effort combo sync after successful deck sync. The
+                # result is logged either way: `sync_combos_for_deck` logs the
+                # counts, and a failure is named here rather than leaving a
+                # deck that looks like it simply has no combos.
                 try:
                     from .combo_sync import sync_combos_for_deck
                     await asyncio.sleep(1)  # Rate limit for Spellbook API
-                    combo_count = await sync_combos_for_deck(result["deck_id"])
-                    if combo_count:
-                        logger.info("Synced %d combos for deck '%s'", combo_count, result["name"])
+                    await sync_combos_for_deck(result["deck_id"])
                 except Exception as combo_err:
                     logger.warning("Combo sync failed for deck '%s': %s", result["name"], combo_err)
 
@@ -610,6 +611,21 @@ async def _do_full_sync(is_resync: bool = False) -> dict:
                 error_msg = f"Deck {did}: {e}"
                 errors.append(error_msg)
                 logger.error("Failed to sync deck %d: %s", did, e)
+
+        # Decks the incremental sync skipped never reached the combo block
+        # above, so their combos were never fetched at all — that is why 17 of
+        # 21 decks held none. This pass asks about every deck that is due,
+        # which after a normal sync is only the ones that were skipped.
+        try:
+            from .combo_sync import sync_combos_for_stale_decks
+
+            combo_topup = await sync_combos_for_stale_decks()
+            if combo_topup["decks"]:
+                logger.info("Combo top-up after sync: %s", {
+                    k: combo_topup[k] for k in ("decks", "combos", "failed")
+                })
+        except Exception as e:
+            logger.warning("Combo top-up after sync failed: %s", e)
 
         # Top up the facts only Scryfall has, for what this sync just brought
         # in — and for the cards it just overwrote with an Archidekt reading.

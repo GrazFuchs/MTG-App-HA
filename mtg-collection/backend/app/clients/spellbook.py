@@ -5,8 +5,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+from ..version import VERSION
+
 SPELLBOOK_BASE = "https://backend.commanderspellbook.com"
-USER_AGENT = "MTGCollectionManager/0.9.0"
+USER_AGENT = f"MTGCollectionManager/{VERSION}"
 
 
 class SpellbookClient:
@@ -50,16 +52,41 @@ class SpellbookClient:
         resp.raise_for_status()
         data = resp.json()
 
-        # API nests combos under results.included / results.almost_included
+        # The answer nests under `results` and is bucketed by how far the deck
+        # is from the combo (verified against the live API, 2026-08-28):
+        #   included                                    every card present
+        #   almostIncluded                              one card short
+        #   almostIncludedByAddingColors                ... and outside the
+        #                                               colour identity
+        #   includedByChangingCommanders                ... with another
+        #   almostIncludedByChangingCommanders          commander
+        #   almostIncludedByAddingColorsAndChangingCommanders
+        # Only the first two are usable advice for *this* deck. The rest are
+        # counted into the log rather than silently dropped, so a decision not
+        # to store them stays visible.
         results = data.get("results", data)
         if isinstance(results, dict):
             included = results.get("included", [])
             almost = results.get("almost_included", results.get("almostIncluded", []))
+            out_of_scope = sum(
+                len(results.get(bucket, []))
+                for bucket in (
+                    "includedByChangingCommanders",
+                    "almostIncludedByAddingColors",
+                    "almostIncludedByChangingCommanders",
+                    "almostIncludedByAddingColorsAndChangingCommanders",
+                )
+            )
         else:
             included = []
             almost = []
+            out_of_scope = 0
 
-        logger.info("Spellbook returned %d included, %d almost_included combos", len(included), len(almost))
+        logger.info(
+            "Spellbook: %d complete, %d one card short, %d ignored "
+            "(need other colours or another commander)",
+            len(included), len(almost), out_of_scope,
+        )
         return {"included": included, "almost_included": almost}
 
     async def get_combo_detail(self, combo_id: str) -> dict[str, Any]:

@@ -1,3 +1,24 @@
+## 0.37.0 — Sprint 03: combos for every deck, and what they are short of
+
+The combo cache held 433 combos spread over 4 of 21 decks, and not one of the 418 partial ones named the card it was missing. Two unrelated causes, both fixed here.
+
+### Fixed
+- **17 of 21 decks had never been asked about combos at all.** The combo lookup sat inside the branch that runs after a deck is re-fetched from Archidekt — and the sync is incremental, so a deck that had not changed since the feature arrived hit `continue` several lines earlier and was never asked. It looked exactly like a deck without combos.
+
+  Asking every deck every night is the other extreme, and the obvious cheap test for "does this deck need asking" does not work: a deck Spellbook found nothing for and a deck that was never asked both hold zero rows in `deck_combos`. So the answer is stamped on the deck (`decks.combos_synced_at`, migration 22), and a top-up pass after each sync asks about every deck that is due — after a normal sync, only the ones that were skipped. A deck is re-asked after 14 days, because Spellbook keeps adding variants to a decklist that has not changed. Migration 22 stamps the decks that already carry combos with the date of their newest cached row, so the first run after the upgrade goes to the decks that actually need it.
+- **No partial combo said which card it was missing** — the extractor read `combo["missingCards"]`, and **the Spellbook response has no such field** (checked against the live API). A combo carries `uses`, the cards it needs, and nothing about what you lack. The missing cards are now derived: the combo's cards minus the deck's, matching a double-faced card under either face and counting the commander as present. Where nothing *named* is missing, the deck is short one of the combo's templates ("any creature with flying") and that is named instead — an empty list would have claimed the combo was complete.
+
+  Deck 1 has 27 such combos, every one of them exactly one card short. *Breath of Fury* — with *Anger* already in the deck — is now readable as what it is: one card away from an infinite.
+- **A Spellbook outage was reported as "this deck has no combos".** `sync_combos_for_deck` caught the error and returned `0`, which the sync then logged only if it was non-zero. Failures now propagate: the top-up names the deck and the reason and carries on with the rest, `POST /{deck_id}/combos/sync` answers **502** instead of `{"count": 0}`, and the per-deck result is logged whether it is 0 or 200.
+- **The combos panel counted cards that are not in the deck.** The header read "Combos in this Deck — 27 PARTIAL"; the two columns are now "Complete — every card in the deck" and "One card away — not in the deck yet", and the missing card is named in the row rather than hinted at.
+
+### Added
+- **`POST /api/decks/combos/sync-all`** (`max_decks`, `force`) catches the whole shelf up in one go instead of waiting for the nightly sync, and reports per deck what it found or why it failed. It is declared before the `/{deck_id}` routes so `combos` is never read as a deck id.
+- The Spellbook client logs the buckets it deliberately ignores — combos that would need other colours or another commander — so leaving them out stays a visible decision rather than an invisible one.
+
+### Upgrading
+Migration 22 adds the stamp. The first sync afterwards asks Spellbook about every deck that has none (about a second per deck), or `POST /api/decks/combos/sync-all` does it immediately.
+
 ## 0.36.0 — Sprint 02: the card facts only Scryfall has
 
 Nearly every card row in this database was assembled from an Archidekt payload, because that is where the decks and the collection come from. Archidekt is a good source for what is *owned* and *played*, and a partial one for what a card *is*. Everything here follows from that, and it is the groundwork the bracket (Sprint 04) and power-level (Sprint 05) work needs: a bracket cannot be computed from data that has no Game Changers, no Reserved List and no format legality.

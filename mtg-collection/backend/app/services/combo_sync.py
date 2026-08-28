@@ -1,16 +1,69 @@
-"""Combo sync service — fetch and cache Spellbook combos per deck."""
+"""Combo sync service — fetch and cache Spellbook combos per deck.
+
+Two things about the Spellbook answer shape decide how this file is written,
+both checked against the live API on 2026-08-28 rather than assumed:
+
+* `/find-my-combos/` buckets its answer as `results.included` (every card
+  present) and `results.almostIncluded` (one card short), plus three buckets
+  that would require changing the deck's colours or commander. Only the first
+  two are stored; a combo that needs a different colour identity is not a
+  suggestion, it is a different deck.
+* **There is no `missingCards` field.** A combo carries `uses`, the cards it
+  needs, and that is all — which is why every one of the cached partial combos
+  had an empty missing-card list. What is missing has to be derived here: the
+  cards a combo uses, minus the cards the deck holds.
+"""
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 from ..database import get_db
 from ..clients.spellbook import spellbook
 
 logger = logging.getLogger(__name__)
 
+#: How long a deck's combo answer is treated as current. A deck that changed is
+#: re-asked by the sync anyway; this is the interval for the ones that did not,
+#: because Spellbook keeps adding variants to an unchanged decklist.
+COMBO_REFRESH_AFTER_DAYS = 14
 
-def _extract_combo_fields(combo: dict[str, Any], is_partial: bool) -> dict[str, Any]:
+#: Pause between decks in a bulk run. Spellbook publishes no rate limit; this is
+#: the same courtesy interval the per-deck sync already used.
+BULK_PACING_SECONDS = 1.0
+
+
+def _card_keys(name: str) -> set[str]:
+    """Every spelling a card name might be matched under.
+
+    A double-faced card is "Valakut Awakening // Valakut Stoneforge" in one
+    source and "Valakut Awakening" in the other, so both halves count as the
+    same card for the purpose of "is it in the deck".
+    """
+    name = (name or "").strip().lower()
+    if not name:
+        return set()
+    keys = {name}
+    if "//" in name:
+        keys.update(part.strip() for part in name.split("//") if part.strip())
+    return keys
+
+
+def _deck_card_keys(names: Iterable[str]) -> set[str]:
+    keys: set[str] = set()
+    for name in names:
+        keys |= _card_keys(name)
+    return keys
+
+
+def _missing_from(card_names: list[str], deck_keys: set[str]) -> list[str]:
+    """The combo's cards the deck does not hold."""
+    return [n for n in card_names if n and not (_card_keys(n) & deck_keys)]
+
+
+def _extract_combo_fields(
+    combo: dict[str, Any], is_partial: bool, deck_keys: set[str]
+) -> dict[str, Any]:
     """Normalize a Spellbook combo response to our DB schema."""
     # Spellbook can use various field names depending on version
     combo_id = str(combo.get("id", combo.get("variant_id", "")))
@@ -48,17 +101,20 @@ def _extract_combo_fields(combo: dict[str, Any], is_partial: bool) -> dict[str, 
     prerequisites = combo.get("otherPrerequisites", combo.get("prerequisites", ""))
     steps = combo.get("description", combo.get("steps", ""))
 
-    missing_cards = []
+    missing_cards: list[str] = []
     if is_partial:
-        missing = combo.get("missingCards", combo.get("missing_cards", []))
-        if missing and isinstance(missing[0], dict):
+        missing_cards = _missing_from(card_names, deck_keys)
+        if not missing_cards:
+            # Nothing named is missing, so what the deck lacks is one of the
+            # combo's templates ("any creature with flying"). Naming the
+            # template is less useful than naming a card, but it is true, and
+            # an empty list would claim the combo is complete.
             missing_cards = [
-                m.get("card", {}).get("name", "") if isinstance(m.get("card"), dict)
-                else m.get("name", str(m))
-                for m in missing
+                t.get("template", {}).get("name", "")
+                for t in combo.get("requires", [])
+                if isinstance(t, dict) and isinstance(t.get("template"), dict)
             ]
-        else:
-            missing_cards = [str(m) for m in missing]
+            missing_cards = [m for m in missing_cards if m]
 
     return {
         "combo_id": combo_id,
@@ -76,8 +132,11 @@ def _extract_combo_fields(combo: dict[str, Any], is_partial: bool) -> dict[str, 
 async def sync_combos_for_deck(deck_id: int) -> int:
     """Detect and store combos for a single deck.
 
-    Called automatically after sync_deck. Can also be triggered manually.
-    Returns: count of combos found (full + partial).
+    Returns the count of combos found (full + partial) and stamps the deck as
+    asked — including when the answer is zero, which is a result and not a
+    failure. A Spellbook error is **raised**, not turned into a 0: the two used
+    to be indistinguishable, and a deck with no combos looked exactly like a
+    deck the sync had never reached.
     """
     db = await get_db()
 
@@ -103,22 +162,22 @@ async def sync_combos_for_deck(deck_id: int) -> int:
     commander_name = deck_row["commander_name"] if deck_row else None
 
     # 2. Call Spellbook API
-    try:
-        data = await spellbook.find_combos_in_decklist(card_names, commander_name)
-    except Exception as e:
-        logger.error("Spellbook API error for deck %d: %s", deck_id, e)
-        return 0
+    data = await spellbook.find_combos_in_decklist(card_names, commander_name)
 
     included = data.get("included", [])
     almost = data.get("almost_included", [])
 
-    # 3. Delete existing combos for this deck
+    # The commander counts as being in the deck for "is this card missing",
+    # even though it travels in its own field rather than the main list.
+    deck_keys = _deck_card_keys([*card_names, commander_name or ""])
+
+    # 3. Replace this deck's cached combos
     await db.execute("DELETE FROM deck_combos WHERE deck_id = ?", (deck_id,))
 
     # 4. Insert new combos
     count = 0
-    for combo in included:
-        fields = _extract_combo_fields(combo, is_partial=False)
+    for combo, is_partial in [(c, False) for c in included] + [(c, True) for c in almost]:
+        fields = _extract_combo_fields(combo, is_partial, deck_keys)
         await db.execute(
             """INSERT OR IGNORE INTO deck_combos
             (deck_id, combo_id, name, color_identity, cards_json, result_json,
@@ -130,20 +189,70 @@ async def sync_combos_for_deck(deck_id: int) -> int:
         )
         count += 1
 
-    for combo in almost:
-        fields = _extract_combo_fields(combo, is_partial=True)
-        await db.execute(
-            """INSERT OR IGNORE INTO deck_combos
-            (deck_id, combo_id, name, color_identity, cards_json, result_json,
-             prerequisites, steps, is_partial, missing_cards_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (deck_id, fields["combo_id"], fields["name"], fields["color_identity"],
-             fields["cards_json"], fields["result_json"], fields["prerequisites"],
-             fields["steps"], fields["is_partial"], fields["missing_cards_json"]),
-        )
-        count += 1
-
+    await db.execute(
+        "UPDATE decks SET combos_synced_at = CURRENT_TIMESTAMP WHERE id = ?", (deck_id,)
+    )
     await db.commit()
-    logger.info("Synced %d combos for deck %d (%d full, %d partial)",
-                count, deck_id, len(included), len(almost))
+    logger.info(
+        "Combo sync deck %d: %d combos (%d complete, %d one card short)",
+        deck_id, count, len(included), len(almost),
+    )
     return count
+
+
+async def sync_combos_for_stale_decks(
+    max_decks: int | None = None, force: bool = False
+) -> dict[str, Any]:
+    """Ask Spellbook about every deck that is due, one deck at a time.
+
+    "Due" means never asked, or asked longer than `COMBO_REFRESH_AFTER_DAYS`
+    ago. A deck the running sync has just handled is fresh by that measure and
+    is skipped here, so this costs nothing when there is nothing to do.
+    """
+    db = await get_db()
+    where = "1=1" if force else (
+        "combos_synced_at IS NULL"
+        f" OR combos_synced_at < datetime('now', '-{COMBO_REFRESH_AFTER_DAYS} days')"
+    )
+    cursor = await db.execute(
+        f"""SELECT id, name FROM decks
+        WHERE {where}
+        ORDER BY COALESCE(combos_synced_at, ''), id"""
+        + (" LIMIT ?" if max_decks else ""),
+        (max_decks,) if max_decks else (),
+    )
+    due = await cursor.fetchall()
+    if not due:
+        return {"status": "completed", "decks": 0, "combos": 0, "failed": 0, "results": []}
+
+    results: list[dict[str, Any]] = []
+    combos = 0
+    failed = 0
+    for index, row in enumerate(due):
+        if index:
+            await asyncio.sleep(BULK_PACING_SECONDS)
+        try:
+            count = await sync_combos_for_deck(row["id"])
+            combos += count
+            results.append({"deck_id": row["id"], "name": row["name"], "combos": count})
+        except Exception as exc:
+            # Named, with the deck it belongs to. The old best-effort wrapper
+            # turned this into a 0, which the caller could not tell apart from
+            # "asked, none found".
+            failed += 1
+            logger.warning(
+                "Combo sync failed for deck %d (%s): %s", row["id"], row["name"], exc
+            )
+            results.append({"deck_id": row["id"], "name": row["name"], "error": str(exc)})
+
+    logger.info(
+        "Combo top-up: %d decks asked, %d combos cached, %d failed",
+        len(due), combos, failed,
+    )
+    return {
+        "status": "completed",
+        "decks": len(due),
+        "combos": combos,
+        "failed": failed,
+        "results": results,
+    }

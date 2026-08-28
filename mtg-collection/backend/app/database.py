@@ -111,7 +111,13 @@ CREATE TABLE IF NOT EXISTS decks (
     view_count INTEGER DEFAULT 0,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- When Spellbook was last asked about this deck's combos. Separate from
+    -- `last_synced` on purpose: a deck that has not changed still needs asking
+    -- now and then, and a deck Spellbook found nothing for has to be
+    -- distinguishable from one that was never asked (it stores no rows either
+    -- way). See services/combo_sync.py.
+    combos_synced_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS deck_cards (
@@ -721,6 +727,32 @@ async def _migration_21(db: aiosqlite.Connection):
     )
 
 
+async def _migration_22(db: aiosqlite.Connection):
+    """A per-deck stamp for the combo cache.
+
+    The combo sync ran only for decks the incremental sync had just re-fetched,
+    so a deck that had not changed since the feature arrived was never asked at
+    all — 17 of 21 decks held no combos, which read as "this deck has none".
+
+    Asking every deck every night instead would be the other extreme, and an
+    empty result cannot be told from a missing one by looking at `deck_combos`:
+    both are zero rows. Hence a stamp on the deck, the same arrangement
+    `cards.scryfall_enriched_at` has.
+    """
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if "combos_synced_at" not in columns:
+        await db.execute("ALTER TABLE decks ADD COLUMN combos_synced_at TIMESTAMP")
+        # Decks that already carry combos were demonstrably asked; stamping them
+        # from their newest cached row keeps the first run after the upgrade to
+        # the decks that actually need it.
+        await db.execute(
+            """UPDATE decks SET combos_synced_at = (
+                SELECT MAX(cached_at) FROM deck_combos WHERE deck_combos.deck_id = decks.id
+            ) WHERE EXISTS (SELECT 1 FROM deck_combos WHERE deck_combos.deck_id = decks.id)"""
+        )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -742,6 +774,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     19: _migration_19,
     20: _migration_20,
     21: _migration_21,
+    22: _migration_22,
 }
 
 

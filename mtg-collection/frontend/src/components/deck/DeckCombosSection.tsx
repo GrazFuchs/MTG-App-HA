@@ -127,8 +127,8 @@ export function DeckCombosSection({ deckId }: Props) {
       <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
         <SectionHeader
           num=""
-          title={`${open ? '▾' : '▸'} Combos in this Deck`}
-          right={`${fullCombos.length} ACTIVE · ${partialCombos.length} PARTIAL`}
+          title={`${open ? '▾' : '▸'} Combos`}
+          right={`${fullCombos.length} IN DECK · ${partialCombos.length} ONE CARD AWAY`}
           accent={accent.oklch}
         />
       </div>
@@ -137,7 +137,9 @@ export function DeckCombosSection({ deckId }: Props) {
         <div className={styles.comboGrid}>
           {/* Full combos column */}
           <div>
-            <div className={styles.columnTitle}>Active ({fullCombos.length})</div>
+            <div className={styles.columnTitle}>
+              Complete — every card in the deck ({fullCombos.length})
+            </div>
             {fullCombos.map(combo => (
               <div
                 key={combo.id}
@@ -152,14 +154,16 @@ export function DeckCombosSection({ deckId }: Props) {
             ))}
             {fullCombos.length === 0 && (
               <div style={{ fontSize: 11, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>
-                No full combos detected
+                No complete combo in this deck
               </div>
             )}
           </div>
 
           {/* Partial combos column */}
           <div>
-            <div className={styles.columnTitle}>Partial ({partialCombos.length} — 1 card away)</div>
+            <div className={styles.columnTitle}>
+              One card away — not in the deck yet ({partialCombos.length})
+            </div>
             {partialCombos.map(combo => (
               <div
                 key={combo.id}
@@ -172,7 +176,7 @@ export function DeckCombosSection({ deckId }: Props) {
                 </div>
                 {combo.missing_cards.length > 0 && (
                   <div className={styles.missingHint}>
-                    + Add: {combo.missing_cards.join(', ')}
+                    Missing: {combo.missing_cards.join(', ')}
                   </div>
                 )}
               </div>

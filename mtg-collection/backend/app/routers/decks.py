@@ -23,6 +23,21 @@ async def list_decks(response: Response):
     return [DeckSummary(**d) for d in decks]
 
 
+@router.post("/combos/sync-all")
+async def sync_all_deck_combos(
+    max_decks: int = Query(0, description="0 = every deck that is due"),
+    force: bool = Query(False, description="Ignore the per-deck stamp and ask about all"),
+):
+    """Ask Spellbook about every deck whose combo cache is missing or stale.
+
+    Declared before the `/{deck_id}` routes so that "combos" is never read as a
+    deck id. The sync runs this itself after every run; this is the way to
+    catch the whole shelf up in one go.
+    """
+    from ..services.combo_sync import sync_combos_for_stale_decks
+    return await sync_combos_for_stale_decks(max_decks=max_decks or None, force=force)
+
+
 @router.get("/compare", response_model=DeckCompareResponse)
 async def compare_decks(ids: str = Query(..., description="Comma-separated deck IDs (max 4)")):
     """Compare 2-4 decks: common cards, unique cards, color identity overlap."""
@@ -242,7 +257,14 @@ async def sync_deck_combos(deck_id: int):
         raise HTTPException(status_code=404, detail="Deck not found")
 
     from ..services.combo_sync import sync_combos_for_deck
-    count = await sync_combos_for_deck(deck_id)
+    try:
+        count = await sync_combos_for_deck(deck_id)
+    except Exception as exc:
+        # A Spellbook outage used to come back as `{"count": 0}`, which reads as
+        # "this deck has no combos". 502 says which of the two it is.
+        raise HTTPException(
+            status_code=502, detail=f"Spellbook lookup failed: {exc}"
+        ) from exc
     return {"count": count}
 
 

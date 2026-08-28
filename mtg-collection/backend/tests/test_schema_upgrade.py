@@ -155,3 +155,75 @@ async def test_schema_declares_no_index_on_a_column_it_may_not_have(tmp_path):
         "there breaks startup on any database predating 0.33.0. Migration 19 "
         "creates this index."
     )
+
+
+def _write_pre_combo_stamp_database(path) -> None:
+    """A database as 0.36.0 left it: schema 21, no `decks.combos_synced_at`."""
+    schema = "\n".join(
+        line for line in database.SCHEMA_SQL.splitlines()
+        if not line.strip().startswith("combos_synced_at ")
+    ).replace("last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,", "last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(schema)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(decks)")}
+        assert "combos_synced_at" not in columns, (
+            "legacy fixture still declares decks.combos_synced_at"
+        )
+        # `deck_combos` comes from migration 12, not from SCHEMA_SQL, so the
+        # fixture has to stand it up the way a 0.36.0 database would have it.
+        conn.execute("""
+            CREATE TABLE deck_combos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deck_id INTEGER REFERENCES decks(id) ON DELETE CASCADE,
+                combo_id TEXT NOT NULL,
+                name TEXT DEFAULT '',
+                color_identity TEXT DEFAULT '',
+                cards_json TEXT NOT NULL,
+                result_json TEXT DEFAULT '',
+                prerequisites TEXT DEFAULT '',
+                steps TEXT DEFAULT '',
+                is_partial INTEGER DEFAULT 0,
+                missing_cards_json TEXT DEFAULT '',
+                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(deck_id, combo_id)
+            )
+        """)
+        conn.execute("INSERT INTO decks (id, name) VALUES (1, 'Has combos')")
+        conn.execute("INSERT INTO decks (id, name) VALUES (2, 'Never asked')")
+        conn.execute(
+            """INSERT INTO deck_combos (deck_id, combo_id, cards_json, cached_at)
+            VALUES (1, 'c-1', '[]', '2026-08-01 10:00:00')"""
+        )
+        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (21)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.anyio
+async def test_migration_22_stamps_decks_that_already_have_combos(tmp_path, monkeypatch):
+    """The stamp decides who gets asked on the first run after the upgrade.
+
+    A deck that already holds combos was demonstrably asked, so it inherits the
+    date of its newest cached row; a deck with none has never been asked and
+    must come up straight away — the difference the whole sprint is about.
+    """
+    await database.close_db()
+
+    data_dir = tmp_path / "pre22"
+    data_dir.mkdir()
+    _write_pre_combo_stamp_database(data_dir / "mtg.db")
+
+    monkeypatch.setenv("DATA_DIR", str(data_dir))
+    monkeypatch.setenv("OPTIONS_PATH", str(data_dir / "options.json"))
+    config.get_settings.cache_clear()
+
+    await database.init_db()
+
+    db = await database.get_db()
+    cursor = await db.execute("SELECT id, combos_synced_at FROM decks ORDER BY id")
+    stamps = dict(await cursor.fetchall())
+    assert stamps[1] == "2026-08-01 10:00:00"
+    assert stamps[2] is None
