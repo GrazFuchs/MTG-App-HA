@@ -368,3 +368,22 @@ async def test_a_two_card_combo_does_not_also_report_the_generic_infinite():
     result = await compute_bracket(deck_id)
 
     assert _rules(result["detail"]) == {"two_card_combo_early"}
+
+
+@pytest.mark.anyio
+async def test_a_four_piece_engine_is_not_a_bracket_three_signal():
+    """The bracket rules are aimed at combos that end a game out of nowhere.
+
+    "Squirreled Away" holds a four-card loop that makes infinite Food tokens
+    and wins nothing by itself; Commander Spellbook files that deck as
+    Exhibition. The piece limit is what keeps the generic infinite rule from
+    overruling both.
+    """
+    deck_id = await _deck([{"name": n, "cmc": 2} for n in ("A", "B", "C", "D")])
+    await _add_combo(deck_id, ["A", "B", "C", "D"], mana_value_needed=0,
+                     results=["Infinite Food tokens"])
+
+    result = await compute_bracket(deck_id)
+
+    assert result["bracket"] == BASE_BRACKET
+    assert result["detail"]["counts"]["complete_combos"] == 1

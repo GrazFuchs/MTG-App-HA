@@ -57,6 +57,18 @@ EXTRA_TURN_CARDS_FOR_B3 = 2
 #: Bracket 3 tolerates up to three game changers; a fourth is bracket 4.
 GAME_CHANGERS_ALLOWED_AT_B3 = 3
 
+#: An infinite combo that needs more pieces than this is not treated as a
+#: bracket-3 signal. The bracket rules name *two-card* combos; this is the
+#: allowance for the ones just beyond that line.
+#:
+#: ⚠️ Calibrated against two real decks, and it is a judgement, not a rule.
+#: "Surf n Turf" holds two complete three-card infinites and reads as an
+#: upgraded deck — Commander Spellbook independently calls it Ruthless.
+#: "Squirreled Away" holds one four-piece engine that makes infinite Food
+#: tokens, which wins nothing on its own — and Spellbook calls that deck
+#: Exhibition. Three is the line those two put it on.
+GENERIC_INFINITE_MAX_CARDS = 3
+
 #: Plain oracle wordings for the two classifications Spellbook may not know.
 #: Deliberately narrow: a false positive moves a deck up a bracket, which is
 #: worse than missing an exotic card that the classification would have caught.
@@ -187,7 +199,11 @@ async def compute_bracket(deck_id: int) -> dict[str, Any]:
             "two_card_combo_late", 3, late_combos,
             "two-card infinite, but an expensive one",
         )
-    if complete_combos and not (early_combos or late_combos):
+    compact_infinites = [
+        (c["name"] or "").strip() for c in complete_combos
+        if 0 < len(_combo_cards(c["cards_json"])) <= GENERIC_INFINITE_MAX_CARDS
+    ]
+    if compact_infinites and not (early_combos or late_combos):
         # A deck that wins on the spot is not a Core deck, even when the loop
         # takes three cards. The *two-card* distinction is what separates
         # bracket 3 from bracket 4; having an infinite at all is what separates
@@ -197,11 +213,10 @@ async def compute_bracket(deck_id: int) -> dict[str, Any]:
         # out, and it was added because the live run found it missing: "Surf n
         # Turf" holds two complete three-card infinites and came out as Core,
         # while Commander Spellbook independently called the same deck
-        # Ruthless. It moves exactly the decks whose only infinite needs three
-        # or more pieces.
+        # Ruthless. The piece limit above is what keeps it from also catching a
+        # four-card engine that makes infinite Food and wins nothing.
         raise_floor(
-            "infinite_combo", 3,
-            [(c["name"] or "").strip() for c in complete_combos if c["name"]],
+            "infinite_combo", 3, compact_infinites,
             "a complete infinite combo, though it needs more than two cards",
         )
     if mass_land_denial:

@@ -1,3 +1,8 @@
+## 0.38.2
+
+### Fixed
+- **A four-piece Food engine was reading as an upgraded deck.** 0.38.1 let any complete infinite combo set the floor at bracket 3, which was right for a three-card infinite and wrong for "Squirreled Away", whose only loop needs four cards and produces infinite Food tokens — it wins nothing on its own, and Commander Spellbook files that deck as Exhibition. The generic rule is now bounded at three pieces (`GENERIC_INFINITE_MAX_CARDS`). Both that bound and the eight-mana early-combo ceiling are judgements calibrated against real decks rather than quotations, and both are named constants for exactly that reason.
+
 ## 0.38.1
 
 ### Fixed
