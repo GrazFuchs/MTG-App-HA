@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
+import { OverlayPortal } from '../OverlayPortal';
 import { makeStyles } from '@griffel/react';
 import { Button, Input, Select } from '@fluentui/react-components';
 import { sothera } from '../../theme/sothera';
@@ -23,6 +23,12 @@ const useStyles = makeStyles({
   dialog: {
     width: '420px',
     maxWidth: '90vw',
+    // The second half of the unreachable-confirm problem: inside a short
+    // ingress iframe a centred dialog taller than the viewport pushes its
+    // buttons off both edges, where nothing can scroll to them. Capping the
+    // height and scrolling inside keeps the confirm reachable.
+    maxHeight: '90vh',
+    overflowY: 'auto',
     padding: '24px',
     backgroundColor: sothera.glassBg,
     border: `1px solid ${sothera.glassBorder}`,
@@ -128,7 +134,8 @@ export default function TriageDecisionDialog({
   // Portal into document.body: the dialog is mounted inside a Panel whose
   // backdrop-filter creates a stacking context, trapping the fixed overlay
   // beneath the following inbox cards.
-  return createPortal(
+  return (
+    <OverlayPortal>
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.dialog} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <div className={styles.title}>
@@ -235,7 +242,7 @@ export default function TriageDecisionDialog({
           </Button>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
+    </OverlayPortal>
   );
 }

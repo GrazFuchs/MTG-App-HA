@@ -1,10 +1,10 @@
 /**
  * Card hover preview — shows the full Scryfall card image on mouse hover.
- * Uses createPortal to render the preview directly into document.body,
+ * Renders through OverlayPortal (into document.body),
  * guaranteeing correct position and z-index regardless of ancestor CSS.
  */
 import { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { OverlayPortal } from './OverlayPortal';
 import { tokens } from '@fluentui/react-components';
 import type { Card } from '../api';
 
@@ -101,7 +101,8 @@ export function CardHoverPreview({ card, children, asTableRow }: CardHoverPrevie
       <Wrapper {...eventHandlers} style={wrapperStyle as any}>
         {children}
       </Wrapper>
-      {show && createPortal(
+      {show && (
+        <OverlayPortal>
         <div
           style={{
             position: 'fixed',
@@ -132,8 +133,8 @@ export function CardHoverPreview({ card, children, asTableRow }: CardHoverPrevie
               {card.oracle_text}
             </div>
           )}
-        </div>,
-        document.body
+        </div>
+        </OverlayPortal>
       )}
     </>
   );

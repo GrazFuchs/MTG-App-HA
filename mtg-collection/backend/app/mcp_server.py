@@ -415,7 +415,11 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
         page_size: Items per page (default 50)
     """
     from .database import get_db
-    from .services.queries import basic_land_exclusion_sql, color_identity_condition
+    from .services.queries import (
+        basic_land_exclusion_sql,
+        color_identity_condition,
+        duplicates_extras_sql,
+    )
     db = await get_db()
     offset = (page - 1) * page_size
 
@@ -473,13 +477,7 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
         ),
         with_extras AS (
             SELECT pr.*,
-                   pr.total_copies as extras,
-                   COALESCE((
-                       SELECT SUM(l.quantity) FROM cardmarket_listings l
-                       WHERE LOWER(l.card_name) = LOWER(pr.card_name)
-                         AND LOWER(COALESCE(l.set_code, l.expansion_code, '')) = LOWER(pr.set_code)
-                         AND l.is_foil = pr.is_foil
-                   ), 0) as listed_quantity
+""" + duplicates_extras_sql("card_name") + """
             FROM printing_rows pr
             WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
         ),

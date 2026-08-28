@@ -358,6 +358,50 @@ def card_type_condition(tokens: list[str], alias: str = "c") -> str | None:
 # bound parameters have to be passed twice.  Used by the Duplicates API and by
 # the HA surplus sensors, which must agree on what "surplus" means.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Surplus copies
+#
+# "How many copies of this printing are spare" has no obvious answer, because
+# deck usage is counted per *card* while the rows here are per *printing and
+# foilness* — any printing fills a deck slot, which is exactly why prices are
+# joined per printing but deck usage is not (see the 0.33.0 changelog).
+#
+# Until 0.42.0 the query dodged that by not subtracting deck usage at all:
+# `extras` was the printing's own copy count, so a playset entirely inside a
+# deck counted as four spare cards. The surplus was therefore overstated —
+# 2526 cards and 1063 EUR on the real collection — and the sell dialog would
+# happily offer copies that are in play.
+#
+# Subtracting the card-level surplus on every row would trade that for the
+# opposite error: a card with two printings would have its surplus counted
+# twice in any SUM. So the card's surplus is *handed out* across its printings
+# in a stable order, capped by what is actually owned of each. The rows then
+# sum to the card's surplus exactly once.
+# ---------------------------------------------------------------------------
+
+def duplicates_extras_sql(name_col: str = "name") -> str:
+    """The `extras` and `listed_quantity` columns of the duplicates query.
+
+    Shared verbatim between `DUPLICATES_CTE` and the MCP tool's own copy, which
+    differ only in what they call the card-name column. `tests/test_duplicates.py`
+    asserts the two agree.
+    """
+    return f"""
+               MAX(pr.total_global - pr.in_decks, 0) as card_surplus,
+               MAX(MIN(
+                   pr.total_copies,
+                   MAX(pr.total_global - pr.in_decks, 0) - COALESCE(SUM(pr.total_copies) OVER (
+                       PARTITION BY pr.{name_col}
+                       ORDER BY pr.card_id, pr.is_foil
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ), 0)
+               ), 0) as extras,
+               COALESCE((
+                   SELECT SUM(l.quantity) FROM cardmarket_listings l
+                   WHERE l.card_id = pr.card_id AND l.is_foil = pr.is_foil
+               ), 0) as listed_quantity"""
+
+
 DUPLICATES_CTE = """
     WITH deck_usage AS (
         SELECT c2.name, SUM(dc.quantity) as in_decks
@@ -404,12 +448,7 @@ DUPLICATES_CTE = """
     ),
     with_extras AS (
         SELECT pr.*,
-               MAX(pr.total_global - pr.in_decks, 0) as extras_global,
-               pr.total_copies as extras,
-               COALESCE((
-                   SELECT SUM(l.quantity) FROM cardmarket_listings l
-                   WHERE LOWER(l.card_name) = LOWER(pr.name)
-               ), 0) as listed_quantity
+""" + duplicates_extras_sql("name") + """
         FROM printing_rows pr
         WHERE pr.total_global > pr.in_decks AND pr.total_global > 1
     )

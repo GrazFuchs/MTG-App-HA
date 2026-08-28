@@ -1,6 +1,7 @@
 import { useRef, useState, ReactNode } from 'react';
 import { makeStyles, shorthands } from '@griffel/react';
 import { api, PriceHistoryEntry, MtgStocksHistory } from '../api';
+import { OverlayPortal } from './OverlayPortal';
 import { Sparkline } from './Sparkline';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
@@ -113,6 +114,9 @@ export default function PriceTrendHover({ cardName, children, days = 14, label, 
     <span className={styles.trigger} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       {children}
       {show && history && (
+        // Portalled: the popup is `position: fixed`, and a Panel's
+        // backdrop-filter would otherwise trap it behind the cards below.
+        <OverlayPortal>
         <div
           className={styles.popup}
           style={{ left: pos.x, top: pos.y }}
@@ -157,6 +161,7 @@ export default function PriceTrendHover({ cardName, children, days = 14, label, 
             </div>
           )}
         </div>
+        </OverlayPortal>
       )}
     </span>
   );

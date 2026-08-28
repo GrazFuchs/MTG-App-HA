@@ -172,6 +172,12 @@ async def test_sell_metrics_empty():
 
 @pytest.mark.anyio
 async def test_duplicates_surplus_counts_unused_copies():
+    """Four owned, one in a deck — three are spare.
+
+    This test asserted 4 until 0.42.0, which is what the name says it should
+    not: the query took the printing's own copy count and never subtracted deck
+    usage, so a playset entirely in play read as four cards to sell.
+    """
     db = await get_db()
     sol = await insert_card(db, "Sol Ring", price_eur="2.00")
     await add_collection(db, sol, quantity=4)
@@ -180,23 +186,45 @@ async def test_duplicates_surplus_counts_unused_copies():
 
     m = await ha_metrics.sell_metrics(db)
 
-    assert m.states["duplicates_surplus_cards"] == 4
-    assert m.states["duplicates_surplus_value_eur"] == 8.0
-    assert m.states["unlisted_value_eur"] == 8.0
+    assert m.states["duplicates_surplus_cards"] == 3
+    assert m.states["duplicates_surplus_value_eur"] == 6.0
+    assert m.states["unlisted_value_eur"] == 6.0
     assert m.attributes["unlisted_value_eur"]["items"][0]["card_name"] == "Sol Ring"
 
 
 @pytest.mark.anyio
 async def test_listed_copies_drop_out_of_the_unlisted_backlog():
+    """A listing cancels the copies of the printing it belongs to."""
     db = await get_db()
     sol = await insert_card(db, "Sol Ring", price_eur="2.00")
     await add_collection(db, sol, quantity=4)
-    await add_listing(db, "Sol Ring", quantity=4)
+    await add_listing(db, "Sol Ring", quantity=4, card_id=sol)
 
     m = await ha_metrics.sell_metrics(db)
 
     assert m.states["unlisted_value_eur"] == 0
-    assert m.attributes["unlisted_value_eur"]["items"] == []
+
+
+@pytest.mark.anyio
+async def test_a_listing_without_a_printing_does_not_cancel_anything():
+    """Known limitation, and deliberate.
+
+    Since 0.42.0 a listing counts against the printing it is linked to rather
+    than against every card of that name. 42 of 1223 real listings never got
+    linked by the import, and those no longer cancel anything — the backlog
+    reads slightly high for them. Attributing them by name is the same guess
+    the price join was fixed for in 0.33.0, and it cancelled *other* printings'
+    copies while it was there.
+    """
+    db = await get_db()
+    sol = await insert_card(db, "Sol Ring", price_eur="2.00")
+    await add_collection(db, sol, quantity=4)
+    await add_listing(db, "Sol Ring", quantity=4)  # no card_id
+
+    m = await ha_metrics.sell_metrics(db)
+
+    assert m.states["unlisted_value_eur"] == 8.0
+    assert m.attributes["unlisted_value_eur"]["items"][0]["card_name"] == "Sol Ring"
 
 
 @pytest.mark.anyio

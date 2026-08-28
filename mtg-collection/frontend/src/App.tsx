@@ -1,17 +1,24 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Button, Spinner } from '@fluentui/react-components';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
-import Dashboard from './pages/Dashboard';
-import Decks from './pages/Decks';
-import DeckView from './pages/DeckView';
-import DeckCompare from './pages/DeckCompare';
-import Collection from './pages/Collection';
-import Inbox from './pages/Inbox';
-import Cardmarket from './pages/Cardmarket';
-import Settings from './pages/Settings';
-import Duplicates from './pages/Duplicates';
-import Wishlist from './pages/Wishlist';
+// Lazily loaded, one chunk per page. The build was a single 1.15 MB bundle:
+// opening the dashboard also downloaded the deck comparison, the Cardmarket
+// import and the markdown renderer, which is felt over the cloudflared tunnel.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Decks = lazy(() => import('./pages/Decks'));
+const DeckView = lazy(() => import('./pages/DeckView'));
+const DeckCompare = lazy(() => import('./pages/DeckCompare'));
+const Collection = lazy(() => import('./pages/Collection'));
+const Inbox = lazy(() => import('./pages/Inbox'));
+const Cardmarket = lazy(() => import('./pages/Cardmarket'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Duplicates = lazy(() => import('./pages/Duplicates'));
+const Wishlist = lazy(() => import('./pages/Wishlist'));
 import { api } from './api';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBanner } from './components/ErrorBanner';
+import { NotFound } from './pages/NotFound';
 import { t } from './i18n';
 import { sothera, ACCENTS, ACCENTS_LIGHT, type AccentName } from './theme/sothera';
 import { useAccent } from './main';
@@ -295,18 +302,35 @@ export default function App() {
         </div>
 
         <div className={styles.content} ref={contentRef}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/decks" element={<Decks />} />
-            <Route path="/decks/compare" element={<DeckCompare />} />
-            <Route path="/decks/:id" element={<DeckView />} />
-            <Route path="/collection" element={<Collection />} />
-            <Route path="/inbox" element={<Inbox />} />
-            <Route path="/duplicates" element={<Duplicates />} />
-            <Route path="/cardmarket" element={<Cardmarket />} />
-            <Route path="/wishlist" element={<Wishlist />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          {/* One boundary around every page: a component that throws used to
+              blank the content area with no hint that anything had failed. */}
+          <ErrorBoundary
+            fallback={(err, retry) => (
+              <ErrorBanner
+                title="This page could not be rendered"
+                message={err.message}
+                action={<Button size="small" onClick={retry}>Try again</Button>}
+              />
+            )}
+          >
+            <Suspense fallback={<Spinner label="Loading…" />}>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/decks" element={<Decks />} />
+                <Route path="/decks/compare" element={<DeckCompare />} />
+                <Route path="/decks/:id" element={<DeckView />} />
+                <Route path="/collection" element={<Collection />} />
+                <Route path="/inbox" element={<Inbox />} />
+                <Route path="/duplicates" element={<Duplicates />} />
+                <Route path="/cardmarket" element={<Cardmarket />} />
+                <Route path="/wishlist" element={<Wishlist />} />
+                <Route path="/settings" element={<Settings />} />
+                {/* Without this an unknown path rendered an empty content
+                    area that reads exactly like a page with no data. */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
           <BackToTop scrollRef={contentRef} />
         </div>
       </div>

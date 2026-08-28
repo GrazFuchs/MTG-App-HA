@@ -2,15 +2,26 @@
 // e.g. /api/hassio_ingress/<token>/decks/1 → /api/hassio_ingress/<token>
 // For standalone (no ingress): returns ''
 function getBasePath(): string {
+  if (typeof window === 'undefined') return '';
   const path = window.location.pathname;
   const match = path.match(/^(\/api\/hassio_ingress\/[^/]+)/);
   if (match) return match[1];
   return '';
 }
-const BASE = getBasePath();
+
+// Resolved on first use, not at module load. Reading `window` while the module
+// is being imported made this file impossible to import from a test — the
+// existing Inbox test says so in its own comment and works around it by
+// importing the utility module instead, which is why it tests colours under
+// the name of a page.
+let cachedBase: string | null = null;
+function basePath(): string {
+  if (cachedBase === null) cachedBase = getBasePath();
+  return cachedBase;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${basePath()}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
@@ -737,12 +748,12 @@ export const api = {
   importCardmarketCSV: async (file: File) => {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${BASE}/api/cardmarket/import`, { method: 'POST', body: form });
+    const res = await fetch(`${basePath()}/api/cardmarket/import`, { method: 'POST', body: form });
     if (!res.ok) throw new Error(`Import failed: ${res.status}`);
     return res.json();
   },
   exportCardmarketCSV: async () => {
-    const res = await fetch(`${BASE}/api/cardmarket/export`);
+    const res = await fetch(`${basePath()}/api/cardmarket/export`);
     if (!res.ok) throw new Error(`Export failed: ${res.status}`);
     const blob = await res.blob();
     const disposition = res.headers.get('Content-Disposition') || '';

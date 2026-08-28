@@ -91,3 +91,51 @@ def test_mcp_path_stays_a_404(client):
     resp = client.get("/mcp")
     assert resp.status_code == 404
     assert "<html>" not in resp.text
+
+
+# --- ingress base -----------------------------------------------------------
+
+INGRESS = "/api/hassio_ingress/abc123"
+
+
+def test_the_shell_carries_the_ingress_base(client):
+    """W1: the build references its bundles relatively, so without a base the
+    browser resolves them against the current directory — asking for
+    `/decks/assets/…` after a reload on `/decks/5`, which is a 404 and a white
+    page. The base makes the route depth irrelevant."""
+    resp = client.get("/decks/5", headers={"X-Ingress-Path": INGRESS})
+
+    assert resp.status_code == 200
+    assert f'<base href="{INGRESS}/">' in resp.text
+
+
+def test_the_base_is_absent_without_ingress(client):
+    """Served from the root, relative assets already resolve — and inventing a
+    base there would point the app at a path that does not exist."""
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert "<base " not in resp.text
+
+
+def test_the_shell_is_still_uncached_and_still_html(client):
+    """Rewriting the document must not lose what the caching fix established."""
+    resp = client.get("/inbox", headers={"X-Ingress-Path": INGRESS})
+
+    assert resp.headers["cache-control"] == NO_CACHE
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "<html>" in resp.text
+
+
+def test_an_existing_base_is_left_alone(tmp_path):
+    """The first `<base>` wins in every browser, so a second would be a silent
+    no-op that reads like a fix."""
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text('<html><head><base href="/fixed/"></head></html>')
+    app = FastAPI()
+    app.mount("/", SpaStaticFiles(directory=str(tmp_path), html=True), name="static")
+
+    resp = TestClient(app).get("/", headers={"X-Ingress-Path": INGRESS})
+
+    assert resp.text.count("<base ") == 1
+    assert 'href="/fixed/"' in resp.text
