@@ -49,11 +49,16 @@ const useStyles = makeStyles({
     top: '10px',
     left: '10px',
     fontFamily: sothera.fontMono,
-    fontSize: '9px',
-    letterSpacing: '1.5px',
-    color: sothera.fg,
-    padding: '3px 7px',
-    background: 'rgba(0,0,0,0.45)',
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '1px',
+    // A fixed light colour, not `sothera.fg`: this chip carries its own dark
+    // background, so in the light theme the theme foreground (#0E1024) put
+    // near-black text on a near-black scrim and the tag was unreadable.
+    color: '#EDEDF5',
+    padding: '4px 8px',
+    background: 'rgba(4,4,10,0.82)',
+    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
     ...shorthands.borderWidth('1px'),
     ...shorthands.borderStyle('solid'),
   },
@@ -227,10 +232,17 @@ export default function Decks() {
                     {!!d.effective_bracket && (
                       <div
                         className={styles.bracketTag}
-                        style={{ borderColor: accent.oklch }}
-                        title={d.user_bracket ? 'Bracket set by you' : 'Bracket computed from the decklist'}
+                        style={{
+                          borderColor: accent.oklch,
+                          // Dashed reads as provisional; the "?" it replaces
+                          // was a glyph nobody could decode.
+                          borderStyle: d.user_bracket ? 'solid' : 'dashed',
+                        }}
+                        title={d.user_bracket
+                          ? `Bracket ${d.effective_bracket}, set by you`
+                          : `Bracket ${d.effective_bracket}, computed from the decklist`}
                       >
-                        BR.{d.effective_bracket}{d.user_bracket ? '' : '?'}
+                        BR.{d.effective_bracket}
                       </div>
                     )}
                   </div>

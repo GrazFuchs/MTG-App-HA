@@ -1,3 +1,8 @@
+## 0.38.3
+
+### Fixed
+- **The bracket tag on a deck card was unreadable in the light theme.** The tag carries its own fixed dark background but took its text colour from the theme, and in light mode that is `#0E1024` — near-black letters on a near-black scrim, over artwork. It now uses a fixed light colour, the way the deck hero already did, plus a larger weight and a stronger backdrop. The `?` that marked a computed value is gone: the border is dashed for a computed bracket and solid for one you set, which needs no decoding, and the tooltip says which it is.
+
 ## 0.38.2
 
 ### Fixed
