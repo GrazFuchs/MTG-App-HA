@@ -7,7 +7,7 @@ A dialog you could not reach, a popup drawn over by the cards below it, duplicat
 - **The sell dialog can be reached in a short window.** The second half of the same complaint: a centred dialog taller than the viewport pushed its confirm button past both edges of an ingress iframe, where nothing could scroll to it. It now caps at 90 % of the viewport and scrolls inside.
 - **Reloading a nested route no longer shows a white page.** The build references its bundles relatively, so after a reload on `/decks/5` the browser asked for `/decks/assets/index-*.js` — correctly a 404, and a blank screen. The served shell now carries a `<base href>` pointing at the add-on root, taken from the `X-Ingress-Path` header the Supervisor sets (falling back to the startup value). Route depth stops mattering.
 - **Two tests had been failing for weeks — on Windows only, and for a real reason.** Starlette hands the static-file handler an *OS-normalised* path, so `assets/index-abc.js` arrives with a backslash there; every prefix check in the module is written with forward slashes. The asset cache header and the API passthrough both silently did the wrong thing. Separators are normalised once, and the suite is green for the first time.
-- **A card sitting in a deck is no longer counted as a spare copy.** The duplicates query computed the surplus correctly and then ignored it: `extras` was the printing's own copy count, so a playset entirely in play read as four cards to sell — and the sell dialog would offer them. The real numbers drop from **2526 surplus cards / €1063** to what is actually spare.
+- **A card sitting in a deck is no longer counted as a spare copy.** The duplicates query computed the surplus correctly and then ignored it: `extras` was the printing's own copy count, so a playset entirely in play read as four cards to sell — and the sell dialog would offer them.
 
   Handing every row the card's surplus instead would have traded that for the opposite error, since deck usage is counted per *card* while the rows are per *printing*: a card with two printings would be counted twice in any sum. The card's surplus is therefore handed out across its printings in a stable order, capped by what is owned of each, so the rows add up to it exactly once. Listings now count against the printing they belong to rather than every card of that name — the same name-versus-printing confusion the price join was fixed for in 0.33.0. ⚠️ 42 of 1223 listings never got linked to a printing by the import; those no longer cancel anything, so the backlog reads slightly high for them. The MCP tool shares the corrected query and a test asserts the two agree.
 - **A failing page shows the failure.** An error boundary wraps every route, and an unknown path gets a real "no such page" instead of an empty content area that reads exactly like a page with no data.
@@ -17,7 +17,15 @@ A dialog you could not reach, a popup drawn over by the cards below it, duplicat
 - **Per-page code splitting.** The bundle was a single 1.15 MB file, so opening the dashboard also downloaded the deck comparison, the Cardmarket import and the markdown renderer. Routes load lazily: the entry chunk is **392 kB (120 kB gzipped) instead of 1179 kB (336 kB)** — a third of what it was, which is felt over the tunnel.
 
 ### Upgrading
-No migration. The duplicate and unlisted figures drop noticeably on first load; that is the correction, not a loss of data.
+No migration, but the duplicate figures move, and **not all in the same direction** — measured on the real collection:
+
+| | before | after |
+|---|---:|---:|
+| surplus cards | 2526 | **2763** |
+| surplus value | €1062.70 | **€1041.33** |
+| unlisted value | €915.17 | **€942.23** |
+
+Two corrections pull against each other, and the listing one turned out to be the larger. Deck-bound copies leaving the count pushes it down; listings no longer cancelling *other printings* of the same card pushes it up. Concretely: three copies of printing A and two of printing B, with four of A listed — the old name match cancelled all five and reported nothing spare, when two copies of B were sitting there unlisted. The count rising is the correction, not a regression.
 
 ## 0.41.0 — Sprint 07 (add-on half): what Home Assistant reads, and when
 

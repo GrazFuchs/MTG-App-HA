@@ -14,7 +14,7 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 | 06 | [Wishlist: Deals & Bracket-Brücke](sprint-06-wishlist-deals.md) | 01, 03, 04 | ✅ umgesetzt (0.40.0), deployed |
 | 07 | [HA-Brücke begradigen](sprint-07-ha-bruecke.md) | — | ✅ umgesetzt (0.41.0 + HA-Seite), deployed |
 | 08 | [Inbox/Triage entlasten](sprint-08-inbox-triage.md) | — | offen |
-| 09 | [Display & Fehlerzustände](sprint-09-display-fehlerzustaende.md) | — | offen |
+| 09 | [Display & Fehlerzustände](sprint-09-display-fehlerzustaende.md) | — | ✅ umgesetzt (0.42.0), deployed |
 | 10 | [i18n, A11y, Responsive](sprint-10-i18n-a11y-responsive.md) | — | offen |
 | 11 | [AI über MCP](sprint-11-ai-mcp.md) | am wertvollsten nach 04/05 | offen |
 | — | [Backlog](backlog.md) (bewusst ohne Sprint) | — | — |
@@ -47,8 +47,10 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 - HA-Dashboards: über `tools/patch-mtg-gameroom.py --apply` bzw. `ha_ws.py` (rohe Config, nie den
   `.storage`-Wrapper), danach Snapshots in `ha-infrastructure/pi-ha/dashboards/` neu ziehen.
 
-## Bekannter Test-Altbestand
+## Bekannter Test-Altbestand — erledigt (0.42.0)
 
-`backend/tests/test_static_files.py` schlägt auf dem Windows-Checkout mit 2 Tests fehl
-(Cache-Header + API-404) — **auch auf unverändertem Stand** (geprüft 2026-08-23 via `git stash`).
-Vermutlich Umgebungs-/Pfadproblem; auf dem Pi/CI gegenprüfen. Gehört inhaltlich zu Sprint 09 (W1).
+`backend/tests/test_static_files.py` schlug auf dem Windows-Checkout mit 2 Tests fehl. Die
+Vermutung „Umgebungs-/Pfadproblem" stimmte, war aber kein Grund zum Wegsehen: Starlette übergibt
+dem Handler einen **OS-normalisierten** Pfad, und jeder Präfixtest im Modul ist mit Schrägstrich
+geschrieben — auf Windows waren dadurch der Asset-Cache-Header *und* die API-Durchreichung falsch.
+Behoben in Sprint 09; die Suite ist seither **320/320 grün**.
