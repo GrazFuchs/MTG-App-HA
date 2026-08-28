@@ -133,8 +133,13 @@ def test_wishlist_entity_shape_unchanged():
     assert payload["value_template"] == "{{ value_json.current_price_eur }}"
     assert payload["unit_of_measurement"] == "EUR"
     assert payload["device"] == WISHLIST_DEVICE_INFO
-    # A per-item price is not a long-term statistic
-    assert "state_class" not in payload
+    # `measurement`, and no device class. Without a state class Home Assistant
+    # keeps no long-term statistics at all, so a wanted card's price could not
+    # be plotted — the point of these sensors. But `device_class: monetary`
+    # only accepts `total`, which means a running sum and is the wrong reading
+    # for a price. A plain measurement in EUR aggregates honestly instead.
+    assert payload["state_class"] == "measurement"
+    assert "device_class" not in payload
 
 
 def test_wishlist_entity_without_set_code():

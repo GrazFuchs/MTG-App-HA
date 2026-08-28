@@ -102,7 +102,11 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
   }
 
   if (current == null) {
-    return <span className={styles.above}>— / {target > 0 ? `€${target.toFixed(2)}` : '—'}</span>;
+    return (
+      <span className={styles.above}>
+        — / {target > 0 ? `€${target.toFixed(2)}` : 'no target'}
+      </span>
+    );
   }
 
   const delta = target > 0 ? current - target : null;
@@ -112,7 +116,19 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
   return (
     <div className={styles.priceCell}>
       <div>
-        {t('wishlist.target_short')}: {target > 0 ? `€${target.toFixed(2)}` : '—'}
+        {t('wishlist.target_short')}:{' '}
+        {target > 0 ? (
+          `€${target.toFixed(2)}`
+        ) : (
+          // Not a target of zero — no target at all. Without one this entry can
+          // never register as a deal, so it says so instead of showing a dash.
+          <span
+            className={styles.above}
+            title="No target price set — this card can never show up as a deal"
+          >
+            not set
+          </span>
+        )}
       </div>
       <div>
         {t('wishlist.current_short')}: €{current.toFixed(2)}
@@ -122,6 +138,47 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
           {delta >= 0 ? '+' : ''}€{delta.toFixed(2)}
           {pct != null && ` (${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%)`}
         </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * What makes this card matter beyond its price: whether it is an official Game
+ * Changer, what adding it would do to the bracket of the deck it is assigned
+ * to, and whether it is the one card missing from an infinite combo somewhere.
+ */
+function RelevanceBadges({ item }: { item: WishlistItem }) {
+  const impact = item.bracket_impact;
+  if (!item.is_game_changer && !impact && item.completes_combo_in.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+      {item.is_game_changer && (
+        <Badge appearance="tint" color="danger" size="small" title="On the official WotC Game Changers list">
+          Game Changer
+        </Badge>
+      )}
+      {impact && (
+        <Badge
+          appearance="tint"
+          color="warning"
+          size="small"
+          title={impact.reasons.map(r => `${r.note}: ${r.evidence.join(', ')}`).join(' · ')}
+        >
+          {`Bracket ${impact.from} → ${impact.to}`}
+        </Badge>
+      )}
+      {item.completes_combo_in.length > 0 && (
+        <Badge
+          appearance="tint"
+          color="success"
+          size="small"
+          title={`One card from an infinite combo in: ${item.completes_combo_in.join(', ')}`}
+        >
+          {`Completes a combo in ${item.completes_combo_in[0]}`}
+          {item.completes_combo_in.length > 1 ? ` +${item.completes_combo_in.length - 1}` : ''}
+        </Badge>
       )}
     </div>
   );
@@ -208,6 +265,7 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
             <StatusBadge item={item} />
             {item.deck_name && <Caption1>{item.deck_name}</Caption1>}
           </div>
+          <RelevanceBadges item={item} />
           {item.tags.length > 0 && (
             <div className={styles.tags}>
               {item.tags.map(tag => <Badge key={tag} appearance="outline" size="small">{tag}</Badge>)}
@@ -239,7 +297,10 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
         )}
       </div>
       <Caption1>{item.quantity}</Caption1>
-      <div>{'★'.repeat(item.priority)}{'☆'.repeat(5 - item.priority)}</div>
+      <div>
+        {'★'.repeat(item.priority)}{'☆'.repeat(5 - item.priority)}
+        <RelevanceBadges item={item} />
+      </div>
       <PriceDisplay item={item} />
       <StatusBadge item={item} />
       <Caption1>{item.deck_name || '—'}</Caption1>

@@ -28,6 +28,8 @@ export interface WishlistFilters {
   color: string | null;
   ordered: 'all' | 'ordered' | 'unordered';
   isDealOnly: boolean;
+  /** Entries with no target price — they can never register as a deal. */
+  noTargetOnly: boolean;
   sort: 'priority' | 'added_at' | 'target_price' | 'current_price' | 'delta_eur';
 }
 
@@ -39,6 +41,7 @@ export const DEFAULT_FILTERS: WishlistFilters = {
   color: null,
   ordered: 'all',
   isDealOnly: false,
+  noTargetOnly: false,
   sort: 'priority',
 };
 
@@ -54,6 +57,7 @@ export function filtersToParams(f: WishlistFilters): URLSearchParams {
   // The backend query param is `is_deal_only` — `deals_only` was a silent
   // no-op because FastAPI never saw a parameter by that name.
   if (f.isDealOnly) p.set('is_deal_only', 'true');
+  if (f.noTargetOnly) p.set('no_target_only', 'true');
   p.set('sort', f.sort);
   return p;
 }
@@ -68,6 +72,7 @@ export function filtersFromSearchParams(sp: URLSearchParams): WishlistFilters {
     color: sp.get('color') || null,
     ordered: isOrdered === 'true' ? 'ordered' : isOrdered === 'false' ? 'unordered' : 'all',
     isDealOnly: sp.get('is_deal_only') === 'true' || sp.get('deals_only') === 'true',
+    noTargetOnly: sp.get('no_target_only') === 'true',
     sort: (sp.get('sort') as WishlistFilters['sort']) || 'priority',
   };
 }
@@ -189,6 +194,14 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
         label={t('wishlist.deals_only')}
         checked={filters.isDealOnly}
         onChange={(_, d) => update({ isDealOnly: !!d.checked })}
+      />
+
+      {/* Without a target an entry can never appear as a deal, so it would
+          otherwise be invisible in exactly the view meant to find bargains. */}
+      <Checkbox
+        label="No target price"
+        checked={filters.noTargetOnly}
+        onChange={(_, d) => update({ noTargetOnly: !!d.checked })}
       />
 
       <Dropdown

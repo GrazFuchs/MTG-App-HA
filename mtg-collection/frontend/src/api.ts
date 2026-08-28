@@ -330,6 +330,12 @@ export interface WishlistItem {
   not_received_at: string | null;
   price_delta_eur: number | null;
   price_delta_pct: number | null;
+  /** A target of 0 means "no target set", never "free". */
+  has_target: boolean;
+  is_game_changer: boolean;
+  bracket_impact: { from: number; to: number; reasons: { rule: string; note: string; evidence: string[] }[] } | null;
+  /** Decks where this card is the one missing from an infinite combo. */
+  completes_combo_in: string[];
 }
 
 export interface WishlistSummary {

@@ -52,6 +52,19 @@ async def _sync_job():
         except Exception as e:
             logger.error("Scheduled MTGStocks sync failed: %s", e)
 
+    # Wishlist deals, after every price source has had its turn — a card the
+    # MTGStocks run repriced should be judged on that price, not the one before.
+    try:
+        from .services.wishlist_deals import check_wishlist_deals
+        deals = await check_wishlist_deals()
+        if deals["deals"]:
+            logger.info(
+                "Wishlist: %d card(s) fell below their target: %s",
+                len(deals["deals"]), ", ".join(d["card_name"] for d in deals["deals"]),
+            )
+    except Exception as e:
+        logger.error("Wishlist deal check failed: %s", e)
+
     # Send price spike notifications after price sync
     try:
         from .services.cardmarket_prices import get_price_alerts

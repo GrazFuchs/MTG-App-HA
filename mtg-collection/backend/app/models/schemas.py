@@ -366,6 +366,16 @@ class WishlistItemResponse(BaseModel):
     not_received_at: str | None = None
     price_delta_eur: float | None = None
     price_delta_pct: float | None = None
+    #: Sprint 6 — why this card is worth more than its price.
+    #: A target of 0 means "no target set", never "free": such an entry can
+    #: never register as a deal, which is why it is called out rather than
+    #: quietly left out.
+    has_target: bool = True
+    is_game_changer: bool = False
+    #: "Adding this to <deck> lifts it from bracket a to b", when it does.
+    bracket_impact: dict | None = None
+    #: Decks where this exact card is the one missing from an infinite combo.
+    completes_combo_in: list[str] = []
 
 
 class SourceBucket(BaseModel):

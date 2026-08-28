@@ -1,3 +1,17 @@
+## 0.40.0 — Sprint 06: the wishlist says something when a card gets cheap
+
+`is_deal` had been there all along and never announced anything, because it is a *state*: true for as long as the price stays under the target. Nothing compared today against yesterday, so there was no moment to report — the card was simply quietly cheap, on a list of 74, until somebody happened to look.
+
+### Added
+- **A deal is now the crossing, not the condition.** Each entry remembers what it cost at the last check (migration 25), and a card that was above its target and no longer is gets a notification naming the old price, the new one and the target. It runs after the daily price sync, or on demand via `POST /api/wishlist/check-deals`. The price is recorded whether or not anything happened — that record *is* the comparison for the next run, which is why the very first run reports nothing and should.
+
+  Two quiet rules that matter more than they look. The stored price is used rather than the Cardmarket history, because a third of this list has no Cardmarket product and would otherwise never be watched at all. And an entry stays quiet for a week after it has been announced: edge detection stops a daily repeat, but a price wobbling around the target would cross every second day.
+- **A target of 0 is shown as "not set", not as a dash.** It means *no target*, never *free*, and such an entry can never register as a deal — so four of the most expensive cards on this list were invisible in exactly the view meant to find bargains. There is now a "No target price" filter beside the deals one.
+- **Three badges that say why a card is worth more than its price.** Whether it is on the official Game Changers list; what adding it would do to the bracket of the deck it is assigned to ("Bracket 3 → 4", with the reason in the tooltip); and whether it is the one card missing from an infinite combo in a deck, naming that deck — the bridge that only became possible once partial combos started naming what they lack.
+
+  The bracket comparison runs the deck through the same rules twice rather than reasoning about the card alone, because a fourth game changer only matters in the company of the three already there. It is computed only where it could say anything — the card has to be assigned to a deck and be something the rules count.
+- **Wishlist sensors now keep a history in Home Assistant.** ⚠️ As `state_class: measurement` with **no device class**: without a state class HA keeps no long-term statistics at all, so the price of a wanted card could not be plotted — the whole point of those 74 sensors. But `device_class: monetary` accepts only `total`, and `total` means a running sum, which is the wrong reading for a price and the very misuse the aggregate sensors still have to be cleaned up for. A plain measurement in EUR aggregates honestly (min, max, mean) at the cost of the currency formatting.
+
 ## 0.39.0 — Sprint 05: a power score, kept apart from the bracket
 
 A port of edhpowerlevel.com's scoring, computed offline from the fields the Scryfall enrichment already stores. It answers a different question from the bracket and is deliberately not allowed to touch it: the bracket asks what a deck is *capable of*, this asks what its cards are *worth and wanted*, scaled by how cheaply the deck deploys them. Combos, game changers and land denial feed the bracket only — the same separation the original makes.

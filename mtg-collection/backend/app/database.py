@@ -846,6 +846,32 @@ async def _migration_24(db: aiosqlite.Connection):
             await db.execute(ddl)
 
 
+async def _migration_25(db: aiosqlite.Connection):
+    """Remember what a wishlist entry cost last time, so a fall can be noticed.
+
+    `is_deal` was only ever a *state* — "cheaper than your target right now" —
+    which is why nothing ever announced itself: the flag was true for as long
+    as the price stayed down, and there was nothing to compare against to see
+    the moment it crossed. Keeping the previous price per entry turns that into
+    an event, and works for cards priced from Cardmarket and from Scryfall
+    alike, which a join against the Cardmarket history would not.
+    """
+    cursor = await db.execute("PRAGMA table_info(wishlist)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    if not columns:
+        # `wishlist` is created by an earlier migration, not by SCHEMA_SQL, so
+        # it can be absent in a synthetic old database. Same guard migration 23
+        # uses for `deck_combos`.
+        return
+    for column_name, ddl in (
+        ("last_price_eur", "ALTER TABLE wishlist ADD COLUMN last_price_eur REAL"),
+        ("last_price_at", "ALTER TABLE wishlist ADD COLUMN last_price_at TIMESTAMP"),
+        ("deal_notified_at", "ALTER TABLE wishlist ADD COLUMN deal_notified_at TIMESTAMP"),
+    ):
+        if column_name not in columns:
+            await db.execute(ddl)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -870,6 +896,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     22: _migration_22,
     23: _migration_23,
     24: _migration_24,
+    25: _migration_25,
 }
 
 

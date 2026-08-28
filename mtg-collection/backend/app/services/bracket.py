@@ -109,18 +109,39 @@ def _combo_cards(cards_json: str | None) -> list[str]:
     return [c for c in cards if isinstance(c, str) and c]
 
 
-async def compute_bracket(deck_id: int) -> dict[str, Any]:
-    """Work out the deck's bracket floor and write it, with the evidence."""
+#: The card facts the rules read. Shared so a hypothetical card is loaded with
+#: exactly the same columns as a real one.
+_CARD_COLUMNS = """c.name, c.game_changer, c.mass_land_denial, c.extra_turn,
+                   c.oracle_text, c.cmc, c.scryfall_enriched_at"""
+
+
+async def compute_bracket(
+    deck_id: int, extra_card_ids: list[int] | None = None, persist: bool = True
+) -> dict[str, Any]:
+    """Work out the deck's bracket floor and write it, with the evidence.
+
+    `extra_card_ids` answers "what would this deck be if I added that card"
+    without touching the deck — it runs the very same rules over the very same
+    columns, which is the only way the answer means anything. Such a run never
+    persists.
+    """
     db = await get_db()
 
     cursor = await db.execute(
-        """SELECT c.name, c.game_changer, c.mass_land_denial, c.extra_turn,
-                  c.oracle_text, c.cmc, c.scryfall_enriched_at
+        f"""SELECT {_CARD_COLUMNS}
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
         WHERE dc.deck_id = ?""",
         (deck_id,),
     )
-    cards = await cursor.fetchall()
+    cards = list(await cursor.fetchall())
+    if extra_card_ids:
+        persist = False
+        placeholders = ",".join("?" * len(extra_card_ids))
+        cursor = await db.execute(
+            f"SELECT {_CARD_COLUMNS} FROM cards c WHERE c.id IN ({placeholders})",
+            extra_card_ids,
+        )
+        cards += list(await cursor.fetchall())
     if not cards:
         return {"deck_id": deck_id, "bracket": None, "reason": "deck has no cards"}
 
@@ -257,6 +278,9 @@ async def compute_bracket(deck_id: int) -> dict[str, Any]:
         ),
     }
 
+    if not persist:
+        return {"deck_id": deck_id, "bracket": bracket, "detail": detail}
+
     await db.execute(
         """UPDATE decks SET computed_bracket = ?, computed_bracket_detail = ?,
         computed_bracket_at = CURRENT_TIMESTAMP WHERE id = ?""",
@@ -293,3 +317,27 @@ async def compute_brackets_for_all_decks() -> dict[str, Any]:
     computed = [r for r in results if r.get("bracket")]
     logger.info("Bracket recompute: %d of %d decks", len(computed), len(results))
     return {"decks": len(results), "computed": len(computed), "results": results}
+
+
+async def bracket_impact_of_card(deck_id: int, card_id: int) -> dict[str, Any] | None:
+    """What adding one card would do to a deck's bracket.
+
+    Returns None when it changes nothing, so a caller can show a badge only
+    where there is something to say. The comparison runs the deck through the
+    rules twice rather than reasoning about the card in isolation — a fourth
+    game changer matters only because three were already there.
+    """
+    before = await compute_bracket(deck_id, persist=False)
+    after = await compute_bracket(deck_id, extra_card_ids=[card_id], persist=False)
+    if before.get("bracket") is None or after.get("bracket") is None:
+        return None
+    if after["bracket"] <= before["bracket"]:
+        return None
+
+    was = {r["rule"] for r in before["detail"]["reasons"]}
+    new_reasons = [r for r in after["detail"]["reasons"] if r["rule"] not in was]
+    return {
+        "from": before["bracket"],
+        "to": after["bracket"],
+        "reasons": new_reasons,
+    }

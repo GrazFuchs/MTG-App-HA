@@ -647,8 +647,14 @@ def _build_wishlist_state(row) -> dict:
 def _wishlist_entity(item_id: int, card_name: str, set_code: str, prefix: str) -> Entity:
     """Describe the HA entity for one wishlist item.
 
-    No `state_class`: a per-item price is not a meaningful long-term statistic,
-    and `monetary` would force `total` (running-sum) semantics onto it.
+    ⚠️ **`state_class: measurement`, and deliberately no `device_class`.**
+    Without a state class Home Assistant keeps no long-term statistics at all,
+    so the price of a wanted card could not be plotted — which is the whole
+    reason to have these sensors. But `device_class: monetary` only accepts
+    `total`, and `total` means a running sum: the wrong reading for a price,
+    and the very misuse that the aggregate value sensors have to be cleaned up
+    for. A plain measurement in EUR gives the honest aggregation (min, max,
+    mean per hour) at the cost of the currency formatting.
     """
     display_set = f" ({set_code})" if set_code else ""
     state_topic = f"{prefix}/wishlist/{item_id}/state"
@@ -661,7 +667,7 @@ def _wishlist_entity(item_id: int, card_name: str, set_code: str, prefix: str) -
         json_attributes_topic=state_topic,
         unit="EUR",
         icon="mdi:cards",
-        device_class="monetary",
+        state_class="measurement",
         device=WISHLIST_DEVICE_INFO,
     )
 

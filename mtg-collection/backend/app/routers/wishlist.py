@@ -43,7 +43,12 @@ def _safe_float(value) -> float | None:
         return None
 
 
-def _build_item_response(row, current_price: float | None) -> WishlistItemResponse:
+def _build_item_response(
+    row,
+    current_price: float | None,
+    bracket_impact: dict | None = None,
+    completes_combo_in: list[str] | None = None,
+) -> WishlistItemResponse:
     """Build a WishlistItemResponse from a DB row + computed price."""
     target = row["target_price_eur"] or 0
     is_deal = current_price is not None and target > 0 and current_price <= target
@@ -84,6 +89,10 @@ def _build_item_response(row, current_price: float | None) -> WishlistItemRespon
         not_received_at=row["not_received_at"] if "not_received_at" in row.keys() else None,
         price_delta_eur=price_delta_eur,
         price_delta_pct=price_delta_pct,
+        has_target=target > 0,
+        is_game_changer=("game_changer" in row.keys() and row["game_changer"] == 1),
+        bracket_impact=bracket_impact,
+        completes_combo_in=completes_combo_in or [],
     )
 
 
@@ -105,7 +114,7 @@ _BASE_SELECT = """
            w.paid_price_eur, w.source, w.not_received_at,
            c.name AS card_name, c.scryfall_id, c.image_uri,
            c.set_name, c.price_eur, c.price_eur_foil,
-           c.color_identity,
+           c.color_identity, c.game_changer,
            d.name AS deck_name,
            (SELECT ph.trend FROM cardmarket_products cp
             JOIN cardmarket_price_history ph ON ph.cm_product_id = cp.cm_product_id
@@ -115,6 +124,80 @@ _BASE_SELECT = """
     LEFT JOIN cards c ON c.id = w.card_id
     LEFT JOIN decks d ON d.id = w.deck_id
 """
+
+
+#: A bracket comparison loads a whole deck, so it is only run where it can
+#: possibly say something: the card has to be assigned to a deck and be one of
+#: the things the rules actually count.
+_MAX_BRACKET_IMPACTS = 25
+
+
+async def _combo_bridges(db, card_names: list[str]) -> dict[str, list[str]]:
+    """Decks where one of these cards is the piece missing from an infinite.
+
+    One query for the whole page: `missing_cards_json` is a short JSON array,
+    and matching the quoted name inside it is exact enough to avoid a card
+    called "Anger" answering for "Anger of the Gods".
+    """
+    names = [n for n in {(n or "").strip() for n in card_names} if n]
+    if not names:
+        return {}
+
+    clauses = " OR ".join(["dc.missing_cards_json LIKE ?"] * len(names))
+    cursor = await db.execute(
+        f"""SELECT DISTINCT d.name AS deck_name, dc.missing_cards_json
+        FROM deck_combos dc JOIN decks d ON d.id = dc.deck_id
+        WHERE dc.is_partial = 1 AND ({clauses})""",
+        [f'%"{n}"%' for n in names],
+    )
+    lookup = {n.lower(): n for n in names}
+    bridges: dict[str, list[str]] = {}
+    for row in await cursor.fetchall():
+        try:
+            missing = json.loads(row["missing_cards_json"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        for entry in missing:
+            key = str(entry).strip().lower()
+            if key in lookup and row["deck_name"] not in bridges.setdefault(key, []):
+                bridges[key].append(row["deck_name"])
+    return bridges
+
+
+async def _bracket_impacts(db, kept: list) -> dict[int, dict]:
+    """"Adding this lifts deck X from bracket a to b", where that is true."""
+    from ..services.bracket import bracket_impact_of_card
+
+    candidates = [
+        (row["id"], row["deck_id"], row["card_id"])
+        for row, _ in kept
+        if row["deck_id"] and row["card_id"]
+        and ("game_changer" in row.keys() and row["game_changer"] == 1)
+    ][:_MAX_BRACKET_IMPACTS]
+
+    impacts: dict[int, dict] = {}
+    for item_id, deck_id, card_id in candidates:
+        try:
+            impact = await bracket_impact_of_card(deck_id, card_id)
+        except Exception:
+            logger.exception("Bracket impact failed for wishlist item %d", item_id)
+            continue
+        if impact:
+            impacts[item_id] = impact
+    return impacts
+
+
+@router.post("/check-deals")
+async def check_deals(notify: bool = Query(True, description="Send the notifications")):
+    """Compare every active entry against its target and report the crossings.
+
+    The scheduler runs this after the daily price sync; this is the way to run
+    it now. Each run also records the current price, which is what the *next*
+    run compares against — so a first run on a fresh database reports nothing
+    and that is correct, not a fault.
+    """
+    from ..services.wishlist_deals import check_wishlist_deals
+    return await check_wishlist_deals(notify=notify)
 
 
 @router.get("/summary", response_model=WishlistSummary)
@@ -222,6 +305,9 @@ async def list_wishlist(
     tag: str | None = Query(None, description="Filter by tag"),
     color: str = Query("", description="Filter by color: W,U,B,R,G,M,C (CSV)"),
     is_deal_only: bool = Query(False, description="Only items where current <= target"),
+    no_target_only: bool = Query(
+        False, description="Only items without a target price — they can never register as a deal"
+    ),
     is_ordered: Optional[bool] = Query(None, description="Filter by ordered flag"),
     sort: str = Query("priority", description="Sort field: priority|added_at|target_price|current_price|delta_eur"),
     page: int = Query(1, ge=1),
@@ -254,6 +340,9 @@ async def list_wishlist(
     if deck_id is not None:
         conditions.append("w.deck_id = ?")
         params.append(deck_id)
+
+    if no_target_only:
+        conditions.append("COALESCE(w.target_price_eur, 0) <= 0")
 
     if tag:
         conditions.append("(',' || w.tags || ',') LIKE ?")
@@ -302,14 +391,25 @@ async def list_wishlist(
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
 
-    items = []
+    kept = []
     for row in rows:
         price = _get_current_price(row)
         if is_deal_only:
             target = row["target_price_eur"] or 0
             if price is None or target <= 0 or price > target:
                 continue
-        items.append(_build_item_response(row, price))
+        kept.append((row, price))
+
+    combo_bridges = await _combo_bridges(db, [r["card_name"] for r, _ in kept])
+    impacts = await _bracket_impacts(db, kept)
+    items = [
+        _build_item_response(
+            row, price,
+            bracket_impact=impacts.get(row["id"]),
+            completes_combo_in=combo_bridges.get((row["card_name"] or "").lower(), []),
+        )
+        for row, price in kept
+    ]
 
     if is_deal_only:
         items = items[offset:offset + page_size]
