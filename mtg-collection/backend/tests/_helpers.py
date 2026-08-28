@@ -21,6 +21,11 @@ async def insert_card(
     rarity: str = "common",
     oracle_id: str | None = None,
     cardmarket_id: int | None = None,
+    oracle_text: str = "",
+    cmc: float = 0,
+    game_changer: int | None = None,
+    mass_land_denial: int | None = None,
+    extra_turn: int | None = None,
 ) -> int:
     """Insert a card row and return its id.
 
@@ -33,8 +38,9 @@ async def insert_card(
         """INSERT INTO cards
         (scryfall_id, oracle_id, name, type_line, color_identity, set_code,
          set_name, collector_number, rarity, price_eur, price_eur_foil,
-         cardmarket_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+         cardmarket_id, oracle_text, cmc, game_changer, mass_land_denial,
+         extra_turn)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             f"sf-{n}",
             oracle_id or f"or-{n}",
@@ -48,6 +54,11 @@ async def insert_card(
             price_eur,
             price_eur_foil,
             cardmarket_id,
+            oracle_text,
+            cmc,
+            game_changer,
+            mass_land_denial,
+            extra_turn,
         ),
     )
     await db.commit()

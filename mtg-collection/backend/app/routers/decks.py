@@ -11,8 +11,24 @@ from ..models.schemas import (
 )
 from ..services.queries import parse_color_identity, query_all_decks
 from ..services.deck_performance import compute_performance_stats
+from ..services.bracket import effective_bracket
 
 router = APIRouter()
+
+
+def _col(row, name):
+    """Read a column that a very old database may not carry yet."""
+    return row[name] if name in row.keys() else None
+
+
+def _json_col(row, name):
+    raw = _col(row, name)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/", response_model=list[DeckSummary])
@@ -36,6 +52,17 @@ async def sync_all_deck_combos(
     """
     from ..services.combo_sync import sync_combos_for_stale_decks
     return await sync_combos_for_stale_decks(max_decks=max_decks or None, force=force)
+
+
+@router.post("/bracket/recompute-all")
+async def recompute_all_brackets():
+    """Recompute every deck's bracket from the cached inputs.
+
+    No network: game changers, combos and the card classification are already
+    in the database. Declared before the `/{deck_id}` routes.
+    """
+    from ..services.bracket import compute_brackets_for_all_decks
+    return await compute_brackets_for_all_decks()
 
 
 @router.get("/compare", response_model=DeckCompareResponse)
@@ -181,6 +208,12 @@ async def get_deck(deck_id: int):
         owner_username=deck["owner_username"] or "",
         bracket=deck["bracket"] or 0,
         user_bracket=deck["user_bracket"],
+        computed_bracket=_col(deck, "computed_bracket"),
+        effective_bracket=effective_bracket(
+            deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"]
+        ),
+        computed_bracket_detail=_json_col(deck, "computed_bracket_detail"),
+        spellbook_bracket_tag=_col(deck, "spellbook_bracket_tag") or "",
         gameplan=deck["gameplan"] or "",
         ai_assessment=deck["ai_assessment"] or "",
         ai_assessment_updated_at=deck["ai_assessment_updated_at"],
@@ -266,6 +299,18 @@ async def sync_deck_combos(deck_id: int):
             status_code=502, detail=f"Spellbook lookup failed: {exc}"
         ) from exc
     return {"count": count}
+
+
+@router.post("/{deck_id}/bracket/recompute")
+async def recompute_deck_bracket(deck_id: int):
+    """Recompute one deck's bracket and return the verdict with its evidence."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    from ..services.bracket import compute_bracket
+    return await compute_bracket(deck_id)
 
 
 @router.get("/{deck_id}/completeness", response_model=DeckCompletenessResponse)

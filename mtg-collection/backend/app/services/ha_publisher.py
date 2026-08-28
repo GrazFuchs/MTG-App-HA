@@ -472,6 +472,12 @@ async def publish_deck_sensors() -> None:
                         "draws": deck["draws"],
                         "last_played": deck["last_played"],
                         "deck_name": deck["deck_name"],
+                        # The bracket rides along on the deck's existing sensor
+                        # rather than getting one of its own. ⚠️ That means it
+                        # only reaches HA for decks played in the last 90 days
+                        # — the sensor does not exist for the others.
+                        "bracket": deck["bracket"],
+                        "bracket_source": deck["bracket_source"],
                     }),
                     retain=True,
                 )

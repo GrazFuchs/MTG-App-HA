@@ -65,6 +65,10 @@ class DeckSummary(BaseModel):
     card_count: int = 0
     folder_name: str = ""
     bracket: int = 0
+    user_bracket: int | None = None
+    computed_bracket: int | None = None
+    #: What to show: hand-set beats computed beats the (always empty) import.
+    effective_bracket: int | None = None
     last_synced: datetime | None = None
 
 
@@ -88,6 +92,14 @@ class DeckDetail(BaseModel):
     owner_username: str = ""
     bracket: int = 0
     user_bracket: int | None = None
+    computed_bracket: int | None = None
+    effective_bracket: int | None = None
+    #: Why the computation landed where it did — the reasons, the counts, and
+    #: how many cards nobody could classify.
+    computed_bracket_detail: dict | None = None
+    #: Commander Spellbook's own label (Exhibition/Core/Oddball/Powerful/Spicy/
+    #: Ruthless/Banned). Not the WotC 1-5 scale; kept for comparison.
+    spellbook_bracket_tag: str = ""
     gameplan: str = ""
     ai_assessment: str = ""
     ai_assessment_updated_at: datetime | None = None

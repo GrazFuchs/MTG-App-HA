@@ -30,6 +30,11 @@ CARD_COLUMN_MIGRATIONS = {
     "game_changer": "ALTER TABLE cards ADD COLUMN game_changer INTEGER",
     "reserved": "ALTER TABLE cards ADD COLUMN reserved INTEGER",
     "scryfall_enriched_at": "ALTER TABLE cards ADD COLUMN scryfall_enriched_at TIMESTAMP",
+    # Commander Spellbook's card classification, cached from /estimate-bracket.
+    # NULL means "Spellbook has not classified this card", which is common: it
+    # only knows the cards that appear in its combo database.
+    "mass_land_denial": "ALTER TABLE cards ADD COLUMN mass_land_denial INTEGER",
+    "extra_turn": "ALTER TABLE cards ADD COLUMN extra_turn INTEGER",
 }
 
 CARDMARKET_COLUMN_MIGRATIONS = {
@@ -84,6 +89,11 @@ CREATE TABLE IF NOT EXISTS cards (
     game_changer INTEGER,
     reserved INTEGER,
     scryfall_enriched_at TIMESTAMP,
+    -- Commander Spellbook's classification of the card, cached per card from
+    -- /estimate-bracket. NULL means unclassified, not "no" — Spellbook only
+    -- knows cards that appear in its combo database (49 of 88 on one deck).
+    mass_land_denial INTEGER,
+    extra_turn INTEGER,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -117,7 +127,15 @@ CREATE TABLE IF NOT EXISTS decks (
     -- now and then, and a deck Spellbook found nothing for has to be
     -- distinguishable from one that was never asked (it stores no rows either
     -- way). See services/combo_sync.py.
-    combos_synced_at TIMESTAMP
+    combos_synced_at TIMESTAMP,
+    -- The locally computed WotC bracket and the evidence for it. The detail is
+    -- the point: a number without the cards that forced it is not reviewable.
+    computed_bracket INTEGER,
+    computed_bracket_detail TEXT,
+    computed_bracket_at TIMESTAMP,
+    -- Commander Spellbook's own verdict, kept beside ours for comparison. It
+    -- is NOT the WotC 1-5 scale (see services/bracket.py).
+    spellbook_bracket_tag TEXT
 );
 
 CREATE TABLE IF NOT EXISTS deck_cards (
@@ -753,6 +771,43 @@ async def _migration_22(db: aiosqlite.Connection):
         )
 
 
+async def _migration_23(db: aiosqlite.Connection):
+    """The computed bracket, and the two card classifications it needs.
+
+    `cards.game_changer` (migration 21) covers one of the four WotC criteria on
+    its own. Mass land denial and extra turns are judgements about rules text
+    rather than a published list, so they are cached per card from Commander
+    Spellbook's `/estimate-bracket`, which classifies them and is maintained.
+    NULL there means "not classified", which is the normal case — Spellbook
+    only knows cards that appear in its combo database.
+
+    `deck_combos.mana_value_needed` comes from the same combo payload we
+    already fetch and is what separates an early two-card combo (bracket 4)
+    from a late one (bracket 3).
+    """
+    cursor = await db.execute("PRAGMA table_info(cards)")
+    card_columns = {row[1] for row in await cursor.fetchall()}
+    for column_name in ("mass_land_denial", "extra_turn"):
+        if column_name not in card_columns:
+            await db.execute(CARD_COLUMN_MIGRATIONS[column_name])
+
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    deck_columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("computed_bracket", "ALTER TABLE decks ADD COLUMN computed_bracket INTEGER"),
+        ("computed_bracket_detail", "ALTER TABLE decks ADD COLUMN computed_bracket_detail TEXT"),
+        ("computed_bracket_at", "ALTER TABLE decks ADD COLUMN computed_bracket_at TIMESTAMP"),
+        ("spellbook_bracket_tag", "ALTER TABLE decks ADD COLUMN spellbook_bracket_tag TEXT"),
+    ):
+        if column_name not in deck_columns:
+            await db.execute(ddl)
+
+    cursor = await db.execute("PRAGMA table_info(deck_combos)")
+    combo_columns = {row[1] for row in await cursor.fetchall()}
+    if combo_columns and "mana_value_needed" not in combo_columns:
+        await db.execute("ALTER TABLE deck_combos ADD COLUMN mana_value_needed REAL")
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -775,6 +830,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     20: _migration_20,
     21: _migration_21,
     22: _migration_22,
+    23: _migration_23,
 }
 
 

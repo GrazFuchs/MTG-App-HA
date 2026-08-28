@@ -126,6 +126,10 @@ def _extract_combo_fields(
         "steps": steps if isinstance(steps, str) else json.dumps(steps),
         "is_partial": 1 if is_partial else 0,
         "missing_cards_json": json.dumps(missing_cards),
+        # What still has to be paid to go off. Together with the combined mana
+        # value of the cards this is what separates an early two-card combo
+        # (bracket 4) from a late one (bracket 3) — see services/bracket.py.
+        "mana_value_needed": combo.get("manaValueNeeded"),
     }
 
 
@@ -181,11 +185,12 @@ async def sync_combos_for_deck(deck_id: int) -> int:
         await db.execute(
             """INSERT OR IGNORE INTO deck_combos
             (deck_id, combo_id, name, color_identity, cards_json, result_json,
-             prerequisites, steps, is_partial, missing_cards_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             prerequisites, steps, is_partial, missing_cards_json, mana_value_needed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (deck_id, fields["combo_id"], fields["name"], fields["color_identity"],
              fields["cards_json"], fields["result_json"], fields["prerequisites"],
-             fields["steps"], fields["is_partial"], fields["missing_cards_json"]),
+             fields["steps"], fields["is_partial"], fields["missing_cards_json"],
+             fields["mana_value_needed"]),
         )
         count += 1
 
@@ -197,7 +202,66 @@ async def sync_combos_for_deck(deck_id: int) -> int:
         "Combo sync deck %d: %d combos (%d complete, %d one card short)",
         deck_id, count, len(included), len(almost),
     )
+
+    # Separate call, separate failure. The combos are already stored; losing
+    # them because the classification endpoint had a bad minute would be the
+    # wrong trade.
+    try:
+        await classify_deck_cards(deck_id, card_names, commander_name)
+    except Exception as exc:
+        logger.warning("Bracket classification failed for deck %d: %s", deck_id, exc)
+
+    # Both bracket inputs this deck owns have just changed, so the standing
+    # answer is stale. Local SQL, no network — cheaper than leaving it wrong.
+    try:
+        from .bracket import compute_bracket
+        await compute_bracket(deck_id)
+    except Exception as exc:
+        logger.warning("Bracket computation failed for deck %d: %s", deck_id, exc)
+
     return count
+
+
+async def classify_deck_cards(
+    deck_id: int, card_names: list[str], commander_name: str | None
+) -> dict[str, int]:
+    """Cache Spellbook's per-card bracket classification for this deck's cards.
+
+    Writes `cards.mass_land_denial` and `cards.extra_turn`, and keeps
+    Spellbook's own `bracketTag` on the deck for comparison. Only cards
+    Spellbook actually classified are written: a card it does not know stays
+    NULL rather than being recorded as a clean "no".
+
+    `gameChanger` is deliberately **not** taken from here even though it is in
+    the payload — Spellbook classifies only the cards in its combo database, so
+    a game changer it does not carry would silently read as absent. That flag
+    comes from Scryfall, which knows every card (see card_enrichment.py).
+    """
+    db = await get_db()
+    data = await spellbook.estimate_bracket(card_names, commander_name)
+
+    classified = 0
+    for entry in data.get("cards", []):
+        name = ((entry.get("card") or {}).get("name") or "").strip()
+        if not name:
+            continue
+        await db.execute(
+            """UPDATE cards SET mass_land_denial = ?, extra_turn = ?
+            WHERE LOWER(name) = LOWER(?)""",
+            (int(bool(entry.get("massLandDenial"))), int(bool(entry.get("extraTurn"))), name),
+        )
+        classified += 1
+
+    await db.execute(
+        "UPDATE decks SET spellbook_bracket_tag = ? WHERE id = ?",
+        (data.get("bracketTag") or "", deck_id),
+    )
+    await db.commit()
+    logger.info(
+        "Bracket classification deck %d: %d of %d cards classified, Spellbook tag %s",
+        deck_id, classified, len(card_names), data.get("bracketTag"),
+    )
+    return {"classified": classified, "asked": len(card_names)}
 
 
 async def sync_combos_for_stale_decks(

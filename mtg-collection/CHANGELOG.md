@@ -1,3 +1,28 @@
+## 0.38.0 — Sprint 04: a bracket the deck can actually be given
+
+Every deck in this collection reported bracket 0. The only source was an Archidekt field that is null on all of them, so the filter, the badge and the deck comparison were all built on a number that never arrived. The bracket is now worked out from what the deck contains — and can be overruled by hand, which is the point.
+
+### Added
+- **A computed WotC bracket, with the evidence attached** (`services/bracket.py`, migration 23). Four criteria, all answerable from data the previous two sprints put in place: game changers (`cards.game_changer`, from Scryfall), complete two-card infinite combos (`deck_combos`), mass land denial and chained extra turns. Each rule that raises the floor records *which cards or combos raised it*, and the deck's badge has a "why?" that shows them. A number without that is not reviewable.
+
+  **The computation only ever answers 2, 3 or 4, and says so.** Bracket 1 (Exhibition) and bracket 5 (cEDH) describe intent — a deck built around a bit, a deck taken to a tournament — and nothing in a decklist separates either from its neighbour. Claiming them would be inventing a result. That is what the hand-set bracket is for.
+- **The bracket is editable and the hand-set value wins.** `user_bracket` already existed and was already sync-proof; it now sits in a badge that shows the *effective* bracket — hand-set, else computed, else the (empty) import — and the same value drives the deck list, its filter and the tile on each deck. `POST /api/decks/{id}/bracket/recompute` and `POST /api/decks/bracket/recompute-all` recompute on demand; the sync does it after every run, since it is local SQL and costs nothing.
+- **Mass land denial and extra turns are cached per card from Commander Spellbook** (`cards.mass_land_denial`, `cards.extra_turn`, filled during the combo sync). Those two are judgements about what a card does rather than a published list, and a hand-written list in this repository is the part that would go stale first. What Spellbook cannot classify stays NULL — *unclassified*, not *clean* — and the bracket detail reports how many cards are in that state, so a thin answer is visible rather than implied. A deliberately narrow oracle-text fallback catches the plainest wordings ("Destroy all lands").
+- **Spellbook's own verdict is kept beside ours** (`decks.spellbook_bracket_tag`). ⚠️ It is **not** the WotC 1–5 scale: the schema documents the values as Exhibition, Core, Oddball, Powerful, Spicy, Ruthless and Banned, and no mapping between the two scales is published. It is shown as a label, never as a number.
+- The per-deck HA sensor carries `bracket` and `bracket_source` as attributes. ⚠️ That sensor only exists for decks played in the last 90 days, so in practice the bracket is an in-app feature.
+
+### Fixed
+- **The "Compare Decks" button was invisible.** It sat inside a block rendered only when some deck had a bracket — and no deck did, so the only entry point to the deck comparison could not be reached at all. It now stands on its own, and the bracket filter next to it works off the effective bracket instead of the empty Archidekt one.
+
+### Notes on the rules
+The bracket guidance is written in prose, so two thresholds are judgements rather than quotations, and both are single named constants:
+- **Three game changers are allowed at bracket 3**; a fourth makes it 4. That one is stated outright.
+- **A two-card infinite counts as "early" — and so bracket 4 — at eight mana or less**, counting the pieces plus whatever the combo still owes. Kiki-Jiki (5) + Deceiver Exarch (3) is eight and is treated as an early combo everywhere; Mikaeus (6) + Triskelion (6) is twelve and is not. A group that reads "before turn seven" differently changes `EARLY_COMBO_MANA_CEILING`.
+- **Tutors are deliberately not counted.** Wizards removed the tutor limits from brackets 1–3 in October 2025.
+
+### Upgrading
+Migration 23 adds the columns. Brackets appear after the next sync, or immediately via `POST /api/decks/bracket/recompute-all` — no network needed for the computation itself, though the card classification arrives with the combo sync.
+
 ## 0.37.0 — Sprint 03: combos for every deck, and what they are short of
 
 The combo cache held 433 combos spread over 4 of 21 decks, and not one of the 418 partial ones named the card it was missing. Two unrelated causes, both fixed here.

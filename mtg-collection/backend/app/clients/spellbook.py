@@ -89,6 +89,44 @@ class SpellbookClient:
         )
         return {"included": included, "almost_included": almost}
 
+    async def estimate_bracket(
+        self,
+        card_names: list[str],
+        commander_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Classify a decklist: per-card and per-combo bracket criteria.
+
+        Returns Spellbook's own `bracketTag` plus, per card, the booleans
+        `gameChanger`, `massLandDenial`, `extraTurn` and `banned`. Those three
+        classifications are judgements about what a card does, and keeping a
+        hand-written list of them in this repository is the part that would go
+        stale first — so they are read from here and cached.
+
+        ⚠️ Two limits, both measured (2026-08-28):
+        * It classifies only the cards it has in its own database — 49 of 88 on
+          one real deck. An absent card is unclassified, not clean. Game
+          changers therefore come from Scryfall, which knows every card.
+        * `bracketTag` is Spellbook's vocabulary (Exhibition, Core, Oddball,
+          Powerful, Spicy, Ruthless, Banned), **not** the WotC 1-5 scale. The
+          two are not the same axis and the schema documents no mapping, so it
+          is carried as a label beside our own number, never as that number.
+        """
+        client = await self._get_client()
+        payload: dict[str, Any] = {
+            "main": [{"card": name, "quantity": 1} for name in card_names]
+        }
+        if commander_name:
+            payload["commanders"] = [{"card": commander_name, "quantity": 1}]
+
+        resp = await client.post("/estimate-bracket", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        logger.info(
+            "Spellbook bracket estimate: tag=%s, %d of %d cards classified",
+            data.get("bracketTag"), len(data.get("cards", [])), len(card_names),
+        )
+        return data
+
     async def get_combo_detail(self, combo_id: str) -> dict[str, Any]:
         """Fetch full details for a specific combo."""
         client = await self._get_client()

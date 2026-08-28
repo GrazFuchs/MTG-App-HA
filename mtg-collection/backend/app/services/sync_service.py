@@ -640,6 +640,15 @@ async def _do_full_sync(is_resync: bool = False) -> dict:
         except Exception as e:
             logger.warning("Scryfall enrichment after sync failed: %s", e)
 
+        # Last, because it reads what the two passes above just wrote: game
+        # changers from the Scryfall enrichment, combos from the top-up.
+        try:
+            from .bracket import compute_brackets_for_all_decks
+
+            await compute_brackets_for_all_decks()
+        except Exception as e:
+            logger.warning("Bracket recompute after sync failed: %s", e)
+
         status = "completed" if not errors else "partial"
         await db.execute(
             """UPDATE sync_log SET status=?, finished_at=CURRENT_TIMESTAMP,

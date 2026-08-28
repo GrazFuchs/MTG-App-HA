@@ -133,7 +133,9 @@ export default function Decks() {
   const filteredDecks = useMemo(() => {
     if (!bracketFilter) return decks;
     const b = parseInt(bracketFilter, 10);
-    return decks.filter(d => d.bracket === b);
+    // The effective bracket, not the Archidekt import — the import is null on
+    // every deck, which is what made this filter unusable in the first place.
+    return decks.filter(d => d.effective_bracket === b);
   }, [decks, bracketFilter]);
 
   const grouped = useMemo(() => {
@@ -151,7 +153,9 @@ export default function Decks() {
   }, [filteredDecks]);
 
   const availableBrackets = useMemo(() => {
-    const set = new Set(decks.map(d => d.bracket).filter(b => b > 0));
+    const set = new Set(
+      decks.map(d => d.effective_bracket).filter((b): b is number => !!b),
+    );
     return [...set].sort();
   }, [decks]);
 
@@ -174,8 +178,10 @@ export default function Decks() {
         accent={accent.oklch}
       />
 
-      {availableBrackets.length > 0 && (
-        <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* The compare entry used to live inside the bracket block, so it was
+          invisible whenever no deck had a bracket — which was every deck. */}
+      <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {availableBrackets.length > 0 && (
           <Select
             value={bracketFilter}
             onChange={(_, d) => setBracketFilter(d.value)}
@@ -186,16 +192,16 @@ export default function Decks() {
               <option key={b} value={String(b)}>Bracket {String(b)}</option>
             ))}
           </Select>
-          <Button
-            appearance="subtle"
-            size="small"
-            onClick={() => navigate('/decks/compare')}
-            style={{ color: sothera.fgMuted, fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1 }}
-          >
-            ⌬ Compare Decks
-          </Button>
-        </div>
-      )}
+        )}
+        <Button
+          appearance="subtle"
+          size="small"
+          onClick={() => navigate('/decks/compare')}
+          style={{ color: sothera.fgMuted, fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1 }}
+        >
+          ⌬ Compare Decks
+        </Button>
+      </div>
 
       {grouped.map(([folder, folderDecks], fi) => (
         <div key={folder} style={{ marginBottom: 36 }}>
@@ -218,9 +224,13 @@ export default function Decks() {
                     <img src={d.featured_image} alt={d.name} className={styles.artImg} />
                     <div className={styles.artOverlay} />
                     <div style={{ position: 'absolute', inset: 0, background: accent.soft, mixBlendMode: 'color', opacity: 0.35 }} />
-                    {d.bracket > 0 && (
-                      <div className={styles.bracketTag} style={{ borderColor: accent.oklch }}>
-                        BR.{d.bracket}
+                    {!!d.effective_bracket && (
+                      <div
+                        className={styles.bracketTag}
+                        style={{ borderColor: accent.oklch }}
+                        title={d.user_bracket ? 'Bracket set by you' : 'Bracket computed from the decklist'}
+                      >
+                        BR.{d.effective_bracket}{d.user_bracket ? '' : '?'}
                       </div>
                     )}
                   </div>

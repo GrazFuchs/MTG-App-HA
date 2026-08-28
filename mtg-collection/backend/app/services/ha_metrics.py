@@ -13,6 +13,8 @@ from typing import Any, NamedTuple
 
 import aiosqlite
 
+from .bracket import effective_bracket
+
 from .queries import (
     DUPLICATES_CTE,
     DUPLICATES_FINAL_CTE,
@@ -303,7 +305,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     Inactive decks are included so their sensors can be cleared from HA.
     """
     cursor = await db.execute(
-        """SELECT d.id, d.name,
+        """SELECT d.id, d.name, d.bracket, d.user_bracket, d.computed_bracket,
                   COUNT(g.id) AS games,
                   SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
                   SUM(CASE WHEN g.result = 'loss' THEN 1 ELSE 0 END) AS losses,
@@ -324,6 +326,14 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         stats.append({
             "deck_id": r["id"],
             "deck_name": r["name"] or f"Deck {r['id']}",
+            "bracket": effective_bracket(
+                r["user_bracket"], r["computed_bracket"], r["bracket"]
+            ),
+            "bracket_source": (
+                "user" if r["user_bracket"]
+                else "computed" if r["computed_bracket"]
+                else "archidekt" if r["bracket"] else "unset"
+            ),
             "games": games,
             "wins": wins,
             "losses": int(r["losses"] or 0),

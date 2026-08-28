@@ -57,7 +57,27 @@ export interface DeckSummary {
   card_count: number;
   folder_name: string;
   bracket: number;
+  user_bracket: number | null;
+  computed_bracket: number | null;
+  /** What to show: hand-set beats computed beats the (always empty) import. */
+  effective_bracket: number | null;
   last_synced: string;
+}
+
+/** Why the computed bracket came out where it did. */
+export interface BracketReason {
+  rule: string;
+  minimum: number;
+  evidence: string[];
+  note: string;
+}
+
+export interface BracketDetail {
+  bracket: number;
+  reasons: BracketReason[];
+  counts: Record<string, number>;
+  coverage: Record<string, number>;
+  scale: string;
 }
 
 export interface DeckCardEntry {
@@ -76,6 +96,11 @@ export interface DeckDetail {
   commander_name: string;
   bracket: number;
   user_bracket: number | null;
+  computed_bracket: number | null;
+  effective_bracket: number | null;
+  computed_bracket_detail: BracketDetail | null;
+  /** Spellbook's own label — not the WotC 1-5 scale. */
+  spellbook_bracket_tag: string;
   gameplan: string;
   ai_assessment: string;
   ai_assessment_updated_at: string | null;
@@ -640,6 +665,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(fields),
     }),
+  recomputeDeckBracket: (deckId: number) =>
+    request<{ deck_id: number; bracket: number; detail: BracketDetail }>(
+      `/api/decks/${deckId}/bracket/recompute`, { method: 'POST' },
+    ),
 
   // Deck performance tracker
   getDeckGames: (deckId: number) => request<DeckGame[]>(`/api/decks/${deckId}/games`),

@@ -13,12 +13,60 @@ Every other test starts from a fresh database, where `CREATE TABLE` does carry
 the new column. That is exactly why the suite stayed green while every real
 upgrade failed, and why this file builds an *old* database on purpose.
 """
-import re
 import sqlite3
 
 import pytest
 
 from app import config, database
+
+
+def _schema_without(*columns: str) -> str:
+    """SCHEMA_SQL with the named columns removed and the commas repaired.
+
+    The legacy fixtures below model databases from before a given migration, and
+    deriving them from the current schema is what stops them from rotting. But
+    each new migration adds columns *after* the ones an older fixture removes,
+    so the dangling comma has to be repaired by structure rather than by a text
+    swap — which is exactly what broke this file when migration 23 landed.
+    """
+    kept = [
+        line for line in database.SCHEMA_SQL.splitlines()
+        if not any(line.strip().startswith(f"{name} ") for name in columns)
+    ]
+    out: list[str] = []
+    for line in kept:
+        # A ")" closing a CREATE TABLE must not follow a trailing comma.
+        if line.strip().startswith(")"):
+            for i in range(len(out) - 1, -1, -1):
+                stripped = out[i].strip()
+                if not stripped or stripped.startswith("--"):
+                    continue
+                out[i] = out[i].rstrip().rstrip(",")
+                break
+        out.append(line)
+    return "\n".join(out)
+
+
+#: `deck_combos` is created by migration 12, not by SCHEMA_SQL, so a fixture
+#: that starts above version 12 has to stand it up itself — migration 22 reads
+#: it, and a real database of that vintage always has it.
+_DECK_COMBOS_DDL = """
+    CREATE TABLE IF NOT EXISTS deck_combos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deck_id INTEGER REFERENCES decks(id) ON DELETE CASCADE,
+        combo_id TEXT NOT NULL,
+        name TEXT DEFAULT '',
+        color_identity TEXT DEFAULT '',
+        cards_json TEXT NOT NULL,
+        result_json TEXT DEFAULT '',
+        prerequisites TEXT DEFAULT '',
+        steps TEXT DEFAULT '',
+        is_partial INTEGER DEFAULT 0,
+        missing_cards_json TEXT DEFAULT '',
+        cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(deck_id, combo_id)
+    )
+"""
 
 
 def _write_legacy_database(path) -> None:
@@ -34,6 +82,7 @@ def _write_legacy_database(path) -> None:
     conn = sqlite3.connect(path)
     try:
         conn.executescript(schema)
+        conn.executescript(_DECK_COMBOS_DDL)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
         assert "cardmarket_id" not in columns, (
             "legacy fixture still declares cards.cardmarket_id — the column "
@@ -81,16 +130,17 @@ def _write_pre_enrichment_database(path) -> None:
     """Write a database as 0.35.0 left it: schema at version 20, none of the
     Scryfall-only columns, and a type line in Archidekt's comma form.
     """
-    schema = re.sub(
-        r"^\s*(game_changer|reserved|scryfall_enriched_at) .*\n",
-        "",
-        database.SCHEMA_SQL,
-        flags=re.MULTILINE,
+    schema = _schema_without(
+        "game_changer", "reserved", "scryfall_enriched_at",
+        "mass_land_denial", "extra_turn", "combos_synced_at",
+        "computed_bracket", "computed_bracket_detail", "computed_bracket_at",
+        "spellbook_bracket_tag",
     )
 
     conn = sqlite3.connect(path)
     try:
         conn.executescript(schema)
+        conn.executescript(_DECK_COMBOS_DDL)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(cards)")}
         assert not columns & {"game_changer", "reserved", "scryfall_enriched_at"}, (
             "legacy fixture still declares the enrichment columns — the "
@@ -159,10 +209,11 @@ async def test_schema_declares_no_index_on_a_column_it_may_not_have(tmp_path):
 
 def _write_pre_combo_stamp_database(path) -> None:
     """A database as 0.36.0 left it: schema 21, no `decks.combos_synced_at`."""
-    schema = "\n".join(
-        line for line in database.SCHEMA_SQL.splitlines()
-        if not line.strip().startswith("combos_synced_at ")
-    ).replace("last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,", "last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    schema = _schema_without(
+        "combos_synced_at", "mass_land_denial", "extra_turn",
+        "computed_bracket", "computed_bracket_detail", "computed_bracket_at",
+        "spellbook_bracket_tag",
+    )
 
     conn = sqlite3.connect(path)
     try:
@@ -171,25 +222,7 @@ def _write_pre_combo_stamp_database(path) -> None:
         assert "combos_synced_at" not in columns, (
             "legacy fixture still declares decks.combos_synced_at"
         )
-        # `deck_combos` comes from migration 12, not from SCHEMA_SQL, so the
-        # fixture has to stand it up the way a 0.36.0 database would have it.
-        conn.execute("""
-            CREATE TABLE deck_combos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                deck_id INTEGER REFERENCES decks(id) ON DELETE CASCADE,
-                combo_id TEXT NOT NULL,
-                name TEXT DEFAULT '',
-                color_identity TEXT DEFAULT '',
-                cards_json TEXT NOT NULL,
-                result_json TEXT DEFAULT '',
-                prerequisites TEXT DEFAULT '',
-                steps TEXT DEFAULT '',
-                is_partial INTEGER DEFAULT 0,
-                missing_cards_json TEXT DEFAULT '',
-                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(deck_id, combo_id)
-            )
-        """)
+        conn.executescript(_DECK_COMBOS_DDL)
         conn.execute("INSERT INTO decks (id, name) VALUES (1, 'Has combos')")
         conn.execute("INSERT INTO decks (id, name) VALUES (2, 'Never asked')")
         conn.execute(
