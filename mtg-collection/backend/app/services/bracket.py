@@ -187,6 +187,23 @@ async def compute_bracket(deck_id: int) -> dict[str, Any]:
             "two_card_combo_late", 3, late_combos,
             "two-card infinite, but an expensive one",
         )
+    if complete_combos and not (early_combos or late_combos):
+        # A deck that wins on the spot is not a Core deck, even when the loop
+        # takes three cards. The *two-card* distinction is what separates
+        # bracket 3 from bracket 4; having an infinite at all is what separates
+        # 3 from 2.
+        #
+        # ⚠️ This is the one rule the sources behind this sprint did not spell
+        # out, and it was added because the live run found it missing: "Surf n
+        # Turf" holds two complete three-card infinites and came out as Core,
+        # while Commander Spellbook independently called the same deck
+        # Ruthless. It moves exactly the decks whose only infinite needs three
+        # or more pieces.
+        raise_floor(
+            "infinite_combo", 3,
+            [(c["name"] or "").strip() for c in complete_combos if c["name"]],
+            "a complete infinite combo, though it needs more than two cards",
+        )
     if mass_land_denial:
         raise_floor("mass_land_denial", 4, mass_land_denial, "mass land denial")
     if chained_turn_combos:

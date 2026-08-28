@@ -177,7 +177,9 @@ async def test_a_three_card_combo_does_not_trigger_the_two_card_rule():
 
     result = await compute_bracket(deck_id)
 
-    assert result["bracket"] == BASE_BRACKET
+    # Not bracket 4 — but not Core either: the deck still wins on the spot.
+    assert result["bracket"] == 3
+    assert _rules(result["detail"]) == {"infinite_combo"}
     assert result["detail"]["counts"]["complete_combos"] == 1
     assert result["detail"]["counts"]["two_card_combos_early"] == 0
 
@@ -354,3 +356,15 @@ async def test_a_hand_set_bracket_wins_over_the_computed_one(client):
     assert detail["user_bracket"] == 2
     assert detail["effective_bracket"] == 2
     assert listed[0]["effective_bracket"] == 2
+
+
+@pytest.mark.anyio
+async def test_a_two_card_combo_does_not_also_report_the_generic_infinite():
+    """The specific reason replaces the general one rather than joining it —
+    otherwise every two-card combo would list its rule twice."""
+    deck_id = await _deck([{"name": "A", "cmc": 1}, {"name": "B", "cmc": 1}])
+    await _add_combo(deck_id, ["A", "B"], mana_value_needed=0)
+
+    result = await compute_bracket(deck_id)
+
+    assert _rules(result["detail"]) == {"two_card_combo_early"}

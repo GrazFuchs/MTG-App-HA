@@ -1,3 +1,8 @@
+## 0.38.1
+
+### Fixed
+- **A deck that wins on the spot was filed as Core.** The bracket rules count *two-card* infinite combos, because that is the distinction the guidance draws between brackets 3 and 4 — so a deck whose only infinite needs three pieces triggered nothing at all and came out at the base bracket. "Surf n Turf" holds two complete three-card infinites and was reported as a bracket 2 deck, while Commander Spellbook independently called the same list Ruthless. Having an infinite at all now sets the floor at 3; needing only two cards for it still sets it at 4. Found by running the computation over all 22 real decks rather than by reading the rules again.
+
 ## 0.38.0 — Sprint 04: a bracket the deck can actually be given
 
 Every deck in this collection reported bracket 0. The only source was an Archidekt field that is null on all of them, so the filter, the badge and the deck comparison were all built on a number that never arrived. The bracket is now worked out from what the deck contains — and can be overruled by hand, which is the point.
