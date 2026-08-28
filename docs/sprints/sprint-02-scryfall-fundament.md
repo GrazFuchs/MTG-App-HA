@@ -1,7 +1,6 @@
 # Sprint 02 — Scryfall-Datenfundament
 
-**Status: ✅ umgesetzt in 0.36.0 (2026-08-27). Deploy + Live-Backfill stehen aus** — siehe
-„Offen (Deployment)" am Ende.
+**Status: ✅ umgesetzt in 0.36.0, deployed + verifiziert am 2026-08-28.** Ist-Protokoll am Ende.
 
 **Ziel:** Die Löcher in der `cards`-Tabelle schließen, die jede weitere Arbeit blockieren:
 `legalities` (war 0 % — Archidekt liefert hartcodiert `"{}"`), `game_changer`, `reserved`,
@@ -63,9 +62,10 @@ MTGStocks deaktiviert ist). Beides ist mit der Normalisierung erledigt.
 - [x] Ein Archidekt-Sync danach macht nichts davon rückgängig (eigener Test).
 - [x] `type_line` ohne Kommas zwischen Typwörtern; Typfilter-Verhalten aus 0.34.0 unverändert
   (`tests/test_type_line.py` + die bestehenden `test_collection_filters.py`).
-- [ ] **Live:** `SELECT COUNT(*) FROM cards WHERE game_changer = 1` ≈ Anzahl besessener Game
-  Changers (Scryfall `is:gamechanger` = 53 gesamt; Stichprobe: Rhystic Study im Bestand → 1).
-  → nach dem Deployment, siehe unten.
+- [x] **Live:** `game_changers = 26` von 7770 Printings (Scryfall `is:gamechanger` = 53 gesamt).
+  ⚠️ **Welche 26 es sind, ist noch nicht nachgesehen** — dafür fehlt eine Abfragemöglichkeit;
+  `CardResponse` führt das Feld nicht, und die Karten-Tabelle enthält neben Besitz auch Deck- und
+  Wunschlisten-Printings. Kommt mit der Bracket-UI in Sprint 04 von selbst.
 
 ## Verifikation
 
@@ -75,17 +75,22 @@ MTGStocks deaktiviert ist). Beides ist mit der Normalisierung erledigt.
 - [x] Typfilter-Regressionstests grün.
 - [x] Backend: **242/244 grün** (die 2 Fehlschläge sind der Altbestand `test_static_files.py`, auch
   auf unverändertem Stand — siehe [README](README.md)).
-- [ ] Backfill-Lauf auf der Live-DB (10.214 Karten ÷ 75 ≈ 137 Requests) im Add-on-Log ohne
-  429-Sperren.
+- [x] Backfill-Lauf auf der Live-DB: **7770 Printings, 104 Requests, 147 s, `status: completed`,
+  0 unresolved, kein einziger 429** (Log: „Scryfall enrichment completed"). Die 10.214 aus dem
+  Sprint-Text waren Sammlungs-*Exemplare*, nicht Printings — `cards` hat 7770 Zeilen.
 
-## Offen (Deployment)
+## Ist-Protokoll (2026-08-28, gegen den Pi 5 gemessen)
 
-1. Deploy 0.36.0 (Build läuft auf dem Pi 5; danach `state: started` **und** `healthz` prüfen).
-2. `POST /api/cards/backfill-scryfall` **einmal ohne `max_cards`** — mit ~137 Requests bei 0,5 s
-   Pacing ein Lauf von wenigen Minuten. Alternativ passiert es über die nächsten ~4 Nächte von
-   selbst (3000 Printings je Sync).
-3. `GET /api/cards/enrichment` gegenlesen: `pending` fällt auf 0, `with_legalities` ≈ `total_cards`,
-   `game_changers` plausibel (Erwartung: eine niedrige zweistellige Zahl über alle Printings —
-   die 12 Wunschlisten-Treffer aus B27 sind **nicht** besessen und zählen hier nicht mit).
-4. Migration-21-Zeile im Log lesen: „canonicalised the type line of N of N comma-form cards" — N
-   sollte der Größenordnung des Bestands entsprechen, nicht 0.
+| Schritt | Ergebnis |
+|---|---|
+| Deploy | `healthz` → `{"status":"ok","version":"0.36.0","db":true,"scheduler_running":true}`, `state: started` |
+| **Migration 21** | „canonicalised the type line of **3382 of 3382** comma-form cards" in **70 ms**. Die 3382 sind genau die Archidekt-Zeilen mit ≥2 Typwörtern oder ≥2 Subtypen — eine Zeile wie `Creature — Bear` trug auch in der alten Fassung kein Komma und war schon kanonisch. |
+| **Backfill** | `checked: 7770 · enriched: 7770 · unresolved: 0 · game_changers: 26` in **147 s**, keine 429. |
+| `legalities` | **41 → 7770** Karten. Das war das größte Loch: praktisch der gesamte Bestand hatte keine Format-Legalität. |
+| `cardmarket_id` | `without_cardmarket_id: 0` — der Cardmarket-Backfill hatte den Bestand inzwischen von selbst erreicht (B4 maß hier 0/98 in Deck 1). Nichts nachzuholen, aber jetzt aus einer Quelle. |
+| `reserved` | **0 von 7770.** Plausibel für eine Sammlung mit ~0,9 € Durchschnittswert je Printing, aber ⚠️ **unbestätigt** — dass der Schreibpfad funktioniert, belegen die 26 Game Changers aus demselben `UPDATE`. |
+| Typzeilen Deck 1 | 98 Karten, **0 mit Komma**, 38 mit Halbgeviertstrich (B3 maß 37 — der Backfill hat eine Zeile aus Scryfall vervollständigt). Beispiel: `Legendary, Enchantment` → `Legendary Enchantment`. |
+
+**Nebenbefund beim Verifizieren:** `GET /api/cards/enrichment` brauchte **12 s** für sechs
+Aggregate über 7770 Zeilen. Das ist zu langsam für das, was es tut — ein Kandidat für Sprint 09,
+kein Blocker.
