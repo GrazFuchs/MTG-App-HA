@@ -90,6 +90,7 @@ MTGStocks deaktiviert ist). Beides ist mit der Normalisierung erledigt.
 | `cardmarket_id` | `without_cardmarket_id: 0` — der Cardmarket-Backfill hatte den Bestand inzwischen von selbst erreicht (B4 maß hier 0/98 in Deck 1). Nichts nachzuholen, aber jetzt aus einer Quelle. |
 | `reserved` | **0 von 7770.** Plausibel für eine Sammlung mit ~0,9 € Durchschnittswert je Printing, aber ⚠️ **unbestätigt** — dass der Schreibpfad funktioniert, belegen die 26 Game Changers aus demselben `UPDATE`. |
 | Typzeilen Deck 1 | 98 Karten, **0 mit Komma**, 38 mit Halbgeviertstrich (B3 maß 37 — der Backfill hat eine Zeile aus Scryfall vervollständigt). Beispiel: `Legendary, Enchantment` → `Legendary Enchantment`. |
+| **Voller Sync danach** | `completed`, 9188 Einträge, 15 min, `error: ""` — und **`with_legalities` steht danach immer noch auf 7770**, `game_changers` auf 26, Deck 1 weiter bei 0 Kommas. Das ist der Beweis für Punkt (a): derselbe Sync hätte vorher alle 7770 Legalitäten mit `{}` überschrieben. Der Post-Sync-Hook lief und fand nichts (`checked: 0`, deshalb keine Logzeile) — die „einmal fragen"-Regel greift in Produktion. |
 
 **Nebenbefund beim Verifizieren:** `GET /api/cards/enrichment` brauchte **12 s** für sechs
 Aggregate über 7770 Zeilen. Das ist zu langsam für das, was es tut — ein Kandidat für Sprint 09,
