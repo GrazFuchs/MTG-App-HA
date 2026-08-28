@@ -75,6 +75,7 @@ _UPDATE_SQL = """
         keywords = COALESCE(?, keywords),
         edhrec_rank = COALESCE(?, edhrec_rank),
         cardmarket_id = ?,
+        layout = COALESCE(?, layout),
         type_line = COALESCE(?, type_line),
         oracle_text = CASE WHEN COALESCE(oracle_text, '') = ''
                            THEN COALESCE(?, oracle_text) ELSE oracle_text END,
@@ -117,6 +118,7 @@ def _update_params(card: dict[str, Any], card_id: int) -> tuple:
         json.dumps(keywords) if keywords is not None else None,
         card.get("edhrec_rank"),
         card.get("cardmarket_id") or _NO_CARDMARKET_PRODUCT,
+        card.get("layout") or None,
         type_line,
         oracle_text,
         cmc if cmc else None,

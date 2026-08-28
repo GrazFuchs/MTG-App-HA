@@ -306,6 +306,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     """
     cursor = await db.execute(
         """SELECT d.id, d.name, d.bracket, d.user_bracket, d.computed_bracket,
+                  d.power_score, d.power_level,
                   COUNT(g.id) AS games,
                   SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
                   SUM(CASE WHEN g.result = 'loss' THEN 1 ELSE 0 END) AS losses,
@@ -334,6 +335,8 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
                 else "computed" if r["computed_bracket"]
                 else "archidekt" if r["bracket"] else "unset"
             ),
+            "power_score": r["power_score"],
+            "power_level": r["power_level"],
             "games": games,
             "wins": wins,
             "losses": int(r["losses"] or 0),

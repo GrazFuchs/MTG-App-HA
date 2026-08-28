@@ -10,6 +10,7 @@ import { UserBracketBadge } from '../components/deck/UserBracketBadge';
 import { GameplanBox } from '../components/deck/GameplanBox';
 import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 import { DeckCombosSection } from '../components/deck/DeckCombosSection';
+import { DeckPowerSection } from '../components/deck/DeckPowerSection';
 import { DeckCompletenessSection } from '../components/deck/DeckCompletenessSection';
 import { DeckPerformanceSection } from '../components/deck/DeckPerformanceSection';
 import { sothera } from '../theme/sothera';
@@ -290,6 +291,8 @@ export default function DeckView() {
       <AIAssessmentBox deck={deck} />
 
       {/* Combos & Completeness */}
+      <DeckPowerSection deck={deck} onUpdate={setDeck} />
+
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />
       <DeckPerformanceSection deckId={deck.id} />

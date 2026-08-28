@@ -478,6 +478,8 @@ async def publish_deck_sensors() -> None:
                         # — the sensor does not exist for the others.
                         "bracket": deck["bracket"],
                         "bracket_source": deck["bracket_source"],
+                        "power_score": deck["power_score"],
+                        "power_level": deck["power_level"],
                     }),
                     retain=True,
                 )

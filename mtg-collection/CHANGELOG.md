@@ -1,3 +1,21 @@
+## 0.39.0 — Sprint 05: a power score, kept apart from the bracket
+
+A port of edhpowerlevel.com's scoring, computed offline from the fields the Scryfall enrichment already stores. It answers a different question from the bracket and is deliberately not allowed to touch it: the bracket asks what a deck is *capable of*, this asks what its cards are *worth and wanted*, scaled by how cheaply the deck deploys them. Combos, game changers and land denial feed the bracket only — the same separation the original makes.
+
+### Added
+- **`services/power_level.py`** — the full chain: a price and a popularity rating per card, weighted 1.25 and 0.75, the land factor, the flat floor for basics, the tipping point at 65% of non-land impact, and the efficiency scaling that turns the sum into a score out of 1000 and a level out of 10. Roughly ninety card overrides come with it (Sol Ring's price counted eightfold, free spells at zero mana, four commanders worth three to four times their own impact when they are actually the commander).
+
+  Five things in it look like bugs and are faithful: the interpolator weights the decile boundary but not the fraction inside it; efficiency is not clamped, so a very cheap deck scores above ten and a very expensive one goes negative; a modal double-faced card counts as a land and drops out of the average mana cost entirely; basic lands get their flat value *after* the land factor; and the commander multiplier applies only in the command zone. Each has a test that would fail if someone tidied it up.
+- **`decks.power_score` / `power_level` / `power_detail`** (migration 24), a power panel in the deck view — score first, since the original's author recommends comparing that rather than the level — with the efficiency, the tipping point, the impact spread by mana value, the five cards carrying the score, and the caveat that none of it measures synergy or consistency. `POST /api/decks/{id}/power/recompute` and `/api/decks/power/recompute-all`; the sync does it after every run.
+- **`GET /api/decks/{id}/power/reference-url`** and a button beside the panel: the original runs client-side in a browser, so the only way to check the port is to open the same list there. The link is built the way the site's own encoder does — `~` between lines, `+` for spaces, `~Z~` to close it, and `[Commander]` kept, because the commander multiplier depends on it.
+- `cards.layout`, needed for exactly one rule (recognising a modal double-faced card). Migration 24 clears the enrichment stamp so the next pass fills it.
+- The per-deck HA sensor carries `power_score` and `power_level` alongside the bracket.
+
+### Notes
+**The popularity curve is from September 2024 and is left that way on purpose.** It scores a card by `27000 − edhrec_rank`, where 27,000 was the Commander-legal card count then. Raising only that last number is not an update: the other ten stops are decile boundaries of the same 2024 distribution, so moving the top alone yields a curve that is neither the original nor a correct recalibration — while silently shifting every deck's popularity. A real refresh means re-deriving all eleven stops. Until then the 2024 curve stands, because it is the only version a result can be checked against.
+
+**Our USD price comes from Archidekt where the original reads Scryfall.** They track each other but are not the same number, so a small divergence from the reference is expected and is not a porting error.
+
 ## 0.38.3
 
 ### Fixed

@@ -35,6 +35,9 @@ CARD_COLUMN_MIGRATIONS = {
     # only knows the cards that appear in its combo database.
     "mass_land_denial": "ALTER TABLE cards ADD COLUMN mass_land_denial INTEGER",
     "extra_turn": "ALTER TABLE cards ADD COLUMN extra_turn INTEGER",
+    # Scryfall's card layout. The power-level port needs it for one thing:
+    # a modal double-faced card counts as a land there (services/power_level.py).
+    "layout": "ALTER TABLE cards ADD COLUMN layout TEXT DEFAULT ''",
 }
 
 CARDMARKET_COLUMN_MIGRATIONS = {
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS cards (
     -- knows cards that appear in its combo database (49 of 88 on one deck).
     mass_land_denial INTEGER,
     extra_turn INTEGER,
+    layout TEXT DEFAULT '',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -135,7 +139,14 @@ CREATE TABLE IF NOT EXISTS decks (
     computed_bracket_at TIMESTAMP,
     -- Commander Spellbook's own verdict, kept beside ours for comparison. It
     -- is NOT the WotC 1-5 scale (see services/bracket.py).
-    spellbook_bracket_tag TEXT
+    spellbook_bracket_tag TEXT,
+    -- The edhpowerlevel port (services/power_level.py). Deliberately separate
+    -- from the bracket: one measures demand times curve efficiency, the other
+    -- what the deck is capable of, and mixing them makes both unreadable.
+    power_score REAL,
+    power_level REAL,
+    power_detail TEXT,
+    power_computed_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS deck_cards (
@@ -808,6 +819,33 @@ async def _migration_23(db: aiosqlite.Connection):
         await db.execute("ALTER TABLE deck_combos ADD COLUMN mana_value_needed REAL")
 
 
+async def _migration_24(db: aiosqlite.Connection):
+    """The power score, and the one card field its port still needed.
+
+    `cards.layout` is there for a single rule: edhpowerlevel treats a modal
+    double-faced card as a land, and that cannot be read off a type line.
+    It fills on the next Scryfall enrichment pass.
+    """
+    cursor = await db.execute("PRAGMA table_info(cards)")
+    card_columns = {row[1] for row in await cursor.fetchall()}
+    if "layout" not in card_columns:
+        await db.execute(CARD_COLUMN_MIGRATIONS["layout"])
+        # Everything already enriched predates the column, so it has to be
+        # asked about again — clearing the stamp is what queues that up.
+        await db.execute("UPDATE cards SET scryfall_enriched_at = NULL")
+
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    deck_columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("power_score", "ALTER TABLE decks ADD COLUMN power_score REAL"),
+        ("power_level", "ALTER TABLE decks ADD COLUMN power_level REAL"),
+        ("power_detail", "ALTER TABLE decks ADD COLUMN power_detail TEXT"),
+        ("power_computed_at", "ALTER TABLE decks ADD COLUMN power_computed_at TIMESTAMP"),
+    ):
+        if column_name not in deck_columns:
+            await db.execute(ddl)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -831,6 +869,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     21: _migration_21,
     22: _migration_22,
     23: _migration_23,
+    24: _migration_24,
 }
 
 

@@ -221,6 +221,9 @@ def parse_scryfall_card(data: dict[str, Any]) -> dict[str, Any]:
         # for is never left NULL, since NULL means "never asked".
         "game_changer": int(bool(data.get("game_changer"))),
         "reserved": int(bool(data.get("reserved"))),
+        # Needed only to recognise a modal double-faced card, which the
+        # power-level port counts as a land.
+        "layout": data.get("layout", ""),
     }
 
 

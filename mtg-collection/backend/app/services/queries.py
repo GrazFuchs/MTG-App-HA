@@ -529,7 +529,8 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     cursor = await db.execute(
         """SELECT d.id, d.archidekt_id, d.name, d.format, d.commander_name,
         d.featured_image, d.last_synced, COALESCE(SUM(dc.quantity), 0) as card_count,
-        d.folder_name, d.bracket, d.user_bracket, d.computed_bracket
+        d.folder_name, d.bracket, d.user_bracket, d.computed_bracket,
+        d.power_score, d.power_level
         FROM decks d LEFT JOIN deck_cards dc ON dc.deck_id = d.id
         GROUP BY d.id ORDER BY d.name"""
     )
@@ -542,6 +543,7 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         "folder_name": r[8] or "", "bracket": r[9] or 0,
         "user_bracket": r[10], "computed_bracket": r[11],
         "effective_bracket": effective_bracket(r[10], r[11], r[9]),
+        "power_score": r[12], "power_level": r[13],
     } for r in rows]
 
 

@@ -69,6 +69,10 @@ class DeckSummary(BaseModel):
     computed_bracket: int | None = None
     #: What to show: hand-set beats computed beats the (always empty) import.
     effective_bracket: int | None = None
+    #: Deliberately separate from the bracket — demand x curve efficiency, not
+    #: what the deck can do (services/power_level.py).
+    power_score: float | None = None
+    power_level: float | None = None
     last_synced: datetime | None = None
 
 
@@ -100,6 +104,9 @@ class DeckDetail(BaseModel):
     #: Commander Spellbook's own label (Exhibition/Core/Oddball/Powerful/Spicy/
     #: Ruthless/Banned). Not the WotC 1-5 scale; kept for comparison.
     spellbook_bracket_tag: str = ""
+    power_score: float | None = None
+    power_level: float | None = None
+    power_detail: dict | None = None
     gameplan: str = ""
     ai_assessment: str = ""
     ai_assessment_updated_at: datetime | None = None

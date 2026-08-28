@@ -61,6 +61,8 @@ export interface DeckSummary {
   computed_bracket: number | null;
   /** What to show: hand-set beats computed beats the (always empty) import. */
   effective_bracket: number | null;
+  power_score: number | null;
+  power_level: number | null;
   last_synced: string;
 }
 
@@ -70,6 +72,21 @@ export interface BracketReason {
   minimum: number;
   evidence: string[];
   note: string;
+}
+
+export interface PowerDetail {
+  score: number;
+  power_level: number;
+  efficiency: number;
+  tipping_point: number;
+  avg_cost: number;
+  total_impact: number;
+  cards: number;
+  lands: number;
+  top_cards: { name: string; impact: number }[];
+  impact_by_cmc: Record<string, number>;
+  pop_curve_derived: string;
+  caveat: string;
 }
 
 export interface BracketDetail {
@@ -101,6 +118,9 @@ export interface DeckDetail {
   computed_bracket_detail: BracketDetail | null;
   /** Spellbook's own label — not the WotC 1-5 scale. */
   spellbook_bracket_tag: string;
+  power_score: number | null;
+  power_level: number | null;
+  power_detail: PowerDetail | null;
   gameplan: string;
   ai_assessment: string;
   ai_assessment_updated_at: string | null;
@@ -665,6 +685,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(fields),
     }),
+  recomputeDeckPower: (deckId: number) =>
+    request<{ deck_id: number; score: number; level: number; detail: PowerDetail }>(
+      `/api/decks/${deckId}/power/recompute`, { method: 'POST' },
+    ),
+  getDeckPowerReferenceUrl: (deckId: number) =>
+    request<{ url: string }>(`/api/decks/${deckId}/power/reference-url`),
   recomputeDeckBracket: (deckId: number) =>
     request<{ deck_id: number; bracket: number; detail: BracketDetail }>(
       `/api/decks/${deckId}/bracket/recompute`, { method: 'POST' },

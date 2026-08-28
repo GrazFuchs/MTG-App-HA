@@ -65,6 +65,13 @@ async def recompute_all_brackets():
     return await compute_brackets_for_all_decks()
 
 
+@router.post("/power/recompute-all")
+async def recompute_all_power_levels():
+    """Recompute every deck's power score. Local arithmetic, no network."""
+    from ..services.power_level import compute_power_for_all_decks
+    return await compute_power_for_all_decks()
+
+
 @router.get("/compare", response_model=DeckCompareResponse)
 async def compare_decks(ids: str = Query(..., description="Comma-separated deck IDs (max 4)")):
     """Compare 2-4 decks: common cards, unique cards, color identity overlap."""
@@ -213,6 +220,9 @@ async def get_deck(deck_id: int):
             deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"]
         ),
         computed_bracket_detail=_json_col(deck, "computed_bracket_detail"),
+        power_score=_col(deck, "power_score"),
+        power_level=_col(deck, "power_level"),
+        power_detail=_json_col(deck, "power_detail"),
         spellbook_bracket_tag=_col(deck, "spellbook_bracket_tag") or "",
         gameplan=deck["gameplan"] or "",
         ai_assessment=deck["ai_assessment"] or "",
@@ -311,6 +321,34 @@ async def recompute_deck_bracket(deck_id: int):
 
     from ..services.bracket import compute_bracket
     return await compute_bracket(deck_id)
+
+
+@router.post("/{deck_id}/power/recompute")
+async def recompute_deck_power(deck_id: int):
+    """Recompute one deck's power score and return it with its working."""
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    from ..services.power_level import compute_power_level
+    return await compute_power_level(deck_id)
+
+
+@router.get("/{deck_id}/power/reference-url")
+async def deck_power_reference_url(deck_id: int):
+    """The edhpowerlevel.com link for this deck, to check the port against.
+
+    The original runs client-side in a browser, so this is the only way to
+    compare: open the link, read its numbers, put them beside ours.
+    """
+    db = await get_db()
+    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    from ..services.power_level import reference_url
+    return {"url": await reference_url(deck_id)}
 
 
 @router.get("/{deck_id}/completeness", response_model=DeckCompletenessResponse)

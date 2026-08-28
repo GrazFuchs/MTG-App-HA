@@ -245,6 +245,15 @@ export default function Decks() {
                         BR.{d.effective_bracket}
                       </div>
                     )}
+                    {d.power_score != null && (
+                      <div
+                        className={styles.bracketTag}
+                        style={{ left: 'auto', right: '10px', borderColor: accent.oklch, borderStyle: 'solid' }}
+                        title={`Power score ${Math.round(d.power_score)} of 1000 (level ${d.power_level?.toFixed(1)}) — demand times curve efficiency, not what the deck can do`}
+                      >
+                        PWR {Math.round(d.power_score)}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className={styles.cardBody}>
