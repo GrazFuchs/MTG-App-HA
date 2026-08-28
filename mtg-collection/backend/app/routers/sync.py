@@ -1,6 +1,6 @@
 """Sync management routes."""
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from ..database import get_db
 from ..models.schemas import SyncLogEntry, SyncStatus
 from ..config import get_settings
@@ -89,10 +89,17 @@ async def _run_sync():
 
 
 @router.get("/history", response_model=list[SyncLogEntry])
-async def get_sync_history():
+async def get_sync_history(limit: int = Query(20, ge=1, le=500)):
+    """Past sync runs, newest first.
+
+    The limit used to be hardcoded at 20, which is fine for the settings page
+    and useless for the question this endpoint is actually needed for: "did an
+    aborted sync ever leave half-written quantities behind". Twenty rows cover
+    three weeks of nightly runs; the answer needs all of them.
+    """
     db = await get_db()
     cursor = await db.execute(
-        "SELECT * FROM sync_log ORDER BY started_at DESC LIMIT 20"
+        "SELECT * FROM sync_log ORDER BY started_at DESC LIMIT ?", (limit,)
     )
     rows = await cursor.fetchall()
     return [

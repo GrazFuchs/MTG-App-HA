@@ -897,6 +897,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /** Keep or dismiss many events in one request. Selling stays per card. */
+  bulkDecideTriage: (eventIds: number[], action: 'keep' | 'dismiss', source?: string) =>
+    request<{ decided: number; failed: { event_id: number; error: string }[]; event_ids: number[] }>(
+      '/api/acquisitions/bulk-decide',
+      { method: 'POST', body: JSON.stringify({ event_ids: eventIds, action, source }) },
+    ),
   undoTriage: (eventId: number) =>
     request<{ status: string; event_id: number }>(`/api/acquisitions/${eventId}/undo`, { method: 'POST' }),
 };

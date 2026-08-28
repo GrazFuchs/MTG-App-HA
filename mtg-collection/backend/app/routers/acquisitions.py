@@ -1,5 +1,9 @@
 """Acquisitions / Inbox triage API routes."""
 import json
+import logging
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -20,6 +24,8 @@ from ..services.queries import (
 )
 from ..services.sync_service import upsert_card
 from ..services.triage_advisor import get_suggestion
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -433,6 +439,53 @@ async def decide_triage(event_id: int, req: TriageDecisionRequest):
 
     schedule_inbox_publish()
     return {"status": "ok", "event_id": event_id, "triage_state": triage_state}
+
+
+class BulkDecideRequest(BaseModel):
+    """Several events, one decision.
+
+    Only the decisions that need nothing per card are offered here: `keep` and
+    `dismiss`. Selling asks for a price, a condition and a listing per card, so
+    a bulk variant would either invent those or refuse half the batch — the
+    single-card dialog stays the way to sell.
+    """
+
+    event_ids: list[int] = Field(..., min_length=1, max_length=500)
+    action: Literal["keep", "dismiss"]
+    source: str | None = None
+
+
+@router.post("/bulk-decide")
+async def bulk_decide(req: BulkDecideRequest):
+    """Decide many events at once, reporting each one that could not be.
+
+    The real shape of this inbox is a bulk import: all 137 open cards arrived on
+    one day and 127 of them are worth under 50 cents. One card at a time was
+    never the wrong *interface*, it was the wrong *unit*.
+
+    Every event goes through the same `decide_triage` as a single decision — no
+    second booking path, so the snapshot, the sensor refresh and the error
+    handling stay identical. A failure on one card is reported and the rest
+    continue: the alternative is 136 successful decisions rolled back because
+    one card had gone stale.
+    """
+    decided: list[int] = []
+    failed: list[dict] = []
+
+    for event_id in req.event_ids:
+        try:
+            await decide_triage(
+                event_id,
+                TriageDecisionRequest(action=req.action, source=req.source or "other"),
+            )
+            decided.append(event_id)
+        except HTTPException as exc:
+            failed.append({"event_id": event_id, "error": exc.detail})
+        except Exception as exc:  # noqa: BLE001 — one bad row must not stop the batch
+            logger.exception("Bulk decide failed for event %d", event_id)
+            failed.append({"event_id": event_id, "error": str(exc)})
+
+    return {"decided": len(decided), "failed": failed, "event_ids": decided}
 
 
 @router.post("/{event_id}/undo")

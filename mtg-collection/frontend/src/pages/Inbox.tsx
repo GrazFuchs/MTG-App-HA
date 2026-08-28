@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { makeStyles } from '@griffel/react';
-import { Button, Input, Select, Spinner } from '@fluentui/react-components';
+import { Button, Checkbox, Input, Select, Spinner } from '@fluentui/react-components';
 import {
   ChevronLeft24Regular,
   ChevronRight24Regular,
   Search24Regular,
 } from '@fluentui/react-icons';
-import { api, TriageDecisionPayload, InboxAcquisitionStats } from '../api';
+import { api, AcquisitionEvent, TriageDecisionPayload, InboxAcquisitionStats } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
@@ -144,6 +144,10 @@ export default function Inbox() {
   const [pageSize] = useState(50);
   const [minValue, setMinValue] = useState(0);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [lastDecision, setLastDecision] = useState<{ ids: number[]; label: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [colorFilter, setColorFilter] = useState('');
@@ -207,11 +211,121 @@ export default function Inbox() {
   const total = eventsData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const handleDecide = async (eventId: number, payload: TriageDecisionPayload) => {
-    await api.decideTriage(eventId, payload);
-    queryClient.invalidateQueries({ queryKey: ['inbox-pending'] });
+  /**
+   * Take decided cards out of the loaded page instead of refetching it.
+   *
+   * Invalidating `inbox-pending` replaced the whole list, which re-collapsed
+   * the colour groups and threw the scroll position away after every single
+   * decision — with 137 cards in one bucket that is the difference between
+   * triaging and hunting for your place again.
+   */
+  const dropFromList = (ids: number[]) => {
+    const gone = new Set(ids);
+    queryClient.setQueriesData<{ items: AcquisitionEvent[]; total: number }>(
+      { queryKey: ['inbox-pending'] },
+      (old) => old && {
+        ...old,
+        items: old.items.filter(e => !gone.has(e.id)),
+        total: Math.max(0, old.total - ids.filter(id => old.items.some(e => e.id === id)).length),
+      },
+    );
     queryClient.invalidateQueries({ queryKey: ['inbox-stats'] });
+    setSelected(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
   };
+
+  const handleDecide = async (eventId: number, payload: TriageDecisionPayload) => {
+    // No catch at all used to live here: a rejected decision vanished into the
+    // console while the card sat there looking undecided.
+    try {
+      await api.decideTriage(eventId, payload);
+      setDecisionError(null);
+      dropFromList([eventId]);
+      setLastDecision({ ids: [eventId], label: `1 card · ${payload.action}` });
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  };
+
+  const bulkDecide = async (action: 'keep' | 'dismiss') => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setBusy(true);
+    try {
+      const res = await api.bulkDecideTriage(ids, action, defaultSource ?? undefined);
+      dropFromList(res.event_ids);
+      setDecisionError(
+        res.failed.length
+          ? `${res.failed.length} of ${ids.length} could not be decided: ${res.failed[0].error}`
+          : null,
+      );
+      if (res.event_ids.length) {
+        setLastDecision({ ids: res.event_ids, label: `${res.event_ids.length} cards · ${action}` });
+      }
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** `POST /undo` shipped without a single caller — 964 decisions with no way back. */
+  const undoLast = async () => {
+    if (!lastDecision) return;
+    setBusy(true);
+    try {
+      await Promise.all(lastDecision.ids.map(id => api.undoTriage(id)));
+      setLastDecision(null);
+      queryClient.invalidateQueries({ queryKey: ['inbox-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-stats'] });
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const visibleIds = events.map(e => e.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id));
+
+  const toggleOne = (id: number, on: boolean) =>
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (on) next.add(id); else next.delete(id);
+      return next;
+    });
+
+  const toggleAllVisible = (on: boolean) =>
+    setSelected(prev => {
+      const next = new Set(prev);
+      visibleIds.forEach(id => (on ? next.add(id) : next.delete(id)));
+      return next;
+    });
+
+  /**
+   * K and D decide the current selection.
+   *
+   * Deliberately not "the focused card": with a hundred cards in one bucket
+   * the thing you are working on is the selection, and a shortcut that acts on
+   * whatever the browser considers focused is a shortcut nobody can predict.
+   * Selling stays out of it — it needs a price.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || !selected.size) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') { e.preventDefault(); void bulkDecide('keep'); }
+      if (key === 'd') { e.preventDefault(); void bulkDecide('dismiss'); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const handleSkip = (eventId: number) => {
     setSkipped(prev => new Set(prev).add(eventId));
@@ -398,6 +512,59 @@ export default function Inbox() {
           />
         )}>
           <>
+            {decisionError && (
+              <div style={{ marginBottom: 12 }}>
+                <ErrorBanner
+                  title="Decision failed"
+                  message={decisionError}
+                  action={<Button size="small" onClick={() => setDecisionError(null)}>Dismiss</Button>}
+                />
+              </div>
+            )}
+
+            {lastDecision && (
+              <div style={{
+                marginBottom: 12, padding: '8px 12px', display: 'flex', gap: 12,
+                alignItems: 'center', background: sothera.glassBg,
+                border: `1px solid ${sothera.glassBorder}`, borderRadius: 4,
+              }}>
+                <span style={{ fontSize: 12, color: sothera.fgMuted }}>
+                  Decided: {lastDecision.label}
+                </span>
+                <Button size="small" appearance="subtle" disabled={busy} onClick={undoLast}>
+                  Undo
+                </Button>
+                <Button size="small" appearance="transparent" onClick={() => setLastDecision(null)}>
+                  ✕
+                </Button>
+              </div>
+            )}
+
+            {/* Bulk bar. The real workload is a bulk import landing at once —
+                127 of the 137 open cards are worth under 50 cents — so the
+                unit of work is a selection, not a card. */}
+            <div style={{
+              marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+            }}>
+              <Checkbox
+                label={`Select all ${visibleIds.length} shown`}
+                checked={allVisibleSelected}
+                onChange={(_, d) => toggleAllVisible(!!d.checked)}
+              />
+              <span style={{ fontSize: 12, color: sothera.fgMuted, fontFamily: sothera.fontMono }}>
+                {selected.size} selected
+              </span>
+              <Button size="small" disabled={!selected.size || busy} onClick={() => bulkDecide('keep')}>
+                Keep ({selected.size})
+              </Button>
+              <Button size="small" disabled={!selected.size || busy} onClick={() => bulkDecide('dismiss')}>
+                Dismiss ({selected.size})
+              </Button>
+              <span style={{ fontSize: 10, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>
+                K = keep · D = dismiss
+              </span>
+            </div>
+
             {activeBuckets.map(bucket => {
               const bucketEvents = grouped.get(bucket)!.map(item => item._ev);
               const isOpen = openColors.has(bucket);
@@ -408,14 +575,23 @@ export default function Inbox() {
                     <span>{INBOX_BUCKET_EMOJI[bucket]} {INBOX_BUCKET_LABELS[bucket]} ({bucketEvents.length})</span>
                   </div>
                   {isOpen && bucketEvents.map(event => (
-                    <AcquisitionCard
-                      key={event.id}
-                      event={event}
-                      onDecide={handleDecide}
-                      onSkip={handleSkip}
-                      defaultSource={defaultSource}
-                      onSourceChange={handleSourceChange}
-                    />
+                    <div key={event.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <Checkbox
+                        checked={selected.has(event.id)}
+                        onChange={(_, d) => toggleOne(event.id, !!d.checked)}
+                        aria-label={`Select ${event.card.name}`}
+                        style={{ marginTop: 12 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <AcquisitionCard
+                          event={event}
+                          onDecide={handleDecide}
+                          onSkip={handleSkip}
+                          defaultSource={defaultSource}
+                          onSourceChange={handleSourceChange}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               );

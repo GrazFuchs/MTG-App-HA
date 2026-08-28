@@ -1,3 +1,25 @@
+## 0.43.0 — Sprint 08: the inbox was the wrong unit, not the wrong interface
+
+The plan for this release was to hunt a bug: the suspicion was that aborted syncs were booking phantom acquisitions, and that the 964 decisions a month were largely fabricated. Measuring first said otherwise, so the release does something else.
+
+### What the measurement said
+Every one of the last twenty sync runs completed; none was partial or failed. Condition and language have been recorded the same way since May, so no key change ever re-booked an owned card. And the events do not trickle in at 32 a day — they arrive in bursts on about twenty days across four months, the two most recent lining up exactly with the two days the collection actually grew.
+
+**All 137 open cards were detected on one day, and 127 of them are worth under 50 cents.** The whole backlog is €72. The queue is real; it is just one bulk import, and deciding it one card at a time was the wrong unit of work.
+
+### Added
+- **Bulk triage.** A checkbox per card, "select all shown", and keep/dismiss for the whole selection — `POST /api/acquisitions/bulk-decide`. Every card still goes through the same decision path as a single one, so the booking snapshot, the sensor refresh and the error handling are identical; a card that fails is reported by name and the rest carry on, because rolling back 136 good decisions over one stale row is the worse outcome. Selling stays per card: it needs a price, a condition and a listing, and a bulk version would have to invent them.
+- **Undo.** `POST /{id}/undo` had been implemented for months **without a single caller**. Every decision — single or bulk — now leaves an undo bar that puts the cards back.
+- **K and D** decide the current selection. Deliberately not "the focused card": with a hundred cards in one bucket the thing you are working on is the selection, and a shortcut that acts on whatever the browser considers focused is one nobody can predict.
+
+### Fixed
+- **A failed decision was invisible.** The decision path had no `catch` at all: a rejected request went to the console while the card sat there looking undecided. Failures now show a banner.
+- **The list jumped after every decision.** Deciding invalidated the whole query, so the page reloaded, the colour groups re-collapsed and the scroll position was lost. Decided cards are now removed from the loaded page instead — with 137 cards in one bucket that is the difference between triaging and finding your place again.
+- **`GET /api/sync/history` was capped at 20 rows in code.** Fine for the settings page, useless for the one question it was needed for here — whether any sync had ever aborted. It takes a `limit` now.
+
+### Not done, and why
+The suspected phantom-event mechanism was **not** confirmed, so nothing was changed about how events are booked. The guard it would have needed is already there: events are only generated when the sync walked every page. Rebuilding that on a hypothesis the data contradicts would have been a fix in search of a bug.
+
 ## 0.42.0 — Sprint 09: the display bugs had three causes, not twelve
 
 A dialog you could not reach, a popup drawn over by the cards below it, duplicated listing rows, a white page after a reload. Four releases fixed four symptoms. This one goes after what they share.
