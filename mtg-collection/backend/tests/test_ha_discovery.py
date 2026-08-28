@@ -548,3 +548,30 @@ def test_utc_iso_none_and_garbage_stay_none():
     assert ha_publisher.utc_iso(None) is None
     assert ha_publisher.utc_iso("") is None
     assert ha_publisher.utc_iso("not a timestamp") is None
+
+
+@pytest.mark.anyio
+async def test_attributes_are_published_before_the_state_they_belong_to(fake_mqtt):
+    """The order decides whether an actionable push can name the wrong card.
+
+    Home Assistant automations trigger on the *state* and then read the
+    attributes: the inbox push takes the top card out of `items` the moment the
+    pending count changes. Publishing the state first leaves a window in which
+    the automation reads the previous `items` and bakes a stale `event_id` into
+    a notification whose buttons then decide a different card than the one it
+    describes.
+    """
+    await ha_publisher.publish_stats()
+
+    topics = [topic for topic, _payload, _retain in FakeMqttClient.all_published()]
+    paired = {
+        topic[: -len("/attributes")]
+        for topic in topics
+        if topic.endswith("/attributes")
+    } & set(topics)
+    assert paired, "no sensor published both a state and attributes"
+
+    for state_topic in paired:
+        assert topics.index(f"{state_topic}/attributes") < topics.index(state_topic), (
+            f"{state_topic} published its state before its attributes"
+        )

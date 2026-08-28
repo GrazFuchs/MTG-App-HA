@@ -263,19 +263,26 @@ async def publish_discovery():
 
 
 async def _publish_metrics(client, prefix: str, metrics) -> None:
-    """Publish a Metrics bundle: states, plus attributes where present.
+    """Publish a Metrics bundle: attributes first, then the states.
+
+    ⚠️ **The order is the point.** Home Assistant automations trigger on the
+    *state* and then read the attributes — the actionable inbox push takes the
+    top card out of `items` the moment the pending count changes. Publishing
+    the state first leaves a window, however short, in which the automation
+    reads yesterday's `items` and bakes a stale `event_id` into a notification
+    whose buttons then decide the wrong card. Attributes first closes it.
 
     A `None` state means "no value yet" and is skipped, so the entity stays
     unknown in HA instead of receiving an unparseable empty payload.
     """
-    for key, value in metrics.states.items():
-        if value is None:
-            continue
-        await client.publish(f"{prefix}/{key}", payload=str(value), retain=True)
     for key, attributes in metrics.attributes.items():
         await client.publish(
             f"{prefix}/{key}/attributes", payload=json.dumps(attributes), retain=True
         )
+    for key, value in metrics.states.items():
+        if value is None:
+            continue
+        await client.publish(f"{prefix}/{key}", payload=str(value), retain=True)
 
 
 async def publish_stats():

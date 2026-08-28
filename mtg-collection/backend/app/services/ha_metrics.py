@@ -23,9 +23,13 @@ from .queries import (
 
 logger = logging.getLogger(__name__)
 
-# Entries per attribute list.  Keeps the JSON payload well below HA's ~16 KB
-# attribute limit and the dashboard readable.
-TOP_N = 10
+# Entries per attribute list. Measured rather than guessed: across all 128 MTG
+# entities the attributes came to 40.8 KiB in total, with the heaviest single
+# payload at 2.2 KiB of the ~16 KiB Home Assistant allows — so ten was a very
+# cautious number, and the dashboard tables said "showing 10 of 137" for no
+# reason anybody could point at. At 25 the worst payload is still around a
+# third of the limit.
+TOP_N = 25
 
 # Computing a triage suggestion costs a handful of queries per event, so the
 # needs_sell/needs_keep split is derived from at most this many pending events

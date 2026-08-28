@@ -1,3 +1,11 @@
+## 0.41.0 — Sprint 07 (add-on half): what Home Assistant reads, and when
+
+### Fixed
+- **An actionable push could name one card and act on another.** Every sensor was published state first, attributes second. Home Assistant automations trigger on the *state* and then read the attributes — the inbox push takes the top card out of `items` the moment the pending count changes — so there was a window, short but real, in which the automation read the previous `items` and baked a stale `event_id` into a notification whose Keep/Sell buttons then decided a different card than the one it described. Attributes are now published first, and a test pins the order (verified to fail on the old one).
+
+### Changed
+- **Attribute lists carry 25 entries instead of 10.** The cap was set cautiously and never measured; across all 128 MTG entities the attributes come to 40.8 KiB in total, with the heaviest single payload at 2.2 KiB of the roughly 16 KiB Home Assistant allows. The dashboard tables said "showing 10 of 137" for no reason anybody could point at; at 25 the worst payload is still about a third of the limit.
+
 ## 0.40.0 — Sprint 06: the wishlist says something when a card gets cheap
 
 `is_deal` had been there all along and never announced anything, because it is a *state*: true for as long as the price stays under the target. Nothing compared today against yesterday, so there was no moment to report — the card was simply quietly cheap, on a list of 74, until somebody happened to look.
