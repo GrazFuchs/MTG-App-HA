@@ -8,7 +8,7 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 |---|--------|---------|--------|
 | 01 | [Wahrheit & Quick-Fixes](sprint-01-wahrheit.md) | — | ✅ umgesetzt (0.35.0) |
 | 02 | [Scryfall-Datenfundament](sprint-02-scryfall-fundament.md) | — | ✅ umgesetzt (0.36.0), deployed |
-| 03 | [Combo-Abdeckung reparieren](sprint-03-combos.md) | — | ✅ umgesetzt (0.37.0), Deploy offen |
+| 03 | [Combo-Abdeckung reparieren](sprint-03-combos.md) | — | ✅ umgesetzt (0.37.0), deployed |
 | 04 | [Bracket: pflegbar + berechnet](sprint-04-bracket.md) | 02, 03 | offen |
 | 05 | [Power-Level (edhpowerlevel-Port)](sprint-05-powerlevel.md) | 02 | offen |
 | 06 | [Wishlist: Deals & Bracket-Brücke](sprint-06-wishlist-deals.md) | 01; Teil 2: 04; Teil 3: 03 | offen |

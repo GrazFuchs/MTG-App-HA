@@ -1,7 +1,6 @@
 # Sprint 03 — Combo-Abdeckung reparieren
 
-**Status: ✅ umgesetzt in 0.37.0 (2026-08-28). Deploy + Nachzieh-Lauf stehen aus** — siehe
-„Offen (Deployment)" am Ende.
+**Status: ✅ umgesetzt in 0.37.0, deployed + verifiziert am 2026-08-28.** Ist-Protokoll am Ende.
 
 **Ziel:** Der Combo-Cache (`deck_combos`) wird vollständig und ehrlich: alle Decks erfasst,
 `missing_cards` befüllt, Fehler sichtbar. **Voraussetzung für Sprint 04 (Bracket) und die
@@ -79,7 +78,10 @@ ist; eigener Test (`test_the_cached_combos_survive_until_the_replacement_is_in`)
 - [x] Deck 1: `Breath of Fury` erscheint als fehlende Karte — an der Live-Antwort abgeleitet und
   als Einheitentest festgehalten.
 - [x] Vollständige und Teil-Combos sind in der UI klar getrennt beschriftet.
-- [ ] **Live:** Vorher/Nachher-Zählung je Deck nach dem Deploy (die Tabelle oben ist das „Vorher").
+- [x] **Live:** 22 von 22 Decks haben einen Bestand oder eine begründete 0 — Nachher-Tabelle unten.
+- [x] **Live:** Deck 1 zeigt `Breath of Fury + Anger → fehlt: Breath of Fury`; Deck 5 zeigt die
+  3 vollständigen 2-Karten-Infinites (Kiki-Jiki + Deceiver Exarch / Restoration Angel /
+  Sea-Dasher Octopus) getrennt von 144 Teil-Combos.
 
 ## Verifikation
 
@@ -88,13 +90,36 @@ ist; eigener Test (`test_the_cached_combos_survive_until_the_replacement_is_in`)
 - [x] Backend: **256/258 grün** (die 2 Fehlschläge sind der Altbestand `test_static_files.py` —
   siehe [README](README.md)).
 - [x] Frontend: `tsc -b && vite build` grün.
-- [ ] Stichprobe gegen die Live-API nach dem Deploy: `included` muss den `is_partial=0`-Einträgen
-  entsprechen, `almostIncluded` den Teil-Combos mit gefüllter `missing_cards`.
+- [x] Stichprobe gegen die Live-API (Deck 5, 2026-08-28): Spellbook meldet **3 included / 144
+  almostIncluded**, der Cache hält **3 vollständige / 144 teilweise**. Deckungsgleich.
 
-## Offen (Deployment)
+## Ist-Protokoll (2026-08-28, gegen den Pi 5 gemessen)
 
-1. Deploy 0.37.0 (Build auf dem Pi 5; danach `state: started` **und** `healthz` prüfen).
-2. `POST /api/decks/combos/sync-all` — 21 Decks à ~1 s plus Antwortzeit, also gut eine Minute.
-   Alternativ erledigt es der nächste Sync von selbst.
-3. Zählung wiederholen und der „Vorher"-Tabelle gegenüberstellen; erwartet werden Bestände für
-   **alle 21** Decks und `missing_cards` auf jeder Teil-Combo.
+Deploy 0.37.0: `healthz` → `{"status":"ok","version":"0.37.0","db":true,"scheduler_running":true}`,
+Migration 22 angewandt. Danach ein Lauf `POST /api/decks/combos/sync-all`: **22 Decks, 1327 Combos,
+0 Fehlschläge, 140 s.**
+
+| | vorher | nachher |
+|---|---:|---:|
+| Decks mit Combo-Bestand | 4 von 21 | **22 von 22** |
+| Combos gesamt | 433 | **1327** |
+| davon vollständig im Deck | 15 | **40** |
+| Teil-Combos | 418 | 1287 |
+| **davon mit benannter fehlender Karte** | **0** | **1287** |
+
+⚠️ **Die erste Messung übersah ein Deck.** Sie lief über `seq 1 25`, und es gibt ein **Deck 53**
+(„The guy who transforms all the cute bunny", inzwischen 53 Combos). Die Nachher-Zählung geht
+deshalb über `/api/decks/` statt über einen ID-Bereich. Deshalb steht oben „4 von 21" und hier
+„22 von 22" — die Grundgesamtheit war vorher falsch gezählt, nicht die Anzahl der Decks gewachsen.
+
+**Jede** der 1287 Teil-Combos ist **genau eine** Karte entfernt — kein einziger Eintrag hat zwei
+oder null. Das ist die Gegenprobe darauf, dass die Ableitung stimmt: Spellbook definiert
+`almostIncluded` als „eine Karte fehlt", und die Ableitung reproduziert das ohne Ausreißer.
+
+**Deck 14 („Entchantment DECK", 8 Karten) hat 0 Combos — und ist gestempelt.** Genau der Fall, für
+den Migration 22 da ist: ohne den Stempel würde der Nachzieh-Lauf dieses Deck jede Nacht erneut
+fragen und die 0 nie als Antwort werten.
+
+**Sichtbar geworden:** 25 vollständige Combos, die vorher niemand kannte — die Decks 16 (11), 10
+(4), 21 (3), 4 (2) und fünf weitere mit je einer. Für Sprint 04 ist das der Bracket-Input, der
+bisher schlicht fehlte.
