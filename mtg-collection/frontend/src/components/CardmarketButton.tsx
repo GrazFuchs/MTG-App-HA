@@ -1,6 +1,7 @@
 import { Button, Tooltip } from '@fluentui/react-components';
 import { Open16Regular } from '@fluentui/react-icons';
 
+import { t } from '../i18n';
 /** Build a Cardmarket product-search URL for a card name. */
 export function cardmarketSearchUrl(name: string): string {
   return `https://www.cardmarket.com/en/Magic/Products/Search?searchString=${encodeURIComponent(name)}`;
@@ -14,7 +15,7 @@ interface Props {
 /** Small icon button that opens the card's Cardmarket page in a new tab. */
 export function CardmarketButton({ cardName, size = 'small' }: Props) {
   return (
-    <Tooltip content="Open on Cardmarket" relationship="label">
+    <Tooltip content={t('common.open_cardmarket')} relationship="label">
       <Button
         appearance="subtle"
         size={size}

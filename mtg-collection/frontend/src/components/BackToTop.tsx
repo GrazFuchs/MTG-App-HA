@@ -2,6 +2,7 @@ import { useEffect, useState, RefObject } from 'react';
 import { Button } from '@fluentui/react-components';
 import { ArrowUp24Regular } from '@fluentui/react-icons';
 
+import { t } from '../i18n';
 interface Props {
   /** The scrollable container to watch and scroll to top. */
   scrollRef: RefObject<HTMLElement>;
@@ -29,8 +30,8 @@ export default function BackToTop({ scrollRef, threshold = 400 }: Props) {
       appearance="primary"
       shape="circular"
       icon={<ArrowUp24Regular />}
-      aria-label="Back to top"
-      title="Back to top"
+      aria-label={t('common.back_to_top')}
+      title={t('common.back_to_top')}
       onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
       style={{
         position: 'fixed',

@@ -8,11 +8,11 @@ import { sothera } from '../../theme/sothera';
 import { t } from '../../i18n';
 
 const STATE_LABELS: Record<string, string> = {
-  keep: 'Kept',
-  sold_new: 'Sold (new copy)',
-  swapped: 'Swapped',
-  swap: 'Swapped',
-  dismiss: 'Dismissed',
+  keep: t('history.kept'),
+  sold_new: t('history.sold_new'),
+  swapped: t('history.swapped'),
+  swap: t('history.swapped'),
+  dismiss: t('history.dismissed'),
 };
 const STATE_COLOR: Record<string, 'success' | 'warning' | 'danger' | 'informative' | 'brand'> = {
   keep: 'success',
@@ -97,19 +97,19 @@ function HistoryRow({ item }: { item: AcquisitionHistoryItem }) {
       </div>
       {open && snap && (
         <div className={styles.detail}>
-          <div className={styles.detailLabel}>Suggestion shown at confirmation</div>
+          <div className={styles.detailLabel}>{t('inbox.history.suggestion_shown')}</div>
           <div style={{ marginBottom: 8 }}>
             <strong>{snap.suggestion.action}</strong> — {snap.suggestion.reason}
             {snap.suggestion.suggested_sell_price_eur > 0 && ` · est. €${snap.suggestion.suggested_sell_price_eur.toFixed(2)}`}
           </div>
-          <div className={styles.detailLabel}>State at that time</div>
+          <div className={styles.detailLabel}>{t('inbox.history.state_then')}</div>
           <div style={{ marginBottom: snap.existing_printings.length ? 8 : 0 }}>
             In decks: {snap.in_decks} · Market price: {snap.card.price_eur ? `€${snap.card.price_eur}` : '—'}
-            {snap.listing_price_eur != null && ` · Listed at €${snap.listing_price_eur.toFixed(2)}`}
+            {snap.listing_price_eur != null && t('inbox.history.listed_at', { price: snap.listing_price_eur.toFixed(2) })}
           </div>
           {snap.existing_printings.length > 0 && (
             <>
-              <div className={styles.detailLabel}>Other copies owned then</div>
+              <div className={styles.detailLabel}>{t('inbox.history.copies_then')}</div>
               <div>
                 {snap.existing_printings.map((p, i) => (
                   <span key={i} style={{ fontFamily: sothera.fontMono, fontSize: 11 }}>
@@ -176,7 +176,7 @@ export default function InboxHistory() {
         <Select
           value={state}
           onChange={(_, d) => { setState(d.value); setPage(1); }}
-          aria-label="Decision filter"
+          aria-label={t('inbox.history.filter')}
           style={{ minWidth: 160 }}
         >
           <option value="">{t('inbox.history.state_all')}</option>
@@ -190,7 +190,7 @@ export default function InboxHistory() {
       </div>
 
       {isLoading ? (
-        <Spinner label="Loading history..." style={{ marginTop: 24 }} />
+        <Spinner label={t('inbox.history.loading')} style={{ marginTop: 24 }} />
       ) : items.length === 0 ? (
         <div className={styles.empty}>
           {isFiltered

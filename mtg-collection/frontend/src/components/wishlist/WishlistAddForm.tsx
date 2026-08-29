@@ -20,6 +20,7 @@ import SetSelector from './SetSelector';
 import PrioritySelector from './PrioritySelector';
 import OwnedWarning from './OwnedWarning';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   form: {
     display: 'flex',
@@ -140,7 +141,7 @@ export default function WishlistAddForm({ onAdded }: Props) {
 
   return (
     <div className={styles.form}>
-      <Field label="Card">
+      <Field label={t('common.card')}>
         <CardNameAutocomplete
           value={cardName}
           onChange={(v) => { setCardName(v); if (cardSelected) setCardSelected(false); }}
@@ -158,7 +159,7 @@ export default function WishlistAddForm({ onAdded }: Props) {
           />
 
           <div className={styles.grid}>
-            <Field label="Quantity">
+            <Field label={t('common.quantity')}>
               <Input
                 type="number"
                 min={1}
@@ -167,28 +168,28 @@ export default function WishlistAddForm({ onAdded }: Props) {
                 onChange={(_, d) => setQuantity(Math.max(1, Math.min(99, parseInt(d.value) || 1)))}
               />
             </Field>
-            <Field label="Target Price (EUR)">
+            <Field label={t('wishlist.target_price')}>
               <Input
                 type="number"
                 min={0}
                 step={0.01}
-                placeholder="0 = no alert"
+                placeholder={t('wishlist.no_alert')}
                 value={targetPrice}
                 onChange={(_, d) => setTargetPrice(d.value)}
               />
             </Field>
-            <Field label="Priority">
+            <Field label={t('wishlist.priority_label')}>
               <PrioritySelector value={priority} onChange={setPriority} />
             </Field>
-            <Field label="Deck">
+            <Field label={t('wishlist.deck_label')}>
               <Dropdown
-                placeholder="No deck"
+                placeholder={t('wishlist.no_deck')}
                 value={deckId ? decks.find(d => d.id === deckId)?.name || '' : ''}
                 onOptionSelect={(_, data) => {
                   setDeckId(data.optionValue === '__none__' ? null : parseInt(data.optionValue as string));
                 }}
               >
-                <Option value="__none__">No deck</Option>
+                <Option value="__none__">{t('wishlist.no_deck')}</Option>
                 {decks.map(d => (
                   <Option key={d.id} value={String(d.id)}>{d.name}</Option>
                 ))}
@@ -196,19 +197,19 @@ export default function WishlistAddForm({ onAdded }: Props) {
             </Field>
           </div>
 
-          <Field label="Tags" hint="Comma-separated, e.g. 'modern, foil-priority'">
+          <Field label={t('wishlist.tags_label')} hint="Comma-separated, e.g. 'modern, foil-priority'">
             <Input
               value={tags}
               onChange={(_, d) => setTags(d.value)}
-              placeholder="modern, priority-upgrade"
+              placeholder={t('wishlist.tags_placeholder')}
             />
           </Field>
 
-          <Field label="Notes">
+          <Field label={t('wishlist.notes_label')}>
             <Textarea
               value={notes}
               onChange={(_, d) => setNotes(d.value)}
-              placeholder="Optional notes..."
+              placeholder={t('wishlist.notes_placeholder')}
               maxLength={500}
               resize="vertical"
             />
@@ -236,7 +237,7 @@ export default function WishlistAddForm({ onAdded }: Props) {
           onClick={handleSubmit}
           disabled={!cardName.trim() || submitting}
         >
-          {submitting ? 'Adding...' : 'Add to Wishlist'}
+          {submitting ? t('wishlist.adding') : t('wishlist.add_to')}
         </Button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { OverlayPortal } from '../OverlayPortal';
+import { useDialogA11y } from '../useDialogA11y';
 import { makeStyles } from '@griffel/react';
 import { Button, Input, Select } from '@fluentui/react-components';
 import { sothera } from '../../theme/sothera';
@@ -125,6 +126,10 @@ export default function TriageDecisionDialog({
   const [sellQty, setSellQty] = useState(qtyDelta);
   const [sellId, setSellId] = useState<number | null>(suggestedSellId);
 
+  // Hook must run before the early return, or it is skipped on the very
+  // render where the dialog appears.
+  const dialogRef = useDialogA11y(open, onClose);
+
   if (!open) return null;
 
   const priceHint = suggestedPrice != null && suggestedPrice > 0
@@ -137,13 +142,20 @@ export default function TriageDecisionDialog({
   return (
     <OverlayPortal>
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.dialog} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === 'swap' ? t('triage.title_swap', { name: cardName }) : t('triage.title_sell', { name: cardName })}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
         <div className={styles.title}>
-          {mode === 'swap' ? `Swap — sell old copy of ${cardName}` : `Sell new copy — ${cardName}`}
+          {mode === 'swap' ? t('triage.title_swap', { name: cardName }) : t('triage.title_sell', { name: cardName })}
         </div>
 
         <div className={styles.field}>
-          <div className={styles.label}>Price (EUR)</div>
+          <div className={styles.label}>{t('common.price_eur')}</div>
           <Input
             type="number"
             value={price}
@@ -155,7 +167,7 @@ export default function TriageDecisionDialog({
         </div>
 
         <div className={styles.field}>
-          <div className={styles.label}>Condition</div>
+          <div className={styles.label}>{t('common.condition')}</div>
           <Select value={condition} onChange={(_, d) => setCondition(d.value)}>
             <option value="MT">MT</option>
             <option value="NM">NM</option>
@@ -167,20 +179,20 @@ export default function TriageDecisionDialog({
         </div>
 
         <div className={styles.field}>
-          <div className={styles.label}>Language</div>
+          <div className={styles.label}>{t('common.language')}</div>
           <Select value={language} onChange={(_, d) => setLanguage(d.value)}>
-            <option value="English">English</option>
-            <option value="German">German</option>
-            <option value="French">French</option>
-            <option value="Italian">Italian</option>
-            <option value="Spanish">Spanish</option>
-            <option value="Japanese">Japanese</option>
+            <option value="English">{t('lang.English')}</option>
+            <option value="German">{t('lang.German')}</option>
+            <option value="French">{t('lang.French')}</option>
+            <option value="Italian">{t('lang.Italian')}</option>
+            <option value="Spanish">{t('lang.Spanish')}</option>
+            <option value="Japanese">{t('lang.Japanese')}</option>
           </Select>
         </div>
 
         {mode === 'sold_new' && qtyDelta > 1 && (
           <div className={styles.field}>
-            <div className={styles.label}>How many of {qtyDelta} to sell?</div>
+            <div className={styles.label}>{t('triage.sell_qty_label', { total: qtyDelta })}</div>
             <Input
               type="number"
               value={String(sellQty)}
@@ -193,7 +205,7 @@ export default function TriageDecisionDialog({
 
         {mode === 'swap' && existingPrintings.length > 0 && (
           <div className={styles.field}>
-            <div className={styles.label}>Copy to sell</div>
+            <div className={styles.label}>{t('triage.copy_to_sell')}</div>
             <div>
               {existingPrintings.map(p => {
                 const isSelected = sellId === p.collection_id;
@@ -238,7 +250,7 @@ export default function TriageDecisionDialog({
             })}
             style={{ backgroundColor: accent.oklch }}
           >
-            Create Listing
+            {t('triage.create_listing')}
           </Button>
         </div>
       </div>

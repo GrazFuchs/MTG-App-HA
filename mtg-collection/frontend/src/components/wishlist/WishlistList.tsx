@@ -161,7 +161,7 @@ export default function WishlistList({ defaultStatus }: WishlistListProps) {
         <WishlistFilterBar filters={filters} onChange={handleFilterChange} decks={decks} />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Checkbox
-            label="Group by name"
+            label={t('wishlist.group_by_name')}
             checked={groupByName}
             onChange={(_, d) => setGroupByName(!!d.checked)}
           />

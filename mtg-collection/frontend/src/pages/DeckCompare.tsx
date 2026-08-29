@@ -8,6 +8,7 @@ import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 import { ManaSymbol } from '../components/ManaSymbol';
 
+import { t } from '../i18n';
 const useStyles = makeStyles({
   controls: {
     display: 'flex',
@@ -132,7 +133,7 @@ export default function DeckCompare() {
 
   return (
     <div>
-      <PageHeader eyebrow="⌬ ANALYSIS" title="Compare Decks" accent={accent.oklch} />
+      <PageHeader eyebrow="⌬ ANALYSIS" title={t('decks.compare_title')} accent={accent.oklch} />
 
       {/* Selection controls */}
       <div className={styles.controls}>
@@ -164,12 +165,12 @@ export default function DeckCompare() {
         )}
         {selectedIds.length > 0 && (
           <Button appearance="subtle" size="small" onClick={reset} style={{ color: sothera.fgFaint }}>
-            Reset
+            {t('common.reset')}
           </Button>
         )}
       </div>
 
-      {loading && <Spinner label="Comparing decks..." />}
+      {loading && <Spinner label={t('deck.compare_loading')} />}
 
       {result && (
         <>
@@ -177,11 +178,11 @@ export default function DeckCompare() {
           <Panel>
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, letterSpacing: 1.5 }}>
-                UNION:
+                {t('deck.union_label')}
               </span>
               {result.color_identity_union.map(c => <ManaSymbol key={c} symbol={c} size={18} />)}
               <span style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, letterSpacing: 1.5, marginLeft: 16 }}>
-                INTERSECTION:
+                {t('deck.intersection_label')}
               </span>
               {result.color_identity_intersection.length > 0
                 ? result.color_identity_intersection.map(c => <ManaSymbol key={c} symbol={c} size={18} />)
@@ -192,7 +193,7 @@ export default function DeckCompare() {
 
           {/* Overlap Matrix */}
           <div style={{ marginTop: 20, marginBottom: 20 }}>
-            <SectionHeader num="01" title="Overlap Matrix" right="" accent={accent.oklch} />
+            <SectionHeader num="01" title={t('decks.compare_overlap')} right="" accent={accent.oklch} />
             <div
               className={styles.matrix}
               style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)` }}
@@ -231,21 +232,21 @@ export default function DeckCompare() {
 
           {/* Common Cards */}
           <div style={{ marginBottom: 20 }}>
-            <SectionHeader num="02" title="Common Cards" right={`${result.common_cards.length} SHARED`} accent={accent.oklch} />
+            <SectionHeader num="02" title={t('decks.compare_common')} right={`${result.common_cards.length} SHARED`} accent={accent.oklch} />
             <Panel>
               <div className={styles.cardList}>
                 {result.common_cards.map(c => (
                   <span key={c.name} className={styles.cardChip}>{c.name}</span>
                 ))}
                 {result.common_cards.length === 0 && (
-                  <span style={{ fontSize: 11, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>No cards in common</span>
+                  <span style={{ fontSize: 11, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>{t('deck.compare_none')}</span>
                 )}
               </div>
             </Panel>
           </div>
 
           {/* Unique to each deck */}
-          <SectionHeader num="03" title="Unique Cards" right="" accent={accent.oklch} />
+          <SectionHeader num="03" title={t('decks.compare_unique')} right="" accent={accent.oklch} />
           {result.decks.map(deck => {
             const uniqueCards = result.unique_to[deck.id] || [];
             const isExpanded = expandedUnique[deck.id];
@@ -278,7 +279,7 @@ export default function DeckCompare() {
 
       {!loading && selectedIds.length < 2 && (
         <div style={{ fontFamily: sothera.fontMono, fontSize: 12, color: sothera.fgMuted, marginTop: 20 }}>
-          Select at least 2 decks to compare.
+          {t('decks.compare_select')}
         </div>
       )}
     </div>

@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { api, MCPSetupInstructions } from '../../api';
 
+import { t } from '../../i18n';
 export function MCPSetupSection() {
   const [data, setData] = useState<MCPSetupInstructions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export function MCPSetupSection() {
   if (loading) return null;
   if (error) return (
     <Card style={{ padding: 16, marginTop: 24 }}>
-      <Title3>MCP Setup for Claude Desktop</Title3>
+      <Title3>{t('mcp.title')}</Title3>
       <MessageBar intent="error" style={{ marginTop: 8 }}>
         <MessageBarBody>Failed to load setup info: {error}</MessageBarBody>
       </MessageBar>
@@ -48,25 +49,25 @@ export function MCPSetupSection() {
 
   return (
     <Card style={{ padding: 16, marginTop: 24 }}>
-      <Title3>MCP Setup for Claude Desktop</Title3>
+      <Title3>{t('mcp.title')}</Title3>
       <Body1 style={{ marginTop: 8 }}>
         {/* This section only renders after /setup-instructions answered, so
             "reachable" is earned, not hardcoded. The MCP endpoint is /mcp
             (streamable HTTP) — an earlier version displayed a nonexistent
             /mcp/sse here. */}
-        Status: <Badge appearance="filled" color="success">Add-on reachable</Badge>
+        Status: <Badge appearance="filled" color="success">{t('mcp.reachable')}</Badge>
         {' · '}
         <Caption1>MCP-Endpoint (via Ingress): {data.mcp_ingress_path}</Caption1>
         {data.auth_required && (
           <>
             {' · '}
-            <Badge appearance="outline" color="warning">Auth-Token erforderlich</Badge>
+            <Badge appearance="outline" color="warning">{t('mcp.token_required')}</Badge>
           </>
         )}
       </Body1>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 1:</strong> Download proxy file</Body1>
+        <Body1><strong>{t('mcp.step', { n: 1 })}</strong> {t('mcp.step1')}</Body1>
         <div style={{ marginTop: 8 }}>
           <Button
             appearance="primary"
@@ -84,14 +85,14 @@ export function MCPSetupSection() {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 2:</strong> Create a Long-Lived Access Token</Body1>
+        <Body1><strong>{t('mcp.step', { n: 2 })}</strong> {t('mcp.step2')}</Body1>
         <Caption1 style={{ display: 'block', marginTop: 4 }}>
-          In Home Assistant: Profile → Security → Long-Lived Access Tokens → Create Token
+          {t('mcp.step2_hint')}
         </Caption1>
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 3:</strong> Paste config into Claude Desktop</Body1>
+        <Body1><strong>{t('mcp.step', { n: 3 })}</strong> {t('mcp.step3')}</Body1>
         <pre style={{
           marginTop: 8,
           padding: 12,
@@ -114,10 +115,10 @@ export function MCPSetupSection() {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 4:</strong> Config file location</Body1>
+        <Body1><strong>{t('mcp.step', { n: 4 })}</strong> {t('mcp.step4')}</Body1>
         <Accordion collapsible>
           <AccordionItem value="paths">
-            <AccordionHeader size="small">Show paths per OS</AccordionHeader>
+            <AccordionHeader size="small">{t('mcp.show_paths')}</AccordionHeader>
             <AccordionPanel>
               <Caption1 style={{ display: 'block' }}>
                 <strong>macOS:</strong> {data.config_paths.macos}
@@ -134,16 +135,16 @@ export function MCPSetupSection() {
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 5:</strong> Replace placeholders in the config</Body1>
+        <Body1><strong>{t('mcp.step', { n: 5 })}</strong> {t('mcp.step5')}</Body1>
         <Caption1 style={{ display: 'block', marginTop: 4 }}>
           Replace {'<PATH_TO>'} with the full path to your saved mcp-proxy.mjs file, and {'<TODO: your long-lived token>'} with the token from Step 2.
         </Caption1>
       </div>
 
       <div style={{ marginTop: 16 }}>
-        <Body1><strong>Step 6:</strong> Restart Claude Desktop</Body1>
+        <Body1><strong>{t('mcp.step', { n: 6 })}</strong> {t('mcp.step6')}</Body1>
         <Caption1 style={{ display: 'block', marginTop: 4 }}>
-          After saving the config, fully quit and reopen Claude Desktop.
+          {t('mcp.step6_hint')}
         </Caption1>
       </div>
     </Card>

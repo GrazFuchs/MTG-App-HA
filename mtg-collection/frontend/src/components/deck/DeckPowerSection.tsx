@@ -5,6 +5,7 @@ import { sothera } from '../../theme/sothera';
 import { useAccent } from '../../main';
 import { Panel, SectionHeader } from '../sothera';
 
+import { t } from '../../i18n';
 interface Props {
   deck: DeckDetail;
   onUpdate: (d: DeckDetail) => void;
@@ -60,13 +61,13 @@ export function DeckPowerSection({ deck, onUpdate }: Props) {
   if (!detail) {
     return (
       <div style={{ marginBottom: 26 }}>
-        <SectionHeader num="" title="Power" right="" accent={accent.oklch} />
+        <SectionHeader num="" title={t('power.title')} right="" accent={accent.oklch} />
         <Panel>
           <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgFaint, marginBottom: 10 }}>
-            Not scored yet.
+            {t('power.not_scored')}
           </div>
           <Button appearance="subtle" size="small" onClick={recompute} disabled={busy} style={{ color: accent.oklch }}>
-            {busy ? <Spinner size="tiny" /> : 'Compute power score'}
+            {busy ? <Spinner size="tiny" /> : t('power.compute')}
           </Button>
         </Panel>
       </div>
@@ -80,17 +81,17 @@ export function DeckPowerSection({ deck, onUpdate }: Props) {
     <div style={{ marginBottom: 26 }}>
       <SectionHeader
         num=""
-        title="Power"
+        title={t('power.title')}
         right={`SCORE ${Math.round(detail.score)} · LEVEL ${detail.power_level.toFixed(1)}`}
         accent={accent.oklch}
       />
       <Panel>
         <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', marginBottom: 18 }}>
-          <Figure label="Score" value={String(Math.round(detail.score))} hint="0–1000 · compare this" />
-          <Figure label="Power level" value={detail.power_level.toFixed(1)} hint="0–10" />
-          <Figure label="Efficiency" value={detail.efficiency.toFixed(1)} hint="higher is faster" />
-          <Figure label="Tipping point" value={String(detail.tipping_point)} hint="mana for 65% of the power" />
-          <Figure label="Avg. cost" value={detail.avg_cost.toFixed(2)} hint={`${detail.lands} lands`} />
+          <Figure label={t('power.score')} value={String(Math.round(detail.score))} hint="0–1000 · compare this" />
+          <Figure label={t('power.level')} value={detail.power_level.toFixed(1)} hint="0–10" />
+          <Figure label={t('power.efficiency')} value={detail.efficiency.toFixed(1)} hint="higher is faster" />
+          <Figure label={t('power.tipping_point')} value={String(detail.tipping_point)} hint="mana for 65% of the power" />
+          <Figure label={t('power.avg_cost')} value={detail.avg_cost.toFixed(2)} hint={`${detail.lands} lands`} />
         </div>
 
         {byCmc.length > 0 && (
@@ -99,7 +100,7 @@ export function DeckPowerSection({ deck, onUpdate }: Props) {
               fontFamily: sothera.fontMono, fontSize: 9, letterSpacing: 1.4,
               color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 8,
             }}>
-              Impact by mana value
+              {t('power.by_mana_value')}
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 60 }}>
               {byCmc.map(([cmc, value]) => (
@@ -127,7 +128,7 @@ export function DeckPowerSection({ deck, onUpdate }: Props) {
               fontFamily: sothera.fontMono, fontSize: 9, letterSpacing: 1.4,
               color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 6,
             }}>
-              Carrying the score
+              {t('power.carrying')}
             </div>
             {detail.top_cards.slice(0, 5).map(c => (
               <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: sothera.fgMuted, padding: '2px 0' }}>
@@ -146,10 +147,10 @@ export function DeckPowerSection({ deck, onUpdate }: Props) {
 
         <div style={{ display: 'flex', gap: 8 }}>
           <Button appearance="subtle" size="small" onClick={recompute} disabled={busy} style={{ color: sothera.fgMuted }}>
-            {busy ? <Spinner size="tiny" /> : 'Recompute'}
+            {busy ? <Spinner size="tiny" /> : t('power.recompute')}
           </Button>
           <Button appearance="subtle" size="small" onClick={openReference} style={{ color: sothera.fgMuted }}>
-            Check against edhpowerlevel.com ↗
+            {t('power.reference')}
           </Button>
         </div>
       </Panel>

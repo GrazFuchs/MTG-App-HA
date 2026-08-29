@@ -1,6 +1,7 @@
 import { makeStyles, tokens } from '@fluentui/react-components';
 import { Star24Filled, Star24Regular } from '@fluentui/react-icons';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   wrapper: { display: 'flex', gap: '2px', alignItems: 'center' },
   star: { cursor: 'pointer', color: tokens.colorPaletteYellowForeground1 },
@@ -17,7 +18,7 @@ const labels = ['', 'Low', 'Below average', 'Normal', 'High', 'Must-have'];
 export default function PrioritySelector({ value, onChange }: Props) {
   const styles = useStyles();
   return (
-    <div className={styles.wrapper} role="group" aria-label="Priority">
+    <div className={styles.wrapper} role="group" aria-label={t('wishlist.priority_label')}>
       {[1, 2, 3, 4, 5].map(n => (
         <button
           key={n}

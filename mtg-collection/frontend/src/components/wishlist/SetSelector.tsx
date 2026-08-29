@@ -10,6 +10,7 @@ import {
 } from '@fluentui/react-components';
 import { api, CardPrinting } from '../../api';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   wrapper: { display: 'flex', flexDirection: 'column', gap: '8px' },
   row: { display: 'flex', gap: '12px', alignItems: 'center' },
@@ -52,8 +53,8 @@ export default function SetSelector({ cardName, selectedSetCode, isFoil, onSelec
   }, [cardName]);
 
   if (!cardName) return null;
-  if (loading) return <Spinner size="tiny" label="Loading printings..." />;
-  if (error) return <Caption1>Could not load printings. Proceed without set.</Caption1>;
+  if (loading) return <Spinner size="tiny" label={t('common.loading_printings')} />;
+  if (error) return <Caption1>{t('wishlist.printings_failed')}</Caption1>;
 
   const selectedPrinting = printings.find(p => p.set_code === selectedSetCode);
   const foilAvailable = selectedPrinting ? selectedPrinting.is_foil_available : printings.some(p => p.is_foil_available);
@@ -62,22 +63,22 @@ export default function SetSelector({ cardName, selectedSetCode, isFoil, onSelec
     const parts: string[] = [];
     if (p.price_eur != null) parts.push(`€${p.price_eur.toFixed(2)}`);
     if (p.price_eur_foil != null) parts.push(`Foil €${p.price_eur_foil.toFixed(2)}`);
-    return parts.length > 0 ? parts.join(' / ') : 'No price';
+    return parts.length > 0 ? parts.join(' / ') : t('wishlist.no_price');
   };
 
   return (
     <div className={styles.wrapper}>
       <div className={styles.row}>
         <Dropdown
-          placeholder="Any printing"
-          value={selectedSetCode ? `${printings.find(p => p.set_code === selectedSetCode)?.set_name || selectedSetCode} (${selectedSetCode.toUpperCase()})` : 'Any printing'}
+          placeholder={t('common.any_printing')}
+          value={selectedSetCode ? `${printings.find(p => p.set_code === selectedSetCode)?.set_name || selectedSetCode} (${selectedSetCode.toUpperCase()})` : t('common.any_printing')}
           onOptionSelect={(_, data) => {
             const code = data.optionValue === '__any__' ? null : (data.optionValue || null);
             onSelectionChange(code, isFoil);
           }}
           style={{ minWidth: '240px' }}
         >
-          <Option value="__any__">Any printing</Option>
+          <Option value="__any__">{t('common.any_printing')}</Option>
           {printings.map(p => (
             <Option key={p.scryfall_id} value={p.set_code} text={`${p.set_name} (${p.set_code.toUpperCase()})`}>
               {p.set_name} ({p.set_code.toUpperCase()}) — <span className={styles.price}>{formatPrice(p)}</span>
@@ -85,7 +86,7 @@ export default function SetSelector({ cardName, selectedSetCode, isFoil, onSelec
           ))}
         </Dropdown>
         <Checkbox
-          label="Foil"
+          label={t('cards.foil')}
           checked={isFoil}
           disabled={!foilAvailable}
           onChange={(_, data) => onSelectionChange(selectedSetCode, !!data.checked)}

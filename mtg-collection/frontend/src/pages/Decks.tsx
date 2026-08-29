@@ -8,6 +8,7 @@ import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
+import { t } from '../i18n';
 const useStyles = makeStyles({
   grid: {
     display: 'grid',
@@ -164,13 +165,13 @@ export default function Decks() {
     return [...set].sort();
   }, [decks]);
 
-  if (loading) return <Spinner label="Loading decks..." />;
+  if (loading) return <Spinner label={t('decks.loading')} />;
 
   if (decks.length === 0) {
     return (
       <div>
-        <PageHeader eyebrow="⌬ INDEX" title="Decks" accent={accent.oklch} />
-        <div className={styles.emptyMsg}>No decks synced yet. Go to Settings to trigger a sync from Archidekt.</div>
+        <PageHeader eyebrow="⌬ INDEX" title={t('decks.title')} accent={accent.oklch} />
+        <div className={styles.emptyMsg}>{t('decks.empty')}</div>
       </div>
     );
   }
@@ -179,7 +180,7 @@ export default function Decks() {
     <div>
       <PageHeader
         eyebrow={`⌬ INDEX · ${filteredDecks.length} BOUND DECKS`}
-        title="Decks"
+        title={t('decks.title')}
         accent={accent.oklch}
       />
 
@@ -192,7 +193,7 @@ export default function Decks() {
             onChange={(_, d) => setBracketFilter(d.value)}
             style={{ minWidth: 180 }}
           >
-            <option value="">All Brackets</option>
+            <option value="">{t('decks.all_brackets')}</option>
             {availableBrackets.map(b => (
               <option key={b} value={String(b)}>Bracket {String(b)}</option>
             ))}
@@ -240,7 +241,7 @@ export default function Decks() {
                         }}
                         title={d.user_bracket
                           ? `Bracket ${d.effective_bracket}, set by you`
-                          : `Bracket ${d.effective_bracket}, computed from the decklist`}
+                          : t('bracket.computed_title', { bracket: d.effective_bracket })}
                       >
                         BR.{d.effective_bracket}
                       </div>
@@ -249,7 +250,7 @@ export default function Decks() {
                       <div
                         className={styles.bracketTag}
                         style={{ left: 'auto', right: '10px', borderColor: accent.oklch, borderStyle: 'solid' }}
-                        title={`Power score ${Math.round(d.power_score)} of 1000 (level ${d.power_level?.toFixed(1)}) — demand times curve efficiency, not what the deck can do`}
+                        title={t('power.badge_title', { score: Math.round(d.power_score), level: d.power_level?.toFixed(1) ?? '—' })}
                       >
                         PWR {Math.round(d.power_score)}
                       </div>

@@ -14,6 +14,7 @@ import { api, ListingHealthBucket, ListingHealthResponse } from '../../api';
 import { sothera } from '../../theme/sothera';
 import { Panel } from '../sothera';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   summary: {
     display: 'flex',
@@ -70,10 +71,10 @@ const useStyles = makeStyles({
 type BucketKey = 'underpriced' | 'overpriced' | 'fair' | 'no_match';
 
 const BUCKET_CONFIG: { key: BucketKey; label: string; color: 'success' | 'danger' | 'subtle' | 'warning' }[] = [
-  { key: 'underpriced', label: 'Underpriced', color: 'success' },
-  { key: 'overpriced',  label: 'Overpriced',  color: 'danger' },
-  { key: 'fair',        label: 'Fair',         color: 'subtle' },
-  { key: 'no_match',   label: 'No Data',       color: 'warning' },
+  { key: 'underpriced', label: t('health.underpriced'), color: 'success' },
+  { key: 'overpriced',  label: t('health.overpriced'),  color: 'danger' },
+  { key: 'fair',        label: t('health.fair'),         color: 'subtle' },
+  { key: 'no_match',   label: t('health.no_data'),       color: 'warning' },
 ];
 
 function DeltaCell({ delta, bucket }: { delta: number; bucket: BucketKey }) {
@@ -114,7 +115,7 @@ export default function ListingHealthPanel() {
             onChange={(_, d) => setThreshold(d.value)}
           />
         </Field>
-        <Button size="small" appearance="subtle" onClick={() => refetch()}>Refresh</Button>
+        <Button size="small" appearance="subtle" onClick={() => refetch()}>{t('common.refresh')}</Button>
       </div>
 
       <div className={styles.summary}>
@@ -133,19 +134,19 @@ export default function ListingHealthPanel() {
       </div>
 
       {isLoading ? (
-        <Spinner size="small" label="Analyzing listings..." />
+        <Spinner size="small" label={t('cardmarket.health_loading')} />
       ) : !data || rows.length === 0 ? (
         <Body1 style={{ marginTop: 12, color: sothera.fgMuted }}>
-          No listings in this category.
+          {t('cardmarket.health_empty')}
         </Body1>
       ) : (
         <table className={styles.table}>
           <thead>
             <tr>
-              <th className={styles.th}>Card</th>
-              <th className={styles.th}>My Price</th>
-              {showSuggested && <th className={styles.th}>Trend</th>}
-              {showSuggested && <th className={styles.th}>Suggested</th>}
+              <th className={styles.th}>{t('common.card')}</th>
+              <th className={styles.th}>{t('col.my_price')}</th>
+              {showSuggested && <th className={styles.th}>{t('col.trend')}</th>}
+              {showSuggested && <th className={styles.th}>{t('col.suggested')}</th>}
               {showSuggested && <th className={styles.th}>Δ</th>}
             </tr>
           </thead>

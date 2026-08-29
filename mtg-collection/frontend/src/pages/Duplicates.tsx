@@ -31,26 +31,27 @@ import { useAccent } from '../main';
 import { Panel, PageHeader } from '../components/sothera';
 import { CardmarketButton } from '../components/CardmarketButton';
 
+import { t } from '../i18n';
 const COLOR_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'All Colors' },
+  { value: '', label: t('color.all') },
   { value: 'W', label: '⚪ White' },
   { value: 'U', label: '🔵 Blue' },
   { value: 'B', label: '⚫ Black' },
   { value: 'R', label: '🔴 Red' },
   { value: 'G', label: '🟢 Green' },
-  { value: 'MONO', label: '◐ Monocolor' },
+  { value: t('duplicates.mono'), label: '◐ Monocolor' },
   { value: 'M', label: '🌈 Multicolor' },
   { value: 'C', label: '◆ Colorless' },
   { value: 'L', label: '🟤 Land' },
 ];
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: 'extras_value_desc', label: 'Value desc' },
-  { value: 'extras_desc', label: 'Extras desc' },
-  { value: 'copies_desc', label: 'Most copies' },
-  { value: 'name_asc', label: 'Name asc' },
-  { value: 'set_asc', label: 'Set asc' },
-  { value: 'color_asc', label: 'Color asc' },
+  { value: 'extras_value_desc', label: t('sort.value_desc') },
+  { value: 'extras_desc', label: t('sort.extras_desc') },
+  { value: 'copies_desc', label: t('sort.most_copies') },
+  { value: 'name_asc', label: t('sort.name_asc') },
+  { value: 'set_asc', label: t('sort.set_asc') },
+  { value: 'color_asc', label: t('sort.color_asc') },
 ];
 
 const useStyles = makeStyles({
@@ -93,6 +94,19 @@ const useStyles = makeStyles({
     textTransform: 'uppercase',
     color: sothera.fgFaint,
   },
+  // Nine fixed columns need about 700 px. There is no card layout for this
+  // table, so below that the choice is between squeezing the columns into
+  // illegibility and scrolling. It scrolls — inside this box, so the *page*
+  // never scrolls sideways, which is the thing that actually makes a phone
+  // unusable.
+  tableScroll: {
+    overflowX: 'auto',
+    // Chrome/Safari need this to keep the sticky-ish header aligned with rows.
+    width: '100%',
+  },
+  tableInner: {
+    minWidth: '760px',
+  },
   gridHeader: {
     display: 'grid',
     gridTemplateColumns: '44px 2fr 1.2fr 70px 70px 70px 90px 100px 80px',
@@ -105,6 +119,16 @@ const useStyles = makeStyles({
     textTransform: 'uppercase',
   },
   sortableHeader: {
+    // A <button> now (see SortHeader): the sort controls were <div onClick>,
+    // so the only way to reorder the table was a mouse. Strip the UA chrome,
+    // keep the focus ring.
+    padding: 0,
+    backgroundColor: 'transparent',
+    border: 'none',
+    font: 'inherit',
+    color: 'inherit',
+    letterSpacing: 'inherit',
+    textTransform: 'inherit' as const,
     cursor: 'pointer',
     userSelect: 'none' as const,
     display: 'flex',
@@ -205,7 +229,7 @@ function DuplicateRow({ item, onSell, accent, i, total }: { item: DuplicateEntry
       <div style={{ fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"' }}>{item.total_copies}</div>
       <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted }}>{item.in_decks}</div>
       <div>
-        <Tooltip content={`Total extras: ${item.extras}${item.listed_quantity > 0 ? `, ${item.listed_quantity} already listed` : ''}`} relationship="description">
+        <Tooltip content={t('duplicates.extras_tooltip', { extras: item.extras }) + (item.listed_quantity > 0 ? t('duplicates.already_listed', { count: item.listed_quantity }) : '')} relationship="description">
           <span style={{ fontFamily: sothera.fontMono, fontSize: 10, padding: '2px 8px', letterSpacing: 1.5, borderWidth: 1, borderStyle: 'solid', borderColor: accent.oklch, color: accent.oklch }}>
             {item.extras_after_listings}
           </span>
@@ -216,7 +240,7 @@ function DuplicateRow({ item, onSell, accent, i, total }: { item: DuplicateEntry
       <div style={{ textAlign: 'right', fontFamily: sothera.fontDisplay, fontWeight: 600, color: sothera.fg, fontFeatureSettings: '"tnum"', paddingRight: 16 }}>{extraValue ? `€${extraValue}` : '—'}</div>
       <div style={{ paddingLeft: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
         <CardmarketButton cardName={item.card_name} />
-        <Button size="small" appearance="primary" onClick={() => onSell(item)}>Sell</Button>
+        <Button size="small" appearance="primary" onClick={() => onSell(item)}>{t('common.sell')}</Button>
       </div>
     </div>
   );
@@ -272,6 +296,28 @@ export default function Duplicates() {
     if (sortBy !== col) return null;
     return sortDir === 'desc' ? <ArrowDown16Regular /> : <ArrowUp16Regular />;
   };
+
+  /**
+   * One sortable column header.
+   *
+   * `role="columnheader"` is there because this "table" is a CSS grid of divs,
+   * not a <table> — without the role, `aria-sort` has nothing to attach to and
+   * a screen reader announces a bare button. With it, the current sort is read
+   * out, which is the whole point: the arrow glyph is invisible to anyone not
+   * looking at it.
+   */
+  const SortHeader = ({ col, label, align }: { col: string; label: string; align?: 'right' }) => (
+    <div role="columnheader" aria-sort={sortBy === col ? (sortDir === 'desc' ? 'descending' : 'ascending') : 'none'}>
+      <button
+        type="button"
+        className={styles.sortableHeader}
+        onClick={() => toggleSort(col)}
+        style={align === 'right' ? { marginLeft: 'auto' } : undefined}
+      >
+        {label} <SortIcon col={col} />
+      </button>
+    </div>
+  );
 
   const { data: availableSets = [] } = useQuery<CollectionSet[]>({
     queryKey: ['duplicate-sets', searchParams.get('search') || '', colorFilter],
@@ -372,22 +418,24 @@ export default function Duplicates() {
   };
 
   const renderItems = (itemList: DuplicateEntry[]) => (
-    <>
+    <div className={styles.tableScroll}>
+      <div className={styles.tableInner}>
       <div className={styles.gridHeader}>
         <div />
-        <div className={styles.sortableHeader} onClick={() => toggleSort('name')}>CARD <SortIcon col="name" /></div>
-        <div className={styles.sortableHeader} onClick={() => toggleSort('set')}>SET <SortIcon col="set" /></div>
-        <div>OWNED</div>
-        <div>DECKS</div>
-        <div className={styles.sortableHeader} onClick={() => toggleSort('extras')}>EXTRA <SortIcon col="extras" /></div>
-        <div className={styles.sortableHeader} onClick={() => toggleSort('extras_value')} style={{ textAlign: 'right' }}>EUR <SortIcon col="extras_value" /></div>
-        <div style={{ textAlign: 'right' }}>VALUE</div>
+        <SortHeader col="name" label={t('col.card')} />
+        <SortHeader col="set" label={t('col.set')} />
+        <div>{t('col.owned')}</div>
+        <div>{t('col.decks')}</div>
+        <SortHeader col="extras" label={t('col.extra')} />
+        <SortHeader col="extras_value" label={t('col.eur')} align="right" />
+        <div style={{ textAlign: 'right' }}>{t('col.value')}</div>
         <div />
       </div>
       {itemList.map((item, i) => (
         <DuplicateRow key={`${item.card_id}-${item.set_code}-${item.is_foil}`} item={item} onSell={openListingDialog} accent={accent} i={i} total={itemList.length} />
       ))}
-    </>
+      </div>
+    </div>
   );
 
   const totalBulkQty = bulkEntries.reduce((s, e) => s + e.qty, 0);
@@ -396,25 +444,25 @@ export default function Duplicates() {
     <div>
       <PageHeader
         eyebrow={`◫ SURPLUS · ${total} CANDIDATES`}
-        title="Duplicates"
+        title={t('duplicates.title')}
         accent={accent.oklch}
       />
 
       <div className={styles.controls}>
         <Input
-          placeholder="Search duplicates..."
+          placeholder={t('duplicates.search')}
           contentBefore={<Search24Regular />}
           value={searchInput}
           onChange={(_, d) => setSearchInput(d.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           className={styles.input}
         />
-        <Button onClick={handleSearch}>Search</Button>
+        <Button onClick={handleSearch}>{t('common.search')}</Button>
         <Select value={colorFilter} onChange={(_, d) => setParam('color', d.value)} className={styles.filterSelect}>
           {COLOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
         <Select value={setFilter} onChange={(_, d) => setParam('set', d.value)} className={styles.filterSelect}>
-          <option value="">All Sets</option>
+          <option value="">{t('common.all_sets')}</option>
           {availableSets.map(s => <option key={s.set_code} value={s.set_code}>{s.set_name}</option>)}
         </Select>
         <Select value={sortParam} onChange={(_, d) => setParam('sort', d.value)} className={styles.filterSelect}>
@@ -423,12 +471,12 @@ export default function Duplicates() {
         <Checkbox
           checked={includeListed}
           onChange={(_, d) => { setIncludeListed(!!d.checked); setPage(1); }}
-          label="Show fully listed"
+          label={t('duplicates.show_listed')}
         />
       </div>
 
       <div className={styles.quickFilters}>
-        <span className={styles.pillLabel}>Urgency</span>
+        <span className={styles.pillLabel}>{t('duplicates.urgency')}</span>
         {[
           { key: 'min_extras', label: '≥ 3 surplus', value: '3', active: minExtras === '3' },
           { key: 'min_extras', label: '≥ 5 surplus', value: '5', active: minExtras === '5' },
@@ -449,14 +497,14 @@ export default function Duplicates() {
           onClick={() => setParam('unlisted', unlistedOnly ? '' : 'true')}
           style={unlistedOnly ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
         >
-          Not yet listed
+          {t('duplicates.not_listed')}
         </button>
       </div>
 
       {loading ? (
-        <Spinner label="Loading duplicates..." style={{ marginTop: 24 }} />
+        <Spinner label={t('duplicates.loading')} style={{ marginTop: 24 }} />
       ) : items.length === 0 ? (
-        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>No duplicate cards found.</div>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>{t('duplicates.empty')}</div>
       ) : (
         <>
           <Panel>{renderItems(items)}</Panel>
@@ -476,18 +524,18 @@ export default function Duplicates() {
           <DialogBody>
             <DialogContent>
               {printingsLoading ? (
-                <Spinner label="Loading printings..." size="small" />
+                <Spinner label={t('common.loading_printings')} size="small" />
               ) : (
                 <>
                   <div style={{ marginBottom: 12, fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, letterSpacing: 1.5 }}>
                     SELECT PRINTINGS TO LIST ({printings.length} available)
                   </div>
                   <div className={styles.printingHeader}>
-                    <div>PRINTING</div>
-                    <div>COPIES</div>
-                    <div>LISTED</div>
-                    <div>QTY</div>
-                    <div>PRICE €</div>
+                    <div>{t('col.printing')}</div>
+                    <div>{t('col.copies')}</div>
+                    <div>{t('col.listed')}</div>
+                    <div>{t('col.qty')}</div>
+                    <div>{t('col.price_eur')}</div>
                   </div>
                   {bulkEntries.map((entry, idx) => {
                     const p = entry.printing;
@@ -525,30 +573,30 @@ export default function Duplicates() {
                   })}
                   <div className={styles.formRow} style={{ marginTop: 16 }}>
                     <div>
-                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Condition</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>{t('common.condition')}</div>
                       <Select value={listingCondition} onChange={(_, d) => setListingCondition(d.value)} className={styles.dialogInput}>
-                        <option value="MT">Mint</option>
-                        <option value="NM">Near Mint</option>
-                        <option value="EX">Excellent</option>
-                        <option value="GD">Good</option>
-                        <option value="LP">Light Played</option>
-                        <option value="PL">Played</option>
-                        <option value="PO">Poor</option>
+                        <option value="MT">{t('condition.MT')}</option>
+                        <option value="NM">{t('condition.NM')}</option>
+                        <option value="EX">{t('condition.EX')}</option>
+                        <option value="GD">{t('condition.GD')}</option>
+                        <option value="LP">{t('condition.LP')}</option>
+                        <option value="PL">{t('condition.PL')}</option>
+                        <option value="PO">{t('condition.PO')}</option>
                       </Select>
                     </div>
                     <div>
-                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>Language</div>
+                      <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1.5, color: sothera.fgFaint, textTransform: 'uppercase' }}>{t('common.language')}</div>
                       <Select value={listingLanguage} onChange={(_, d) => setListingLanguage(d.value)} className={styles.dialogInput}>
-                        <option>English</option>
-                        <option>German</option>
-                        <option>French</option>
-                        <option>Spanish</option>
-                        <option>Italian</option>
-                        <option>Japanese</option>
-                        <option>Chinese</option>
-                        <option>Korean</option>
-                        <option>Portuguese</option>
-                        <option>Russian</option>
+                        <option value="English">{t('lang.English')}</option>
+                        <option value="German">{t('lang.German')}</option>
+                        <option value="French">{t('lang.French')}</option>
+                        <option value="Spanish">{t('lang.Spanish')}</option>
+                        <option value="Italian">{t('lang.Italian')}</option>
+                        <option value="Japanese">{t('lang.Japanese')}</option>
+                        <option value="Chinese">{t('lang.Chinese')}</option>
+                        <option value="Korean">{t('lang.Korean')}</option>
+                        <option value="Portuguese">{t('lang.Portuguese')}</option>
+                        <option value="Russian">{t('lang.Russian')}</option>
                       </Select>
                     </div>
                   </div>
@@ -557,9 +605,9 @@ export default function Duplicates() {
             </DialogContent>
           </DialogBody>
           <DialogActions>
-            <Button appearance="secondary" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button appearance="secondary" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
             <Button appearance="primary" onClick={createBulkListings} disabled={submitting || totalBulkQty === 0}>
-              {submitting ? 'Creating...' : `Create ${totalBulkQty} Listing${totalBulkQty !== 1 ? 's' : ''}`}
+              {submitting ? t('duplicates.creating') : `Create ${totalBulkQty} Listing${totalBulkQty !== 1 ? 's' : ''}`}
             </Button>
           </DialogActions>
         </DialogSurface>

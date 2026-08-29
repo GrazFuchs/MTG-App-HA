@@ -4,6 +4,7 @@ import { DeckCombo } from '../../api';
 import { sothera } from '../../theme/sothera';
 import { useAccent } from '../../main';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   overlay: {
     backgroundColor: 'rgba(4,4,10,0.85)',
@@ -77,7 +78,7 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
             {combo.name}
             {combo.is_partial && (
               <span style={{ marginLeft: 8, fontSize: 11, color: '#ff6b6b', fontFamily: sothera.fontMono }}>
-                PARTIAL
+                {t('combo.partial')}
               </span>
             )}
           </DialogTitle>
@@ -89,7 +90,7 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
             )}
 
             <div className={styles.section}>
-              <div className={styles.sectionLabel}>CARDS INVOLVED</div>
+              <div className={styles.sectionLabel}>{t('combo.cards_involved')}</div>
               {combo.cards.map((card) => (
                 <a
                   key={card}
@@ -106,7 +107,7 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
 
             {combo.missing_cards.length > 0 && (
               <div className={styles.section}>
-                <div className={styles.sectionLabel}>MISSING CARDS</div>
+                <div className={styles.sectionLabel}>{t('combo.missing_cards')}</div>
                 {combo.missing_cards.map((card) => (
                   <a
                     key={card}
@@ -124,7 +125,7 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
 
             {combo.result.length > 0 && (
               <div className={styles.section}>
-                <div className={styles.sectionLabel}>RESULT</div>
+                <div className={styles.sectionLabel}>{t('combo.result')}</div>
                 {combo.result.map((r, i) => (
                   <div key={i} className={styles.resultItem}>• {r}</div>
                 ))}
@@ -133,14 +134,14 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
 
             {combo.prerequisites && (
               <div className={styles.section}>
-                <div className={styles.sectionLabel}>PREREQUISITES</div>
+                <div className={styles.sectionLabel}>{t('combo.prerequisites')}</div>
                 <div className={styles.prose}>{combo.prerequisites}</div>
               </div>
             )}
 
             {combo.steps && (
               <div className={styles.section}>
-                <div className={styles.sectionLabel}>STEPS</div>
+                <div className={styles.sectionLabel}>{t('combo.steps')}</div>
                 <div className={styles.prose}>{combo.steps}</div>
               </div>
             )}
@@ -152,7 +153,7 @@ export function ComboDetailDialog({ combo, open, onClose }: Props) {
                 rel="noopener noreferrer"
                 style={{ fontSize: 11, fontFamily: sothera.fontMono, color: accent.oklch }}
               >
-                View on Commander Spellbook ↗
+                {t('combo.spellbook_link')}
               </a>
             )}
           </DialogContent>

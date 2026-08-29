@@ -1,6 +1,7 @@
 import { makeStyles } from '@griffel/react';
 import { sothera } from '../theme/sothera';
 
+import { t } from '../i18n';
 const useStyles = makeStyles({
   badge: {
     display: 'inline-flex',
@@ -44,7 +45,7 @@ export function OwnedBadge({ ownedQuantity, ownedFoilQuantity = 0, inDecks = [] 
       {ownedQuantity > 0 && (
         <span
           className={`${styles.badge} ${styles.owned}`}
-          title={inDecks.length > 0 ? `Used in: ${inDecks.join(', ')}` : undefined}
+          title={inDecks.length > 0 ? t('cards.used_in', { decks: inDecks.join(', ') }) : undefined}
         >
           ✓ Owned ({ownedQuantity}×)
         </span>

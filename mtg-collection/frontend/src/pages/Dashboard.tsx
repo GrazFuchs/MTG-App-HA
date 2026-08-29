@@ -238,7 +238,7 @@ export default function Dashboard() {
   });
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  if (statsLoading || alertsLoading) return <Spinner label="Loading..." />;
+  if (statsLoading || alertsLoading) return <Spinner label={t('common.loading')} />;
 
   const tierMap = new Map<string, PriceAlert[]>();
   for (const tier of PRICE_TIERS) tierMap.set(tier.label, []);
@@ -259,11 +259,11 @@ export default function Dashboard() {
         : lastSync.finished_at.replace(' ', 'T') + 'Z')
     : null;
   const syncState: { label: string; color: string; glow: string } = !lastSync
-    ? { label: 'NEVER SYNCED', color: sothera.fgMuted, glow: 'transparent' }
+    ? { label: t('dashboard.never_synced'), color: sothera.fgMuted, glow: 'transparent' }
     : lastSync.status === 'completed'
-      ? { label: 'SYNCED', color: sothera.positive, glow: 'oklch(0.78 0.17 150 / 0.6)' }
+      ? { label: t('dashboard.synced'), color: sothera.positive, glow: 'oklch(0.78 0.17 150 / 0.6)' }
       : lastSync.status === 'running'
-        ? { label: 'SYNCING…', color: sothera.fgMuted, glow: 'transparent' }
+        ? { label: t('dashboard.syncing'), color: sothera.fgMuted, glow: 'transparent' }
         : { label: lastSync.status.toUpperCase(), color: sothera.negative, glow: 'oklch(0.70 0.20 25 / 0.6)' };
 
   // Real 90-day performance from the value snapshots (oldest vs newest).
@@ -284,11 +284,11 @@ export default function Dashboard() {
     <div>
       <PageHeader
         eyebrow="◇ DOSSIER · QUARTERLY READOUT"
-        title="The Vault"
+        title={t('dashboard.vault')}
         accent={accent.oklch}
         right={
           <div style={{ textAlign: 'right' }}>
-            <div className={styles.eyebrowLabel}>LAST SYNC</div>
+            <div className={styles.eyebrowLabel}>{t('dashboard.last_sync')}</div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, letterSpacing: 1, marginTop: 4 }}>
               {lastSyncDate
                 ? `${lastSyncDate.toLocaleDateString('en-CA').replace(/-/g, '.')} · ${lastSyncDate.toLocaleTimeString('en', { hour12: false })}`
@@ -305,10 +305,10 @@ export default function Dashboard() {
       {(statsError || alertsError) && (
         <div style={{ marginBottom: 16 }}>
           <ErrorBanner
-            title="Backend unreachable"
+            title={t('dashboard.backend_unreachable')}
             message={statsError
               ? 'Collection stats could not be loaded — the numbers below are placeholders, not facts. Check the add-on log.'
-              : 'Price alerts could not be loaded. Check the add-on log.'}
+              : t('dashboard.alerts_failed')}
           />
         </div>
       )}
@@ -318,7 +318,7 @@ export default function Dashboard() {
         style={{ background: `linear-gradient(135deg, ${accent.soft} 0%, transparent 50%)`, cursor: 'pointer' }}
         role="link"
         tabIndex={0}
-        title="Open the collection"
+        title={t('dashboard.open_collection')}
         onClick={() => navigate('/collection?sort_by=price_eur&sort_dir=desc')}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -329,7 +329,7 @@ export default function Dashboard() {
       >
         <div className={styles.heroGrid}>
           <div>
-            <div className={styles.eyebrowLabel}>AGGREGATE HOLDINGS · EUR</div>
+            <div className={styles.eyebrowLabel}>{t('dashboard.aggregate')}</div>
             <div className={styles.heroValue}>
               {statsError
                 ? '—'
@@ -346,13 +346,13 @@ export default function Dashboard() {
             )}
             <div className={styles.subGrid}>
               <div>
-                <div className={styles.eyebrowLabel}>USD MIRROR</div>
+                <div className={styles.eyebrowLabel}>{t('dashboard.usd_mirror')}</div>
                 <div className={styles.subValue}>
                   ${(stats?.total_value_usd ?? 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div>
-                <div className={styles.eyebrowLabel}>LISTINGS VALUE</div>
+                <div className={styles.eyebrowLabel}>{t('dashboard.listings_value')}</div>
                 <div className={styles.subValue}>
                   €{(stats?.cardmarket_total_value ?? 0).toFixed(2)}
                 </div>
@@ -375,41 +375,41 @@ export default function Dashboard() {
       <div className={styles.statCards}>
         {[
           {
-            l: 'Inbox',
+            l: t('dashboard.inbox'),
             g: '⊕',
             v: String(pendingCount),
-            sub: pendingCount > 0 ? 'waiting for triage' : 'all triaged',
+            sub: pendingCount > 0 ? t('dashboard.inbox_waiting') : t('dashboard.inbox_done'),
             to: '/inbox',
             urgent: pendingCount > 0,
           },
           {
-            l: 'Total Cards',
+            l: t('dashboard.total_cards'),
             g: '☷',
             v: (stats?.total_cards ?? 0).toLocaleString(),
-            sub: `${(stats?.unique_cards ?? 0).toLocaleString()} unique`,
+            sub: t('dashboard.unique_sub', { count: (stats?.unique_cards ?? 0).toLocaleString() }),
             to: '/collection',
           },
           {
-            l: 'Decks',
+            l: t('dashboard.decks'),
             g: '⌬',
             v: String(stats?.total_decks ?? 0),
-            sub: 'synced from Archidekt',
+            sub: t('dashboard.decks_sub'),
             to: '/decks',
           },
           {
-            l: 'On Market',
+            l: t('dashboard.on_market'),
             g: '⌖',
             v: `€${(stats?.cardmarket_total_value ?? 0).toFixed(2)}`,
-            sub: `${stats?.total_cardmarket_listings ?? 0} listings`,
+            sub: t('dashboard.listings_sub', { count: stats?.total_cardmarket_listings ?? 0 }),
             to: '/cardmarket',
           },
           {
-            l: 'Wishlist',
+            l: t('nav.wishlist'),
             g: '✧',
             v: String(wishlist?.total_items ?? 0),
             sub: wishlist
-              ? `€${wishlist.total_current_eur.toFixed(2)} to buy`
-              : 'tracking',
+              ? t('dashboard.wishlist_sub', { value: wishlist.total_current_eur.toFixed(2) })
+              : t('dashboard.wishlist_tracking'),
             to: '/wishlist',
           },
         ].map(m => (
@@ -441,7 +441,7 @@ export default function Dashboard() {
       {/* Price Alerts */}
       {alerts.length > 0 && (
         <>
-          <SectionHeader num="01" title="Market Anomalies" right={`${alerts.length} DETECTED`} accent={accent.oklch} />
+          <SectionHeader num="01" title={t('dashboard.anomalies')} right={`${alerts.length} DETECTED`} accent={accent.oklch} />
           <Panel>
             {[...PRICE_TIERS].reverse()
               .filter(tier => (tierMap.get(tier.label)?.length || 0) > 0)
@@ -468,7 +468,7 @@ export default function Dashboard() {
                         className={mergeClasses(styles.alertRow, styles.clickableRow)}
                         role="link"
                         tabIndex={0}
-                        title={`Show ${a.card_name} in the collection`}
+                        title={t('dashboard.show_in_collection', { name: a.card_name })}
                         onClick={() => openCard(a.card_name)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(a.card_name); }
@@ -499,7 +499,7 @@ export default function Dashboard() {
       {/* MTGStocks: Collection Movers */}
       {mtgStocksOn && movers.length > 0 && (
         <>
-          <SectionHeader num="02" title="Collection Movers" right={`MTGSTOCKS · ${movers.length}`} accent={accent.oklch} />
+          <SectionHeader num="02" title={t('dashboard.movers')} right={`MTGSTOCKS · ${movers.length}`} accent={accent.oklch} />
           <Panel>
             {movers.map((m, i) => {
               const up = m.direction === 'up';
@@ -510,7 +510,7 @@ export default function Dashboard() {
                   className={mergeClasses(styles.alertRow, styles.clickableRow)}
                   role="link"
                   tabIndex={0}
-                  title={`Show ${m.card_name} in the collection`}
+                  title={t('dashboard.show_in_collection', { name: m.card_name })}
                   onClick={() => openCard(m.card_name)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(m.card_name); }
@@ -546,7 +546,7 @@ export default function Dashboard() {
       {/* MTGStocks: Buy/Sell Signals */}
       {mtgStocksOn && signals && (signals.buy.length > 0 || signals.sell.length > 0) && (
         <>
-          <SectionHeader num="03" title="Trade Signals" right={`${signals.buy.length} BUY · ${signals.sell.length} SELL`} accent={accent.oklch} />
+          <SectionHeader num="03" title={t('dashboard.signals')} right={`${signals.buy.length} BUY · ${signals.sell.length} SELL`} accent={accent.oklch} />
           <Panel>
             {signals.buy.map((b, i) => (
               <div
@@ -554,14 +554,14 @@ export default function Dashboard() {
                 className={mergeClasses(styles.alertRow, styles.clickableRow)}
                 role="link"
                 tabIndex={0}
-                title={`Show ${b.card_name} in the collection`}
+                title={t('dashboard.show_in_collection', { name: b.card_name })}
                 onClick={() => openCard(b.card_name)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(b.card_name); }
                 }}
               >
                 <div>
-                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.positive}`, color: sothera.positive }}>BUY</span>
+                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.positive}`, color: sothera.positive }}>{t('dashboard.buy')}</span>
                   <span className={styles.alertName}>{b.card_name}</span>
                 </div>
                 <div className={styles.alertSuggestion}>near all-time low (+{b.pct_above_low}%)</div>
@@ -577,14 +577,14 @@ export default function Dashboard() {
                 className={mergeClasses(styles.alertRow, styles.clickableRow)}
                 role="link"
                 tabIndex={0}
-                title={`Show ${s.card_name} in the collection`}
+                title={t('dashboard.show_in_collection', { name: s.card_name })}
                 onClick={() => openCard(s.card_name)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(s.card_name); }
                 }}
               >
                 <div>
-                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.negative}`, color: sothera.negative }}>SELL</span>
+                  <span style={{ fontFamily: sothera.fontMono, fontSize: 10, marginRight: 8, padding: '2px 6px', letterSpacing: 1.5, border: `1px solid ${sothera.negative}`, color: sothera.negative }}>{t('dashboard.sell')}</span>
                   <span className={styles.alertName}>{s.card_name}</span>
                 </div>
                 <div className={styles.alertSuggestion}>

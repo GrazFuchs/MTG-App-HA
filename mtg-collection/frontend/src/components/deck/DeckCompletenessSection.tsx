@@ -6,6 +6,7 @@ import { sothera } from '../../theme/sothera';
 import { useAccent } from '../../main';
 import { Panel, SectionHeader } from '../sothera';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   progressBar: {
     height: '8px',
@@ -82,7 +83,7 @@ export function DeckCompletenessSection({ deckId }: Props) {
     <div style={{ marginBottom: 26 }}>
       <SectionHeader
         num=""
-        title="Deck Completeness"
+        title={t('decks.completeness')}
         right={`${data.owned_unique} / ${data.total_unique_cards}`}
         accent={accent.oklch}
       />
@@ -106,7 +107,7 @@ export function DeckCompletenessSection({ deckId }: Props) {
         {data.missing_cards.length > 0 && (
           <>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, marginBottom: 10 }}>
-              Missing {data.missing_cards.length} cards · acquisition cost €{data.total_acquisition_cost_eur.toFixed(2)}
+              {t('completeness.summary', { count: data.missing_cards.length, cost: data.total_acquisition_cost_eur.toFixed(2) })}
             </div>
 
             <div
@@ -134,7 +135,7 @@ export function DeckCompletenessSection({ deckId }: Props) {
                   onClick={handleAddAllToWishlist}
                   style={{ marginTop: 12, color: sothera.fgMuted }}
                 >
-                  {addingToWishlist ? 'Adding...' : 'Add all missing to wishlist'}
+                  {addingToWishlist ? t('completeness.adding') : t('decks.completeness_wishlist')}
                 </Button>
               </div>
             )}

@@ -153,7 +153,7 @@ export default function AcquisitionCard({
 
       {event.existing_printings.length > 0 && (
         <div className={styles.printings}>
-          <div className={styles.sourceLabel}>You already own:</div>
+          <div className={styles.sourceLabel}>{t('inbox.already_own')}</div>
           {event.existing_printings.map((p, i) => (
             <div key={i} className={styles.printingRow}>
               • {p.quantity + p.foil_quantity}× {p.set_name || p.set_code} ({p.is_foil ? 'foil' : 'non-foil'}) — €{p.price_eur}

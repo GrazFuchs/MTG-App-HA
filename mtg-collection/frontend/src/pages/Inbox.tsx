@@ -13,48 +13,33 @@ import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { PageHeader } from '../components/sothera';
 import { t } from '../i18n';
+import { BUCKET_EMOJI, colorName, colorOptions } from '../utils/colors';
 import AcquisitionCard from '../components/inbox/AcquisitionCard';
 import InboxHistory from '../components/inbox/InboxHistory';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { getColorBucket, groupByColorBucket, BUCKET_KEYS, BucketKey } from '../utils/colors';
 
+import { dropDecided, type InboxPage } from './inboxList';
 // Re-export for unit tests
 export { getColorBucket, groupByColorBucket, BUCKET_KEYS };
 export type { BucketKey };
 
-const INBOX_BUCKET_LABELS: Record<BucketKey, string> = {
-  W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green',
-  Multi: 'Multicolor', Colorless: 'Colorless', Unknown: 'Unknown',
-};
-const INBOX_BUCKET_EMOJI: Record<BucketKey, string> = {
-  W: '⚪', U: '🔵', B: '⚫', R: '🔴', G: '🟢',
-  Multi: '🌈', Colorless: '◆', Unknown: '❓',
-};
-
 const FILTER_OPTIONS = [
-  { value: '', label: 'All pending' },
-  { value: 'needs_sell', label: 'Suggested: Sell' },
-  { value: 'needs_keep', label: 'Suggested: Keep' },
+  { value: '', label: 'inbox.filter.all' },
+  { value: 'needs_sell', label: 'inbox.filter.needs_sell' },
+  { value: 'needs_keep', label: 'inbox.filter.needs_keep' },
 ] as const;
 
-const COLOR_FILTER_OPTIONS = [
-  { value: '', label: 'All colors' },
-  { value: 'W', label: '⚪ White' },
-  { value: 'U', label: '🔵 Blue' },
-  { value: 'B', label: '⚫ Black' },
-  { value: 'R', label: '🔴 Red' },
-  { value: 'G', label: '🟢 Green' },
-  { value: 'Multi', label: '🌈 Multicolor' },
-  { value: 'Colorless', label: '◆ Colorless' },
-  { value: 'L', label: '🟤 Lands' },
-] as const;
+// 'L' (lands) is a filter value only: the grouping buckets come from the card's
+// colour identity, and a land has none.
+const COLOR_FILTER_OPTIONS = colorOptions(['W', 'U', 'B', 'R', 'G', 'Multi', 'Colorless', 'L']);
 
 const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'color', label: 'Color' },
-  { value: 'set', label: 'Set' },
-  { value: 'name', label: 'Name' },
+  { value: 'newest', label: 'inbox.sort_newest' },
+  { value: 'color', label: 'inbox.sort_color' },
+  { value: 'set', label: 'inbox.sort_set' },
+  { value: 'name', label: 'inbox.sort_name' },
 ] as const;
 
 const useStyles = makeStyles({
@@ -220,14 +205,9 @@ export default function Inbox() {
    * triaging and hunting for your place again.
    */
   const dropFromList = (ids: number[]) => {
-    const gone = new Set(ids);
-    queryClient.setQueriesData<{ items: AcquisitionEvent[]; total: number }>(
+    queryClient.setQueriesData<InboxPage>(
       { queryKey: ['inbox-pending'] },
-      (old) => old && {
-        ...old,
-        items: old.items.filter(e => !gone.has(e.id)),
-        total: Math.max(0, old.total - ids.filter(id => old.items.some(e => e.id === id)).length),
-      },
+      (old) => dropDecided(old, ids),
     );
     queryClient.invalidateQueries({ queryKey: ['inbox-stats'] });
     setSelected(prev => {
@@ -244,7 +224,7 @@ export default function Inbox() {
       await api.decideTriage(eventId, payload);
       setDecisionError(null);
       dropFromList([eventId]);
-      setLastDecision({ ids: [eventId], label: `1 card · ${payload.action}` });
+      setLastDecision({ ids: [eventId], label: t('inbox.undo_one', { action: payload.action }) });
     } catch (err) {
       setDecisionError(err instanceof Error ? err.message : String(err));
       throw err;
@@ -260,11 +240,11 @@ export default function Inbox() {
       dropFromList(res.event_ids);
       setDecisionError(
         res.failed.length
-          ? `${res.failed.length} of ${ids.length} could not be decided: ${res.failed[0].error}`
+          ? t('inbox.bulk.partial_failure', { failed: res.failed.length, total: ids.length, error: res.failed[0].error })
           : null,
       );
       if (res.event_ids.length) {
-        setLastDecision({ ids: res.event_ids, label: `${res.event_ids.length} cards · ${action}` });
+        setLastDecision({ ids: res.event_ids, label: t('inbox.undo_many', { count: res.event_ids.length, action }) });
       }
     } catch (err) {
       setDecisionError(err instanceof Error ? err.message : String(err));
@@ -383,8 +363,8 @@ export default function Inbox() {
 
       {stats && (
         <div className={styles.statsRow}>
-          <span>Pending: {stats.pending_count}</span>
-          <span>Decided (30d): {stats.decided_last_30d}</span>
+          <span>{t('inbox.stats.pending')}: {stats.pending_count}</span>
+          <span>{t('inbox.stats.decided_30d')}: {stats.decided_last_30d}</span>
           {Object.entries(stats.by_state_30d).map(([state, count]) => (
             <span key={state}>{state}: {count}</span>
           ))}
@@ -400,7 +380,7 @@ export default function Inbox() {
             onClick={() => setView(v)}
             style={view === v ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
           >
-            {v === 'triage' ? 'Triage' : 'History'}
+            {v === 'triage' ? t('inbox.tab_triage') : t('inbox.tab_history')}
           </button>
         ))}
       </div>
@@ -418,14 +398,14 @@ export default function Inbox() {
             onClick={() => setFilter(opt.value)}
             style={activeFilter === opt.value ? { backgroundColor: accent.soft, borderColor: accent.oklch, color: sothera.fg } : undefined}
           >
-            {opt.label}
+            {t(opt.label)}
           </button>
         ))}
       </div>
 
       <div className={styles.controls}>
         <Input
-          placeholder="Search by name..."
+          placeholder={t('inbox.search')}
           contentBefore={<Search24Regular />}
           value={searchInput}
           onChange={(_, d) => setSearchInput(d.value)}
@@ -436,7 +416,7 @@ export default function Inbox() {
           value={colorFilter}
           onChange={(_, d) => { setColorFilter(d.value); setPage(1); }}
           className={styles.select}
-          aria-label="Color filter"
+          aria-label={t('inbox.color_filter')}
         >
           {COLOR_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
@@ -444,15 +424,15 @@ export default function Inbox() {
           value={sortBy}
           onChange={(_, d) => { setSortBy(d.value); setPage(1); }}
           className={styles.select}
-          aria-label="Sort by"
+          aria-label={t('inbox.sort_by')}
         >
-          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{t('inbox.sort_by')}: {t(o.label)}</option>)}
         </Select>
         <span style={{ fontFamily: sothera.fontMono, fontSize: '10px', letterSpacing: '1px', color: sothera.fgFaint, textTransform: 'uppercase' }}>
-          Min value
+          {t('inbox.min_value')}
         </span>
         <Select value={String(minValue)} onChange={(_, d) => { setMinValue(parseFloat(d.value)); setPage(1); }} className={styles.select}>
-          <option value="0">All</option>
+          <option value="0">{t('common.all')}</option>
           <option value="0.5">€0.50+</option>
           <option value="1">€1+</option>
           <option value="5">€5+</option>
@@ -464,14 +444,14 @@ export default function Inbox() {
           appearance="subtle"
           disabled={backfillColors.isPending}
           onClick={() => backfillColors.mutate()}
-          title="Re-fetch missing colour data from Scryfall so the colour groups/filter work"
+          title={t('inbox.refetch_colors')}
         >
-          {backfillColors.isPending ? 'Enriching…' : '↻ Fix colors'}
+          {backfillColors.isPending ? t('inbox.enriching') : '↻ Fix colors'}
         </Button>
       </div>
 
       {loading ? (
-        <Spinner label="Loading inbox..." style={{ marginTop: 24 }} />
+        <Spinner label={t('inbox.loading')} style={{ marginTop: 24 }} />
       ) : loadError ? (
         /* A failed request is the ONLY thing that earns the error banner.
            A filter that matches nothing is a normal, expected answer — it used
@@ -506,7 +486,7 @@ export default function Inbox() {
       ) : (
         <ErrorBoundary fallback={(err, retry) => (
           <ErrorBanner
-            title="Inbox-Liste konnte nicht gerendert werden"
+            title={t('inbox.render_failed')}
             message={`Render-Fehler: ${err.message}`}
             action={<Button onClick={retry}>{t('common.retry')}</Button>}
           />
@@ -515,9 +495,9 @@ export default function Inbox() {
             {decisionError && (
               <div style={{ marginBottom: 12 }}>
                 <ErrorBanner
-                  title="Decision failed"
+                  title={t('inbox.decision_failed')}
                   message={decisionError}
-                  action={<Button size="small" onClick={() => setDecisionError(null)}>Dismiss</Button>}
+                  action={<Button size="small" onClick={() => setDecisionError(null)}>{t('inbox.action.dismiss')}</Button>}
                 />
               </div>
             )}
@@ -529,10 +509,10 @@ export default function Inbox() {
                 border: `1px solid ${sothera.glassBorder}`, borderRadius: 4,
               }}>
                 <span style={{ fontSize: 12, color: sothera.fgMuted }}>
-                  Decided: {lastDecision.label}
+                  {t('inbox.decided_label', { label: lastDecision.label })}
                 </span>
                 <Button size="small" appearance="subtle" disabled={busy} onClick={undoLast}>
-                  Undo
+                  {t('common.undo')}
                 </Button>
                 <Button size="small" appearance="transparent" onClick={() => setLastDecision(null)}>
                   ✕
@@ -547,21 +527,21 @@ export default function Inbox() {
               marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
             }}>
               <Checkbox
-                label={`Select all ${visibleIds.length} shown`}
+                label={t('inbox.bulk.select_all_n', { count: visibleIds.length })}
                 checked={allVisibleSelected}
                 onChange={(_, d) => toggleAllVisible(!!d.checked)}
               />
               <span style={{ fontSize: 12, color: sothera.fgMuted, fontFamily: sothera.fontMono }}>
-                {selected.size} selected
+                {t('inbox.bulk.selected', { count: selected.size })}
               </span>
               <Button size="small" disabled={!selected.size || busy} onClick={() => bulkDecide('keep')}>
-                Keep ({selected.size})
+                {t('inbox.action.keep_n', { count: selected.size })}
               </Button>
               <Button size="small" disabled={!selected.size || busy} onClick={() => bulkDecide('dismiss')}>
-                Dismiss ({selected.size})
+                {t('inbox.action.dismiss_n', { count: selected.size })}
               </Button>
               <span style={{ fontSize: 10, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>
-                K = keep · D = dismiss
+                {t('inbox.shortcut_hint')}
               </span>
             </div>
 
@@ -572,7 +552,7 @@ export default function Inbox() {
                 <div key={bucket} className={styles.bucketSection}>
                   <div className={styles.bucketHeader} onClick={() => toggleBucket(bucket)}>
                     <span style={{ transition: 'transform 0.15s', transform: isOpen ? 'rotate(90deg)' : 'none', fontSize: 10 }}>▶</span>
-                    <span>{INBOX_BUCKET_EMOJI[bucket]} {INBOX_BUCKET_LABELS[bucket]} ({bucketEvents.length})</span>
+                    <span>{BUCKET_EMOJI[bucket] ?? BUCKET_EMOJI.Unknown} {colorName(bucket)} ({bucketEvents.length})</span>
                   </div>
                   {isOpen && bucketEvents.map(event => (
                     <div key={event.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>

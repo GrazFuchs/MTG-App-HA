@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 export type ColorBucket = 'W' | 'U' | 'B' | 'R' | 'G' | 'M' | 'C' | 'L';
 
 /** Bucket keys used by the Inbox triage view — superset of ColorBucket. */
@@ -95,12 +97,53 @@ export function getColorBucketLegacy(card: { color_identity: string[] | null | u
 
 export const BUCKET_ORDER: ColorBucket[] = ['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L'];
 
-export const BUCKET_LABELS: Record<ColorBucket, string> = {
-  W: 'White', U: 'Blue', B: 'Black', R: 'Red', G: 'Green',
-  M: 'Multicolor', C: 'Colorless', L: 'Land',
+/**
+ * Localised colour names, in one place.
+ *
+ * This was a plain record of English words, and three other files carried their
+ * own copy of the same list — Inbox, Cardmarket and the wishlist filter bar.
+ * They had already drifted: "All Colors" against "All colors", and the
+ * multicolour bucket keyed `M` here but `Multi` in the inbox. Neither copy was
+ * wrong on its own, which is why nobody noticed.
+ *
+ * The pip stays out of the translation values. A translator should not have to
+ * carry ⚪ through a string, and a swapped emoji is a silent defect — the pip is
+ * what people actually read in a dense list.
+ */
+const COLOR_KEY: Record<string, string> = {
+  W: 'inbox.color.W', U: 'inbox.color.U', B: 'inbox.color.B',
+  R: 'inbox.color.R', G: 'inbox.color.G',
+  M: 'inbox.color.M', Multi: 'inbox.color.M',
+  C: 'inbox.color.C', Colorless: 'inbox.color.C',
+  L: 'inbox.color.L',
+  Unknown: 'color.unknown',
 };
 
-export const BUCKET_EMOJI: Record<ColorBucket, string> = {
+/** Accepts both spellings of the multicolour/colourless buckets — see COLOR_KEY. */
+export const BUCKET_EMOJI: Record<string, string> = {
   W: '⚪', U: '🔵', B: '⚫', R: '🔴', G: '🟢',
-  M: '🌈', C: '◆', L: '🟤',
+  M: '🌈', Multi: '🌈',
+  C: '◆', Colorless: '◆',
+  L: '🟤',
+  Unknown: '❓',
 };
+
+/** Localised name without the pip — for headings that render the pip separately. */
+export function colorName(bucket: string): string {
+  return t(COLOR_KEY[bucket] ?? 'color.unknown');
+}
+
+/** Pip + localised name — for dropdown entries. */
+export function colorLabel(bucket: string): string {
+  const emoji = BUCKET_EMOJI[bucket];
+  return emoji ? `${emoji} ${colorName(bucket)}` : colorName(bucket);
+}
+
+/**
+ * Options for a colour dropdown. The empty value is "all colours"; `buckets`
+ * gives the order, because the inbox groups by `Multi`/`Colorless` while the
+ * other pages use the single-letter form the API stores.
+ */
+export function colorOptions(buckets: readonly string[]): { value: string; label: string }[] {
+  return [{ value: '', label: t('color.all') }, ...buckets.map(b => ({ value: b, label: colorLabel(b) }))];
+}

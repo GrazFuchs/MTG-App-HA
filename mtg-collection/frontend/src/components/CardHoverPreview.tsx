@@ -1,12 +1,23 @@
 /**
- * Card hover preview — shows the full Scryfall card image on mouse hover.
- * Renders through OverlayPortal (into document.body),
- * guaranteeing correct position and z-index regardless of ancestor CSS.
+ * Card preview — the full Scryfall image, on hover *and* on tap/keyboard.
+ *
+ * Hover alone was not enough. The card image is the primary way to identify a
+ * card during triage — the name alone does not tell you which printing you are
+ * looking at — and on a phone there is no hover at all, so on the device where
+ * the inbox is most often worked through, the image was simply unreachable.
+ *
+ * So the wrapper is focusable and toggles on click/Enter/Space, and Escape
+ * closes it. Hover still works exactly as before for mouse users; the tap path
+ * is additive.
+ *
+ * Renders through OverlayPortal (into document.body), guaranteeing correct
+ * position and z-index regardless of ancestor CSS.
  */
 import { useState, useRef, useEffect } from 'react';
 import { OverlayPortal } from './OverlayPortal';
 import { tokens } from '@fluentui/react-components';
 import type { Card } from '../api';
+import { t } from '../i18n';
 
 interface CardHoverPreviewProps {
   card: Card;
@@ -21,6 +32,7 @@ const ORACLE_EXTRA_H = 120;
 
 export function CardHoverPreview({ card, children, asTableRow }: CardHoverPreviewProps) {
   const [show, setShow] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -64,13 +76,31 @@ export function CardHoverPreview({ card, children, asTableRow }: CardHoverPrevie
 
   const handleMouseLeave = () => {
     clearTimeout(timerRef.current);
-    setShow(false);
+    if (!pinned) setShow(false);
+  };
+
+  /**
+   * Tap or Enter/Space pins the preview open until dismissed. Anchored to the
+   * element's own box rather than to a pointer position, because a keyboard
+   * has no pointer and a tap coordinate is the finger, not the card.
+   */
+  const togglePinned = (target: HTMLElement) => {
+    if (pinned) {
+      setPinned(false);
+      setShow(false);
+      return;
+    }
+    const r = target.getBoundingClientRect();
+    clearTimeout(timerRef.current);
+    setPos(computePos(Math.min(r.right, window.innerWidth - 8), r.top + r.height / 2));
+    setPinned(true);
+    setShow(true);
   };
 
   // Hide preview if user scrolls or window resizes (avoids stale fixed-position)
   useEffect(() => {
     if (!show) return;
-    const hide = () => setShow(false);
+    const hide = () => { setShow(false); setPinned(false); };
     window.addEventListener('scroll', hide, true); // capture for nested scrollers
     window.addEventListener('resize', hide);
     return () => {
@@ -78,6 +108,17 @@ export function CardHoverPreview({ card, children, asTableRow }: CardHoverPrevie
       window.removeEventListener('resize', hide);
     };
   }, [show]);
+
+  // Escape closes a pinned preview. Without it the only way out on a touch
+  // device would be to find the element again and tap it a second time.
+  useEffect(() => {
+    if (!pinned) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setPinned(false); setShow(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pinned]);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
@@ -87,6 +128,17 @@ export function CardHoverPreview({ card, children, asTableRow }: CardHoverPrevie
     onMouseEnter: handleMouseEnter,
     onMouseMove: handleMouseMove,
     onMouseLeave: handleMouseLeave,
+    onClick: (e: React.MouseEvent) => togglePinned(e.currentTarget as HTMLElement),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        togglePinned(e.currentTarget as HTMLElement);
+      }
+    },
+    tabIndex: 0,
+    role: 'button',
+    'aria-expanded': show,
+    'aria-label': t('cards.preview', { name: card.name }),
   };
 
   // For table rows: wrap with a <tr> that the parent <tbody> accepts.

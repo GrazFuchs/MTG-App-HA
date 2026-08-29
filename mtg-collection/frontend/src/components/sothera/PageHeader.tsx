@@ -8,6 +8,13 @@ const useStyles = makeStyles({
     justifyContent: 'space-between',
     marginBottom: '26px',
     gap: '24px',
+    // Without the wrap the title and whatever sits on the right overlap on a
+    // narrow phone — the header has no width to give at 320-375 px.
+    flexWrap: 'wrap',
+    '@media (max-width: 480px)': {
+      gap: '12px',
+      marginBottom: '18px',
+    },
   },
   left: {
     minWidth: 0,
@@ -37,6 +44,11 @@ const useStyles = makeStyles({
     '@media (max-width: 768px)': {
       fontSize: '32px',
       letterSpacing: '-1px',
+    },
+    '@media (max-width: 480px)': {
+      fontSize: '26px',
+      letterSpacing: '-0.5px',
+      wordBreak: 'break-word',
     },
   },
 });

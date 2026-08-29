@@ -7,6 +7,7 @@ import { useAccent } from '../../main';
 import { Panel, SectionHeader } from '../sothera';
 import { ComboDetailDialog } from './ComboDetailDialog';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   comboGrid: {
     display: 'grid',
@@ -103,10 +104,10 @@ export function DeckCombosSection({ deckId }: Props) {
   if (combos.length === 0 && !syncing) {
     return (
       <div style={{ marginBottom: 26 }}>
-        <SectionHeader num="" title="Combos" right="" accent={accent.oklch} />
+        <SectionHeader num="" title={t('decks.combos')} right="" accent={accent.oklch} />
         <Panel>
           <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgFaint, marginBottom: 10 }}>
-            No combos cached yet.
+            {t('decks.combos_empty')}
           </div>
           <Button
             appearance="subtle"
@@ -115,7 +116,7 @@ export function DeckCombosSection({ deckId }: Props) {
             disabled={syncing}
             style={{ color: accent.oklch }}
           >
-            {syncing ? 'Syncing...' : 'Detect Combos from Spellbook'}
+            {syncing ? t('combos.syncing') : t('decks.combos_detect')}
           </Button>
         </Panel>
       </div>
@@ -154,7 +155,7 @@ export function DeckCombosSection({ deckId }: Props) {
             ))}
             {fullCombos.length === 0 && (
               <div style={{ fontSize: 11, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>
-                No complete combo in this deck
+                {t('combo.none_complete')}
               </div>
             )}
           </div>
@@ -183,7 +184,7 @@ export function DeckCombosSection({ deckId }: Props) {
             ))}
             {partialCombos.length === 0 && (
               <div style={{ fontSize: 11, color: sothera.fgFaint, fontFamily: sothera.fontMono }}>
-                No partial combos detected
+                {t('combo.none_partial')}
               </div>
             )}
           </div>
@@ -197,7 +198,7 @@ export function DeckCombosSection({ deckId }: Props) {
             disabled={syncing}
             style={{ color: sothera.fgFaint }}
           >
-            {syncing ? 'Refreshing...' : 'Refresh from Spellbook'}
+            {syncing ? t('combos.syncing') : t('decks.combos_refresh')}
           </Button>
         </div>
       </Panel>

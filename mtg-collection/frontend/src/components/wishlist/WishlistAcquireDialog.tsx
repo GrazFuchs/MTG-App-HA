@@ -18,15 +18,16 @@ import {
 } from '@fluentui/react-components';
 import { api, WishlistItem, WishlistSource, CardPrinting } from '../../api';
 
+import { t } from '../../i18n';
 const SOURCE_OPTIONS: { value: WishlistSource; label: string }[] = [
-  { value: 'cardmarket', label: 'Cardmarket' },
-  { value: 'whatnot', label: 'Whatnot' },
-  { value: 'booster', label: 'Booster' },
-  { value: 'trade', label: 'Trade' },
-  { value: 'gift', label: 'Gift' },
-  { value: 'shop', label: 'Shop' },
-  { value: 'secret_lair', label: 'Secret Lair' },
-  { value: 'other', label: 'Other' },
+  { value: 'cardmarket', label: t('source.cardmarket') },
+  { value: 'whatnot', label: t('source.whatnot') },
+  { value: 'booster', label: t('source.booster') },
+  { value: 'trade', label: t('source.trade') },
+  { value: 'gift', label: t('source.gift') },
+  { value: 'shop', label: t('source.shop') },
+  { value: 'secret_lair', label: t('source.secret_lair') },
+  { value: 'other', label: t('source.other') },
 ];
 
 interface Props {
@@ -82,20 +83,20 @@ export default function WishlistAcquireDialog({ item, onClose, onAcquired }: Pro
               </MessageBar>
             )}
 
-            <Field label="Paid Price (EUR)" hint="Leave empty if unknown">
+            <Field label={t('wishlist.paid_price')} hint="Leave empty if unknown">
               <Input
                 type="number"
                 min={0}
                 step={0.01}
-                placeholder="e.g. 12.50"
+                placeholder={t('common.example_price')}
                 value={price}
                 onChange={(_, d) => setPrice(d.value)}
               />
             </Field>
 
-            <Field label="Source">
+            <Field label={t('common.source')}>
               <Dropdown
-                placeholder="Select source (optional)"
+                placeholder={t('wishlist.select_source')}
                 value={source ? SOURCE_OPTIONS.find(o => o.value === source)?.label : ''}
                 onOptionSelect={(_, d) => setSource(d.optionValue as WishlistSource)}
               >
@@ -106,15 +107,15 @@ export default function WishlistAcquireDialog({ item, onClose, onAcquired }: Pro
             </Field>
 
             {printings.length > 0 && (
-              <Field label="Set / Version">
+              <Field label={t('common.set_version')}>
                 <Dropdown
-                  placeholder="Select printing"
+                  placeholder={t('common.select_printing')}
                   value={printings.find(p => p.set_code === selectedSetCode)
                     ? `${printings.find(p => p.set_code === selectedSetCode)!.set_name} (${selectedSetCode?.toUpperCase()})`
-                    : selectedSetCode?.toUpperCase() || 'Any'}
+                    : selectedSetCode?.toUpperCase() || t('wishlist.any_short')}
                   onOptionSelect={(_, d) => setSelectedSetCode(d.optionValue === '__any__' ? null : d.optionValue as string)}
                 >
-                  <Option value="__any__">Any printing</Option>
+                  <Option value="__any__">{t('common.any_printing')}</Option>
                   {printings.map(p => (
                     <Option key={p.set_code} value={p.set_code} text={`${p.set_name} (${p.set_code.toUpperCase()})`}>
                       {p.set_name} ({p.set_code.toUpperCase()})
@@ -125,7 +126,7 @@ export default function WishlistAcquireDialog({ item, onClose, onAcquired }: Pro
             )}
 
             <Checkbox
-              label="Foil"
+              label={t('cards.foil')}
               checked={isFoil}
               onChange={(_, d) => setIsFoil(!!d.checked)}
             />
@@ -137,9 +138,9 @@ export default function WishlistAcquireDialog({ item, onClose, onAcquired }: Pro
             )}
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+            <Button appearance="secondary" onClick={onClose} disabled={saving}>{t('common.cancel')}</Button>
             <Button appearance="primary" onClick={handleConfirm} disabled={saving}>
-              {saving ? <Spinner size="extra-tiny" /> : 'Mark as Received'}
+              {saving ? <Spinner size="extra-tiny" /> : t('wishlist.mark_received')}
             </Button>
           </DialogActions>
         </DialogBody>

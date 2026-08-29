@@ -24,6 +24,7 @@ import { useAccent } from '../../main';
 import { Panel, SectionHeader } from '../sothera';
 import { recentForm, winRateTone } from '../../utils/deckPerformance';
 
+import { t } from '../../i18n';
 interface Props {
   deckId: number;
 }
@@ -90,29 +91,29 @@ export function DeckPerformanceSection({ deckId }: Props) {
     <div style={{ marginBottom: 26 }}>
       <SectionHeader
         num=""
-        title="Deck Performance"
+        title={t('perf.title')}
         right={`${perf?.games ?? 0} GAMES`}
         accent={accent.oklch}
       />
       <Panel>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            <Stat label="Win rate" value={`${perf?.win_rate ?? 0}%`} color={winColor} />
-            <Stat label="W / L / D" value={`${perf?.wins ?? 0}/${perf?.losses ?? 0}/${perf?.draws ?? 0}`} />
-            <Stat label="Recent form" value={recentForm(games) || '—'} />
-            <Stat label="On-play win%" value={`${perf?.on_play_win_rate ?? 0}%`} />
-            <Stat label="Avg mulligans" value={perf?.avg_mulligans ?? 0} />
-            <Stat label="Avg missed lands" value={perf?.avg_missed_land_drops ?? 0} />
-            <Stat label="Avg turns" value={perf?.avg_turns ?? 0} />
+            <Stat label={t('perf.win_rate')} value={`${perf?.win_rate ?? 0}%`} color={winColor} />
+            <Stat label={t('perf.wld')} value={`${perf?.wins ?? 0}/${perf?.losses ?? 0}/${perf?.draws ?? 0}`} />
+            <Stat label={t('perf.recent_form')} value={recentForm(games) || '—'} />
+            <Stat label={t('perf.on_play_win')} value={`${perf?.on_play_win_rate ?? 0}%`} />
+            <Stat label={t('perf.avg_mulligans')} value={perf?.avg_mulligans ?? 0} />
+            <Stat label={t('perf.avg_missed_lands')} value={perf?.avg_missed_land_drops ?? 0} />
+            <Stat label={t('perf.avg_turns')} value={perf?.avg_turns ?? 0} />
           </div>
           <Button appearance="primary" size="small" icon={<Add16Regular />} onClick={() => { setForm({ ...emptyForm, played_at: todayISO() }); setOpen(true); }}>
-            Log game
+            {t('perf.log_game')}
           </Button>
         </div>
 
         {games.length === 0 ? (
           <div style={{ fontFamily: sothera.fontMono, fontSize: 12, color: sothera.fgMuted, marginTop: 16, letterSpacing: 0.5 }}>
-            No games logged yet. Track how your deck performs after each game.
+            {t('perf.empty')}
           </div>
         ) : (
           <div style={{ marginTop: 16 }}>
@@ -125,7 +126,7 @@ export function DeckPerformanceSection({ deckId }: Props) {
                     {g.on_play ? ' · on the play' : ' · on the draw'}
                     {g.turns ? ` · ${g.turns} turns` : ''}
                     {g.mulligans ? ` · ${g.mulligans} mull` : ''}
-                    {g.missed_land_drops ? ` · ${g.missed_land_drops} missed lands` : ''}
+                    {g.missed_land_drops ? t('perf.missed_lands_n', { count: g.missed_land_drops }) : ''}
                     {g.opponents ? ` · vs ${g.opponents}` : ''}
                   </div>
                   {(g.what_worked || g.what_didnt || g.notes) && (
@@ -136,7 +137,7 @@ export function DeckPerformanceSection({ deckId }: Props) {
                     </div>
                   )}
                 </div>
-                <Button appearance="subtle" size="small" icon={<Delete16Regular />} aria-label="Delete game" onClick={() => removeGame.mutate(g.id)} />
+                <Button appearance="subtle" size="small" icon={<Delete16Regular />} aria-label={t('perf.delete_game')} onClick={() => removeGame.mutate(g.id)} />
               </div>
             ))}
           </div>
@@ -146,51 +147,51 @@ export function DeckPerformanceSection({ deckId }: Props) {
       <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
         <DialogSurface style={{ maxWidth: 520 }}>
           <DialogBody>
-            <DialogTitle>Log a game</DialogTitle>
+            <DialogTitle>{t('perf.log_a_game')}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8 }}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <Field label="Result">
+                <Field label={t('common.result')}>
                   <Dropdown
                     value={String(form.result)}
                     selectedOptions={[String(form.result)]}
                     onOptionSelect={(_, d) => upd({ result: d.optionValue as GameResult })}
                   >
-                    <Option value="win">Win</Option>
-                    <Option value="loss">Loss</Option>
-                    <Option value="draw">Draw</Option>
+                    <Option value="win">{t('perf.win')}</Option>
+                    <Option value="loss">{t('perf.loss')}</Option>
+                    <Option value="draw">{t('perf.draw')}</Option>
                   </Dropdown>
                 </Field>
-                <Field label="Date">
+                <Field label={t('common.date')}>
                   <Input type="date" value={form.played_at || ''} onChange={(_, d) => upd({ played_at: d.value })} />
                 </Field>
               </div>
 
-              <Checkbox label="On the play" checked={!!form.on_play} onChange={(_, d) => upd({ on_play: !!d.checked })} />
+              <Checkbox label={t('perf.on_the_play')} checked={!!form.on_play} onChange={(_, d) => upd({ on_play: !!d.checked })} />
 
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <Field label="Pod size"><Input type="number" min={1} max={8} value={String(form.pod_size)} onChange={(_, d) => numUpd('pod_size', d.value)} style={{ width: 90 }} /></Field>
-                <Field label="Mulligans"><Input type="number" min={0} value={String(form.mulligans)} onChange={(_, d) => numUpd('mulligans', d.value)} style={{ width: 90 }} /></Field>
-                <Field label="Missed lands"><Input type="number" min={0} value={String(form.missed_land_drops)} onChange={(_, d) => numUpd('missed_land_drops', d.value)} style={{ width: 110 }} /></Field>
-                <Field label="Turns"><Input type="number" min={0} value={String(form.turns)} onChange={(_, d) => numUpd('turns', d.value)} style={{ width: 90 }} /></Field>
+                <Field label={t('perf.pod_size')}><Input type="number" min={1} max={8} value={String(form.pod_size)} onChange={(_, d) => numUpd('pod_size', d.value)} style={{ width: 90 }} /></Field>
+                <Field label={t('perf.mulligans')}><Input type="number" min={0} value={String(form.mulligans)} onChange={(_, d) => numUpd('mulligans', d.value)} style={{ width: 90 }} /></Field>
+                <Field label={t('perf.missed_lands')}><Input type="number" min={0} value={String(form.missed_land_drops)} onChange={(_, d) => numUpd('missed_land_drops', d.value)} style={{ width: 110 }} /></Field>
+                <Field label={t('perf.turns')}><Input type="number" min={0} value={String(form.turns)} onChange={(_, d) => numUpd('turns', d.value)} style={{ width: 90 }} /></Field>
               </div>
 
-              <Field label="Opponents / commanders">
-                <Input value={form.opponents || ''} onChange={(_, d) => upd({ opponents: d.value })} placeholder="e.g. Atraxa, Krenko" />
+              <Field label={t('perf.opponents')}>
+                <Input value={form.opponents || ''} onChange={(_, d) => upd({ opponents: d.value })} placeholder={t('perf.opponents_hint')} />
               </Field>
-              <Field label="What worked">
+              <Field label={t('perf.what_worked')}>
                 <Textarea value={form.what_worked || ''} onChange={(_, d) => upd({ what_worked: d.value })} resize="vertical" />
               </Field>
-              <Field label="What didn't">
+              <Field label={t('perf.what_didnt')}>
                 <Textarea value={form.what_didnt || ''} onChange={(_, d) => upd({ what_didnt: d.value })} resize="vertical" />
               </Field>
-              <Field label="Notes">
+              <Field label={t('wishlist.notes_label')}>
                 <Textarea value={form.notes || ''} onChange={(_, d) => upd({ notes: d.value })} resize="vertical" />
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button appearance="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button appearance="secondary" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
               <Button appearance="primary" disabled={addGame.isPending} onClick={() => addGame.mutate(form)}>
-                {addGame.isPending ? 'Saving…' : 'Save game'}
+                {addGame.isPending ? t('perf.saving') : t('perf.save_game')}
               </Button>
             </DialogActions>
           </DialogBody>

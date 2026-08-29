@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@fluentui/react-components';
 import { sothera } from '../theme/sothera';
 
+import { t } from '../i18n';
 /**
  * Shown for any path the router does not know.
  *
@@ -20,13 +21,13 @@ export function NotFound() {
         404
       </div>
       <div style={{ fontFamily: sothera.fontDisplay, fontSize: 22, color: sothera.fg, marginBottom: 6 }}>
-        No such page
+        {t('notfound.title')}
       </div>
       <div style={{ fontSize: 13, color: sothera.fgMuted, marginBottom: 18 }}>
-        <code>{window.location.pathname}</code> is not a route of this add-on.
+        <code>{window.location.pathname}</code> {t('notfound.body')}
       </div>
       <Button appearance="primary" onClick={() => navigate('/')}>
-        Back to the dashboard
+        {t('notfound.back')}
       </Button>
     </div>
   );

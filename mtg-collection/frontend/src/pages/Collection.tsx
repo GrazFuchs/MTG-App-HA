@@ -75,10 +75,10 @@ const COLOR_CHIPS = [
  * rather than guessed.
  */
 const COLOR_MODES = [
-  { value: 'any', label: 'has any of', hint: 'Cards containing at least one selected colour' },
-  { value: 'all', label: 'has all of', hint: 'Cards containing every selected colour (and possibly more)' },
-  { value: 'exact', label: 'is exactly', hint: 'Cards whose colour identity is precisely the selection' },
-  { value: 'exclude', label: 'has none of', hint: 'Cards containing none of the selected colours' },
+  { value: 'any', label: 'has any of', hint: t('collection.mode_any') },
+  { value: 'all', label: 'has all of', hint: t('collection.mode_all') },
+  { value: 'exact', label: 'is exactly', hint: t('collection.mode_exact') },
+  { value: 'exclude', label: 'has none of', hint: t('collection.mode_none') },
 ] as const;
 
 const CARD_TYPES = [
@@ -240,7 +240,11 @@ export default function Collection() {
   const [colorMode, setColorMode] = useState('any');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-  const isMobile = useMediaQuery('(max-width: 600px)');
+  // 768, not 600. The column header hides at 768 and the row grid collapses
+  // to two columns at 768, but the card layout only started at 600 — so between
+  // 601 and 768 px the table showed unlabelled columns with no header to say
+  // what they were. One breakpoint, no dead zone.
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const { data: sets = [] } = useQuery<CollectionSet[]>({
     queryKey: ['collection-sets'],
@@ -351,7 +355,7 @@ export default function Collection() {
     <div>
       <PageHeader
         eyebrow={`☷ INDEX · ${total} REGISTERED`}
-        title="Collection"
+        title={t('collection.title')}
         accent={accent.oklch}
         right={
           <div style={{ textAlign: 'right' }}>
@@ -363,44 +367,44 @@ export default function Collection() {
 
       <div className={styles.controls}>
         <Input
-          placeholder="Search cards..."
+          placeholder={t('collection.search')}
           contentBefore={<Search24Regular />}
           value={searchInput}
           onChange={(_, d) => setSearchInput(d.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           className={styles.input}
         />
-        <Button onClick={handleSearch}>Search</Button>
+        <Button onClick={handleSearch}>{t('common.search')}</Button>
         <Select value={selectedSet} onChange={(_, d) => handleSetChange(d.value)} className={styles.select}>
-          <option value="">All Sets</option>
+          <option value="">{t('common.all_sets')}</option>
           {sets.map(s => (
             <option key={s.set_code} value={s.set_code}>{s.set_name} ({s.set_code.toUpperCase()})</option>
           ))}
         </Select>
         <Select value={selectedDeck} onChange={(_, d) => handleDeckChange(d.value)} className={styles.select}>
-          <option value="">All Decks</option>
+          <option value="">{t('common.all_decks')}</option>
           {decks.map(d => (
             <option key={d.id} value={String(d.id)}>{d.name}</option>
           ))}
         </Select>
         {tags.length > 0 && (
-          <Select value={selectedTag} onChange={(_, d) => handleTagChange(d.value)} className={styles.select} aria-label="Collection tag filter">
-            <option value="">All Tags</option>
+          <Select value={selectedTag} onChange={(_, d) => handleTagChange(d.value)} className={styles.select} aria-label={t('collection.tag_filter')}>
+            <option value="">{t('common.all_tags')}</option>
             {tags.map(tag => (
               <option key={tag} value={tag}>{tag}</option>
             ))}
           </Select>
         )}
         <Select value={sortBy} onChange={(_, d) => { setPage(1); setSortBy(d.value); }} className={styles.select}>
-          <option value="added_at">Date Added</option>
-          <option value="price_eur">Price</option>
-          <option value="set">Set</option>
-          <option value="archidekt_tags">Collection Tag</option>
-          <option value="name">Name</option>
+          <option value="added_at">{t('collection.sort_added')}</option>
+          <option value="price_eur">{t('collection.sort_price')}</option>
+          <option value="set">{t('collection.sort_set')}</option>
+          <option value="archidekt_tags">{t('collection.sort_tag')}</option>
+          <option value="name">{t('collection.sort_name')}</option>
         </Select>
         <Select value={sortDir} onChange={(_, d) => { setPage(1); setSortDir(d.value); }} className={styles.select}>
-          <option value="asc">Ascending</option>
-          <option value="desc">Descending</option>
+          <option value="asc">{t('collection.asc')}</option>
+          <option value="desc">{t('collection.desc')}</option>
         </Select>
       </div>
 
@@ -409,11 +413,11 @@ export default function Collection() {
           what makes "green and blue" unambiguous. */}
       <div className={styles.filterBlock}>
         <div className={styles.filterLine}>
-          <span className={styles.filterLabel}>Colour</span>
+          <span className={styles.filterLabel}>{t('collection.colour')}</span>
           <Select
             value={colorMode}
             onChange={(_, d) => { setPage(1); setColorMode(d.value); }}
-            aria-label="How to combine the selected colours"
+            aria-label={t('collection.colour_mode_hint')}
             title={COLOR_MODES.find(m => m.value === colorMode)?.hint}
             style={{ minWidth: 130 }}
           >
@@ -441,13 +445,13 @@ export default function Collection() {
           </div>
           {selectedColors.length > 0 && (
             <button type="button" className={styles.chipClear} onClick={() => { setPage(1); setSelectedColors([]); }}>
-              clear
+              {t('common.clear')}
             </button>
           )}
         </div>
 
         <div className={styles.filterLine}>
-          <span className={styles.filterLabel}>Type</span>
+          <span className={styles.filterLabel}>{t('collection.type')}</span>
           <div className={styles.chipRow}>
             {CARD_TYPES.map(ct => {
               const on = selectedTypes.includes(ct);
@@ -467,7 +471,7 @@ export default function Collection() {
           </div>
           {selectedTypes.length > 0 && (
             <button type="button" className={styles.chipClear} onClick={() => { setPage(1); setSelectedTypes([]); }}>
-              clear
+              {t('common.clear')}
             </button>
           )}
         </div>
@@ -478,22 +482,22 @@ export default function Collection() {
               {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} · {total} match{total === 1 ? '' : 'es'}
             </span>
             <button type="button" className={styles.chipClear} onClick={resetFilters}>
-              reset all
+              {t('common.reset_all')}
             </button>
           </div>
         )}
       </div>
 
       {loading ? (
-        <Spinner label="Loading collection..." style={{ marginTop: 24 }} />
+        <Spinner label={t('collection.loading')} style={{ marginTop: 24 }} />
       ) : entries.length === 0 ? (
         <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 24, letterSpacing: 1 }}>
           {activeFilterCount > 0 ? (
             <>
               No cards match these filters.{' '}
-              <button type="button" className={styles.chipClear} onClick={resetFilters}>reset all</button>
+              <button type="button" className={styles.chipClear} onClick={resetFilters}>{t('common.reset_all')}</button>
             </>
-          ) : 'Collection is empty. Sync your decks to populate it.'}
+          ) : t('collection.empty')}
         </div>
       ) : (
         <>
@@ -520,7 +524,7 @@ export default function Collection() {
           ) : (
             <Panel>
               <div className={styles.gridHeader}>
-                <div>NAME</div><div>COPIES</div><div>IN DECKS</div><div>FINISH</div><div>EDITION</div><div>LANG</div><div style={{ textAlign: 'right' }}>EUR</div>
+                <div>{t('col.name')}</div><div>{t('col.copies')}</div><div>{t('col.in_decks')}</div><div>{t('col.finish')}</div><div>{t('col.edition')}</div><div>{t('col.lang')}</div><div style={{ textAlign: 'right' }}>{t('col.eur')}</div>
               </div>
               {groups.map(group => {
                 const isOpen = openGroups.has(group.name);

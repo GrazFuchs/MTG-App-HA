@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Input, makeStyles, tokens, Spinner } from '@fluentui/react-components';
 import { api } from '../../api';
 
+import { t } from '../../i18n';
 const useStyles = makeStyles({
   wrapper: { position: 'relative', width: '100%' },
   dropdown: {
@@ -123,7 +124,7 @@ export default function CardNameAutocomplete({ value, onChange, onSelect }: Prop
   return (
     <div ref={wrapperRef} className={styles.wrapper}>
       <Input
-        placeholder="Card name..."
+        placeholder={t('wishlist.card_name_placeholder')}
         value={value}
         onChange={(_, d) => handleInputChange(d.value)}
         onKeyDown={handleKeyDown}

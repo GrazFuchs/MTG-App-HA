@@ -17,6 +17,7 @@ import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, SectionHeader, CornerTicks } from '../components/sothera';
 
+import { t } from '../i18n';
 const COLOR_MAP: Record<string, string> = {
   W: '#F9FAF4', U: '#0E68AB', B: '#150B00', R: '#D3202A', G: '#00733E',
 };
@@ -199,10 +200,10 @@ export default function DeckView() {
     };
   }, [deck]);
 
-  if (loading) return <Spinner label="Loading deck..." />;
-  if (!id) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>No deck ID provided.</div>;
+  if (loading) return <Spinner label={t('deck.loading')} />;
+  if (!id) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>{t('deck.no_id')}</div>;
   if (errorMsg) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>Error: {errorMsg}</div>;
-  if (!deck) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>Deck not found.</div>;
+  if (!deck) return <div style={{ fontFamily: sothera.fontMono, color: sothera.fgMuted }}>{t('deck.not_found')}</div>;
 
   const manaCurve = (() => {
     const cmc: Record<number, number> = {};
@@ -300,7 +301,7 @@ export default function DeckView() {
       {/* Charts row */}
       <div className={styles.chartGrid}>
         <Panel>
-          <div className={styles.chartLabel}>MANA CURVE</div>
+          <div className={styles.chartLabel}>{t('deck.mana_curve')}</div>
           <svg width="100%" height="100" viewBox="0 0 240 100" style={{ marginTop: 14 }}>
             {manaCurve.map((b, i) => {
               const barH = curveMax > 0 ? (b.count / curveMax) * 75 : 0;
@@ -316,7 +317,7 @@ export default function DeckView() {
           </svg>
         </Panel>
         <Panel>
-          <div className={styles.chartLabel}>COLOR PIPS</div>
+          <div className={styles.chartLabel}>{t('deck.color_pips')}</div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', height: 100, marginTop: 14 }}>
             {colorPips.map(p => {
               const barH = (p.count / pipMax) * 75;
@@ -331,14 +332,20 @@ export default function DeckView() {
           </div>
         </Panel>
         <Panel>
-          <div className={styles.chartLabel}>COMPOSITION</div>
+          <div className={styles.chartLabel}>{t('deck.composition')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
             {(() => {
               const comp: Record<string, number> = {};
               for (const e of deck.cards) {
                 if (SIDEBOARD_CATEGORIES.has(e.category || '')) continue;
-                const t = e.card.type_line;
-                const cat = t.includes('Land') ? 'Lands' : t.includes('Creature') ? 'Creatures' : t.includes('Artifact') ? 'Artifacts' : t.includes('Enchantment') ? 'Enchantments' : 'Inst/Sorc';
+                // Named `line`, not `t`: the i18n helper is also called t(), and
+                // the local shadowed it the moment these labels became keys.
+                const line = e.card.type_line;
+                const cat = line.includes('Land') ? t('type.lands')
+                  : line.includes('Creature') ? t('type.creatures')
+                  : line.includes('Artifact') ? t('type.artifacts')
+                  : line.includes('Enchantment') ? t('type.enchantments')
+                  : t('type.instants_sorceries');
                 comp[cat] = (comp[cat] || 0) + e.quantity;
               }
               return Object.entries(comp).sort(([, a], [, b]) => b - a).map(([label, n]) => (

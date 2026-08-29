@@ -103,15 +103,15 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
             </Field>
 
             {printings.length > 0 && (
-              <Field label="Set / Version">
+              <Field label={t('common.set_version')}>
                 <Dropdown
-                  placeholder="Any printing"
+                  placeholder={t('common.any_printing')}
                   value={printings.find(p => p.set_code === selectedSetCode)
                     ? `${printings.find(p => p.set_code === selectedSetCode)!.set_name} (${selectedSetCode?.toUpperCase()})`
-                    : selectedSetCode?.toUpperCase() || 'Any printing'}
+                    : selectedSetCode?.toUpperCase() || t('common.any_printing')}
                   onOptionSelect={(_, d) => setSelectedSetCode(d.optionValue === '__any__' ? null : d.optionValue as string)}
                 >
-                  <Option value="__any__">Any printing</Option>
+                  <Option value="__any__">{t('common.any_printing')}</Option>
                   {printings.map(p => (
                     <Option key={p.set_code} value={p.set_code} text={`${p.set_name} (${p.set_code.toUpperCase()})`}>
                       {p.set_name} ({p.set_code.toUpperCase()})
@@ -121,7 +121,7 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
               </Field>
             )}
 
-            <Checkbox label="Foil" checked={isFoil} onChange={(_, d) => setIsFoil(!!d.checked)} />
+            <Checkbox label={t('cards.foil')} checked={isFoil} onChange={(_, d) => setIsFoil(!!d.checked)} />
 
             <Field label={t('wishlist.status_label')}>
               <Dropdown
@@ -151,7 +151,7 @@ export default function WishlistEditDialog({ item, decks, onClose, onSaved }: Pr
               <Input
                 value={tags}
                 onChange={(_, d) => setTags(d.value)}
-                placeholder="modern, priority-upgrade"
+                placeholder={t('wishlist.tags_placeholder')}
               />
             </Field>
 

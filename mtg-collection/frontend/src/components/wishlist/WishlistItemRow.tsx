@@ -90,7 +90,7 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
     return (
       <div className={styles.priceCell}>
         <div>Paid: {paid != null ? `€${paid.toFixed(2)}` : '—'}</div>
-        {current != null && <div>Market: €{current.toFixed(2)}</div>}
+        {current != null && <div>{t('wishlist.market_short', { price: current.toFixed(2) })}</div>}
         {item.price_delta_eur != null && item.price_delta_pct != null && (
           <div className={item.price_delta_eur > 0 ? styles.deltaPositive : styles.deltaNegative}>
             {item.price_delta_eur > 0 ? '+' : ''}€{item.price_delta_eur.toFixed(2)}
@@ -104,7 +104,7 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
   if (current == null) {
     return (
       <span className={styles.above}>
-        — / {target > 0 ? `€${target.toFixed(2)}` : 'no target'}
+        — / {target > 0 ? `€${target.toFixed(2)}` : t('wishlist.no_target_inline')}
       </span>
     );
   }
@@ -124,9 +124,9 @@ function PriceDisplay({ item }: { item: WishlistItem }) {
           // never register as a deal, so it says so instead of showing a dash.
           <span
             className={styles.above}
-            title="No target price set — this card can never show up as a deal"
+            title={t('wishlist.no_target_hint')}
           >
-            not set
+            {t('wishlist.no_target_short')}
           </span>
         )}
       </div>
@@ -155,8 +155,8 @@ function RelevanceBadges({ item }: { item: WishlistItem }) {
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
       {item.is_game_changer && (
-        <Badge appearance="tint" color="danger" size="small" title="On the official WotC Game Changers list">
-          Game Changer
+        <Badge appearance="tint" color="danger" size="small" title={t('wishlist.game_changer_hint')}>
+          {t('wishlist.game_changer')}
         </Badge>
       )}
       {impact && (
@@ -176,7 +176,7 @@ function RelevanceBadges({ item }: { item: WishlistItem }) {
           size="small"
           title={`One card from an infinite combo in: ${item.completes_combo_in.join(', ')}`}
         >
-          {`Completes a combo in ${item.completes_combo_in[0]}`}
+          {t('wishlist.completes_combo', { deck: item.completes_combo_in[0] })}
           {item.completes_combo_in.length > 1 ? ` +${item.completes_combo_in.length - 1}` : ''}
         </Badge>
       )}
@@ -218,7 +218,7 @@ export default function WishlistItemRow({ item, onEdit, onAcquire, onOrder, onUn
   const actionsMenu = (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <Button icon={<MoreHorizontal24Regular />} appearance="subtle" size="small" aria-label="Actions" />
+        <Button icon={<MoreHorizontal24Regular />} appearance="subtle" size="small" aria-label={t('common.actions')} />
       </MenuTrigger>
       <MenuPopover>
         <MenuList>

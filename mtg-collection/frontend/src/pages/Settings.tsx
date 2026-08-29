@@ -77,7 +77,7 @@ export default function Settings() {
   const syncing = syncMutation.isPending;
   const resyncing = resyncMutation.isPending;
 
-  if (loading) return <Spinner label="Loading..." />;
+  if (loading) return <Spinner label={t('common.loading')} />;
 
   return (
     <div>
@@ -89,17 +89,17 @@ export default function Settings() {
         </MessageBar>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 24 }}>
         {/* Sync Configuration */}
         <Panel corners glow>
-          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 12 }}>SYNC SCHEDULE</div>
-          <div style={{ fontFamily: sothera.fontDisplay, fontSize: 20, fontWeight: 600, color: sothera.fg, marginBottom: 16 }}>Sync Configuration</div>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 12 }}>{t('settings.schedule')}</div>
+          <div style={{ fontFamily: sothera.fontDisplay, fontSize: 20, fontWeight: 600, color: sothera.fg, marginBottom: 16 }}>{t('settings.sync_config')}</div>
 
           {[
-            { label: 'Archidekt', value: status?.archidekt_username || 'Not configured', ok: !!status?.archidekt_username },
-            { label: 'Auth', value: status?.archidekt_authenticated ? 'Credentials set' : 'Public only', ok: !!status?.archidekt_authenticated },
-            { label: 'Cardmarket', value: status?.cardmarket_configured ? 'Username set' : 'Not configured', ok: !!status?.cardmarket_configured },
-            { label: 'Auto-sync', value: status?.sync_enabled ? `Enabled · daily at ${status.next_sync_hour}:00` : 'Disabled', ok: !!status?.sync_enabled },
+            { label: 'Archidekt', value: status?.archidekt_username || t('settings.not_configured'), ok: !!status?.archidekt_username },
+            { label: t('settings.auth'), value: status?.archidekt_authenticated ? t('settings.credentials_set') : t('settings.public_only'), ok: !!status?.archidekt_authenticated },
+            { label: 'Cardmarket', value: status?.cardmarket_configured ? t('settings.username_set') : t('settings.not_configured'), ok: !!status?.cardmarket_configured },
+            { label: t('settings.autosync'), value: status?.sync_enabled ? `Enabled · daily at ${status.next_sync_hour}:00` : t('settings.disabled'), ok: !!status?.sync_enabled },
           ].map(row => (
             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${sothera.rowBorder}` }}>
               <span style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, letterSpacing: 1 }}>{row.label}</span>
@@ -107,27 +107,27 @@ export default function Settings() {
             </div>
           ))}
 
-          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFainter, marginTop: 12, letterSpacing: 0.5 }}>Configure these options in the Home Assistant Add-on settings.</div>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFainter, marginTop: 12, letterSpacing: 0.5 }}>{t('settings.sync_config_hint')}</div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <Button icon={<ArrowSync24Regular />} appearance="primary" onClick={() => { setMsg(null); syncMutation.mutate(); }} disabled={syncing || resyncing}>
-              {syncing ? 'Syncing...' : 'Sync Now'}
+              {syncing ? t('settings.syncing') : t('settings.sync_now')}
             </Button>
             <Button icon={<DeleteRegular />} appearance="secondary" onClick={() => {
               if (!confirm('This will delete all synced data and re-download everything from Archidekt. Continue?')) return;
               setMsg(null);
               resyncMutation.mutate();
             }} disabled={syncing || resyncing}>
-              {resyncing ? 'Resyncing...' : 'Full Resync'}
+              {resyncing ? t('settings.resyncing') : t('settings.full_resync')}
             </Button>
           </div>
         </Panel>
 
         {/* Cardmarket Data */}
         <Panel>
-          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 12 }}>CONNECTIONS</div>
-          <div style={{ fontFamily: sothera.fontDisplay, fontSize: 20, fontWeight: 600, color: sothera.fg, marginBottom: 16 }}>Cardmarket Data</div>
-          <div style={{ fontFamily: sothera.fontBody, fontSize: 13, color: sothera.fgMuted, marginBottom: 16 }}>Delete all Cardmarket listings (both imported and manually created).</div>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase', marginBottom: 12 }}>{t('settings.connections')}</div>
+          <div style={{ fontFamily: sothera.fontDisplay, fontSize: 20, fontWeight: 600, color: sothera.fg, marginBottom: 16 }}>{t('settings.cardmarket_data')}</div>
+          <div style={{ fontFamily: sothera.fontBody, fontSize: 13, color: sothera.fgMuted, marginBottom: 16 }}>{t('settings.clear_hint')}</div>
           <Button
             icon={<DeleteRegular />}
             appearance="secondary"
@@ -142,17 +142,20 @@ export default function Settings() {
               }
             }}
           >
-            Clear All Listings
+            {t('settings.clear_all')}
           </Button>
         </Panel>
       </div>
 
       {/* Sync History */}
-      <SectionHeader num="01" title="Sync History" right={`${history.length} RECORDS`} accent={accent.oklch} />
+      <SectionHeader num="01" title={t('settings.history')} right={`${history.length} RECORDS`} accent={accent.oklch} />
       {history.length === 0 ? (
-        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 12, letterSpacing: 1 }}>No sync history yet.</div>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 12, letterSpacing: 1 }}>{t('settings.history_empty')}</div>
       ) : (
         <Panel>
+          {/* Six columns do not fit a phone. Scroll the table, not the page. */}
+          <div style={{ overflowX: 'auto' }}>
+          <div style={{ minWidth: 640 }}>
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1.5fr 80px 80px 70px 1.5fr 2fr',
@@ -164,7 +167,7 @@ export default function Settings() {
             color: sothera.fgFaint,
             textTransform: 'uppercase',
           }}>
-            <div>STARTED</div><div>SOURCE</div><div>STATUS</div><div>ITEMS</div><div>FINISHED</div><div>ERROR</div>
+            <div>{t('col.started')}</div><div>{t('col.source')}</div><div>{t('col.status')}</div><div>{t('col.items')}</div><div>{t('col.finished')}</div><div>{t('col.error')}</div>
           </div>
           {history.map((h) => (
             <div key={h.id} style={{
@@ -196,11 +199,13 @@ export default function Settings() {
               <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.error || '—'}</div>
             </div>
           ))}
+          </div>
+          </div>
         </Panel>
       )}
 
       {/* Backup & Restore */}
-      <SectionHeader num="02" title="Backup & Restore" accent={accent.oklch} />
+      <SectionHeader num="02" title={t('settings.backup')} accent={accent.oklch} />
       <div style={{ display: 'flex', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
         <Button
           appearance="primary"
@@ -230,7 +235,7 @@ export default function Settings() {
               if (data.status === 'restored') {
                 setMsg(`Database restored (${data.size_bytes} bytes). Restart the add-on to apply.`);
               } else {
-                setMsg(`Restore failed: ${data.error || 'Unknown error'}`);
+                setMsg(t('settings.restore_failed', { error: data.error || t('settings.unknown_error') }));
               }
             };
             input.click();

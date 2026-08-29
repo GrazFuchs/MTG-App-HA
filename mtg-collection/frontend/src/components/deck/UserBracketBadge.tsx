@@ -3,6 +3,7 @@ import { Badge, Popover, PopoverTrigger, PopoverSurface, Button, Spinner } from 
 import { api, DeckDetail } from '../../api';
 import { sothera } from '../../theme/sothera';
 
+import { t } from '../../i18n';
 interface Props {
   deck: DeckDetail;
   onUpdate: (d: DeckDetail) => void;
@@ -10,10 +11,10 @@ interface Props {
 
 /** How the shown bracket got its number, in the order the app trusts them. */
 function sourceLabel(deck: DeckDetail): string {
-  if (deck.user_bracket) return 'set by you';
-  if (deck.computed_bracket) return 'computed from the decklist';
-  if (deck.bracket) return 'imported from Archidekt';
-  return 'not set';
+  if (deck.user_bracket) return t('bracket.source_user');
+  if (deck.computed_bracket) return t('bracket.source_computed');
+  if (deck.bracket) return t('bracket.source_archidekt');
+  return t('bracket.source_none');
 }
 
 export function UserBracketBadge({ deck, onUpdate }: Props) {
@@ -48,14 +49,14 @@ export function UserBracketBadge({ deck, onUpdate }: Props) {
             appearance="filled"
             color={deck.user_bracket ? 'brand' : effective ? 'informative' : 'subtle'}
             style={{ cursor: 'pointer' }}
-            title={`Bracket ${effective ?? '—'} — ${sourceLabel(deck)}. Click to set your own.`}
+            title={t('bracket.badge_title', { bracket: effective ?? '—', source: sourceLabel(deck) })}
           >
-            {effective ? `Bracket ${effective}` : 'Set Bracket'}
+            {effective ? `Bracket ${effective}` : t('bracket.set')}
           </Badge>
         </PopoverTrigger>
         <PopoverSurface>
           <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 1, color: sothera.fgFaint, marginBottom: 8 }}>
-            YOUR BRACKET · overrides the computed one
+            {t('bracket.your_bracket')}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {[1, 2, 3, 4, 5].map(n => (
@@ -72,14 +73,14 @@ export function UserBracketBadge({ deck, onUpdate }: Props) {
               size="small"
               appearance="subtle"
               onClick={() => handleSelect(null)}
-              title="Clear — fall back to the computed bracket"
+              title={t('bracket.clear')}
             >
               —
             </Button>
           </div>
           {deck.computed_bracket && (
             <div style={{ fontSize: 11, color: sothera.fgMuted, marginTop: 10 }}>
-              Computed from the decklist: <b>Bracket {deck.computed_bracket}</b>
+              {t('bracket.computed_from')} <b>Bracket {deck.computed_bracket}</b>
             </div>
           )}
         </PopoverSurface>
@@ -92,9 +93,9 @@ export function UserBracketBadge({ deck, onUpdate }: Props) {
               appearance="outline"
               color="subtle"
               style={{ cursor: 'pointer' }}
-              title="What put this deck in that bracket"
+              title={t('bracket.explain')}
             >
-              why?
+              {t('common.why')}
             </Badge>
           </PopoverTrigger>
           <PopoverSurface style={{ maxWidth: 420 }}>
@@ -103,7 +104,7 @@ export function UserBracketBadge({ deck, onUpdate }: Props) {
             </div>
             {detail.reasons.length === 0 && (
               <div style={{ fontSize: 12, color: sothera.fgMuted }}>
-                No game changers, no complete two-card combo, no mass land denial, no extra-turn plan.
+                {t('bracket.nothing_found')}
               </div>
             )}
             {detail.reasons.map(r => (
@@ -132,7 +133,7 @@ export function UserBracketBadge({ deck, onUpdate }: Props) {
             </div>
             <div style={{ marginTop: 10 }}>
               <Button size="small" appearance="subtle" onClick={handleRecompute} disabled={busy}>
-                {busy ? <Spinner size="tiny" /> : 'Recompute'}
+                {busy ? <Spinner size="tiny" /> : t('power.recompute')}
               </Button>
             </div>
           </PopoverSurface>

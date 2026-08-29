@@ -1,4 +1,4 @@
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Button, Spinner } from '@fluentui/react-components';
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { makeStyles, mergeClasses, shorthands } from '@griffel/react';
@@ -75,7 +75,26 @@ const useStyles = makeStyles({
     gap: '4px',
     flexWrap: 'wrap',
   },
+  skipLink: {
+    position: 'absolute',
+    left: '-9999px',
+    top: 0,
+    zIndex: 100,
+    padding: '8px 14px',
+    backgroundColor: sothera.bg,
+    color: sothera.fg,
+    fontFamily: sothera.fontDisplay,
+    fontSize: '12px',
+    ':focus': {
+      left: '8px',
+      top: '8px',
+    },
+  },
   navItem: {
+    // The nav items are anchors now (see the render site); without these two
+    // an <a> arrives underlined and in the browser's link colour.
+    textDecoration: 'none',
+    color: 'inherit',
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
@@ -116,6 +135,11 @@ const useStyles = makeStyles({
     borderLeft: `1px solid ${sothera.glassBorder}`,
   },
   accentDot: {
+    // A <button> now, so the browser's default padding and background have to
+    // go — but the focus ring stays: these dots are the only way to change the
+    // accent, and a keyboard user has to be able to see which one is focused.
+    padding: 0,
+    backgroundColor: 'transparent',
     width: '10px',
     height: '10px',
     borderRadius: '1px',
@@ -170,7 +194,6 @@ const navItems = [
 export default function App() {
   const styles = useStyles();
   const contentRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
   const location = useLocation();
   const { accent, accentName, setAccent } = useAccent();
   const { mode, setMode, isDark } = useSotheraTheme();
@@ -209,12 +232,16 @@ export default function App() {
   return (
     <>
       <BackdropFX accent={accent} />
+      {/* First tab stop on the page. Eight nav items sit between the top of the
+          document and the content; without this a keyboard user walks all of
+          them on every single page. Visible only while focused. */}
+      <a href="#content" className={styles.skipLink}>{t('nav.skip')}</a>
       <div className={styles.root}>
         <div className={styles.header}>
           <div className={styles.brand}>
             <Sigil size={18} color={accent.oklch} />
             <div className={styles.brandName}>
-              MTG<span style={{ color: accent.oklch }}>·</span>Collection Manager
+              MTG<span style={{ color: accent.oklch }}>·</span>{t('app.subtitle')}
             </div>
           </div>
 
@@ -223,14 +250,19 @@ export default function App() {
             <span style={{ color: sothera.positive }}>● ONLINE</span>
           </div>
 
-          <div className={styles.nav}>
+          {/* A <Link>, not a <div onClick>. The nav was unreachable by keyboard
+              entirely — no tab stop, no Enter, nothing for a screen reader to
+              announce as a link — and middle-click/open-in-new-tab did nothing
+              either, because there was no href to open. */}
+          <nav className={styles.nav} aria-label={t('nav.primary')}>
             {navItems.map(item => {
               const active = isActive(item.id);
               return (
-                <div
+                <Link
                   key={item.id}
+                  to={item.id}
                   className={styles.navItem}
-                  onClick={() => navigate(item.id)}
+                  aria-current={active ? 'page' : undefined}
                   style={{
                     color: active ? sothera.fg : sothera.fgFaint,
                     backgroundColor: active ? accent.soft : undefined,
@@ -264,17 +296,20 @@ export default function App() {
                       {pendingCount}
                     </span>
                   )}
-                </div>
+                </Link>
               );
             })}
-          </div>
+          </nav>
 
-          <div className={styles.accentPicker}>
+          <div className={styles.accentPicker} role="group" aria-label={t('nav.accent')}>
             {(Object.entries(displayAccents) as [AccentName, typeof accent][]).map(([name, a]) => (
-              <div
+              <button
                 key={name}
+                type="button"
                 className={styles.accentDot}
                 title={a.label}
+                aria-label={a.label}
+                aria-pressed={name === accentName}
                 onClick={() => setAccent(name)}
                 style={{
                   backgroundColor: a.hex,
@@ -301,19 +336,19 @@ export default function App() {
           </div>
         </div>
 
-        <div className={styles.content} ref={contentRef}>
+        <main id="content" className={styles.content} ref={contentRef}>
           {/* One boundary around every page: a component that throws used to
               blank the content area with no hint that anything had failed. */}
           <ErrorBoundary
             fallback={(err, retry) => (
               <ErrorBanner
-                title="This page could not be rendered"
+                title={t('app.render_failed')}
                 message={err.message}
-                action={<Button size="small" onClick={retry}>Try again</Button>}
+                action={<Button size="small" onClick={retry}>{t('common.retry')}</Button>}
               />
             )}
           >
-            <Suspense fallback={<Spinner label="Loading…" />}>
+            <Suspense fallback={<Spinner label={t('app.loading')} />}>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/decks" element={<Decks />} />
@@ -332,7 +367,7 @@ export default function App() {
             </Suspense>
           </ErrorBoundary>
           <BackToTop scrollRef={contentRef} />
-        </div>
+        </main>
       </div>
     </>
   );

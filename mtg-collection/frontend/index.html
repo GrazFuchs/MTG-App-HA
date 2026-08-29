@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MTG Collection Manager</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <!-- Fonts are bundled (src/fonts.css). No CDN link here on purpose: the
+         panel runs on a LAN that is often offline, and the household filters
+         DNS on both resolvers — a blocked fonts.gstatic.com would swap the
+         whole UI to a fallback face with nothing in any log to say why. -->
   </head>
   <body>
     <div id="root"></div>

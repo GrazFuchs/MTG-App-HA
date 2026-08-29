@@ -10,6 +10,7 @@ import { Dismiss24Regular } from '@fluentui/react-icons';
 import { t } from '../../i18n';
 import type { DeckSummary } from '../../api';
 
+import { colorOptions } from '../../utils/colors';
 const useStyles = makeStyles({
   bar: {
     display: 'flex',
@@ -100,22 +101,12 @@ const SORT_OPTIONS: { value: WishlistFilters['sort']; label: string }[] = [
 ];
 
 const ORDERED_OPTIONS: { value: WishlistFilters['ordered']; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'ordered', label: '📦 Ordered' },
-  { value: 'unordered', label: 'Not ordered' },
+  { value: 'all', label: 'wishlist.filter_all' },
+  { value: 'ordered', label: 'wishlist.filter_ordered' },
+  { value: 'unordered', label: 'wishlist.ordered_no' },
 ];
 
-const COLOR_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'All Colors' },
-  { value: 'W', label: '⚪ White' },
-  { value: 'U', label: '🔵 Blue' },
-  { value: 'B', label: '⚫ Black' },
-  { value: 'R', label: '🔴 Red' },
-  { value: 'G', label: '🟢 Green' },
-  { value: 'M', label: '🌈 Multi' },
-  { value: 'C', label: '◆ Colorless' },
-  { value: 'L', label: '🟤 Lands' },
-];
+const COLOR_OPTIONS = colorOptions(['W', 'U', 'B', 'R', 'G', 'M', 'C', 'L']);
 
 export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
   const styles = useStyles();
@@ -167,8 +158,8 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
       />
 
       <Dropdown
-        placeholder="Color"
-        value={COLOR_OPTIONS.find(o => o.value === (filters.color || ''))?.label || 'All Colors'}
+        placeholder={t('collection.colour')}
+        value={COLOR_OPTIONS.find(o => o.value === (filters.color || ''))?.label || t('color.all')}
         onOptionSelect={(_, d) => update({ color: d.optionValue || null })}
         style={{ minWidth: '120px' }}
       >
@@ -179,13 +170,13 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
 
       {filters.status === 'wanted' && (
         <Dropdown
-          placeholder="Ordered"
-          value={ORDERED_OPTIONS.find(o => o.value === filters.ordered)?.label || 'All'}
+          placeholder={t('wishlist.filter_ordered')}
+          value={t(ORDERED_OPTIONS.find(o => o.value === filters.ordered)?.label || 'wishlist.filter_all')}
           onOptionSelect={(_, d) => update({ ordered: (d.optionValue as WishlistFilters['ordered']) || 'all' })}
           style={{ minWidth: '130px' }}
         >
           {ORDERED_OPTIONS.map(o => (
-            <Option key={o.value} value={o.value}>{o.label}</Option>
+            <Option key={o.value} value={o.value}>{t(o.label)}</Option>
           ))}
         </Dropdown>
       )}
@@ -199,7 +190,7 @@ export default function WishlistFilterBar({ filters, onChange, decks }: Props) {
       {/* Without a target an entry can never appear as a deal, so it would
           otherwise be invisible in exactly the view meant to find bargains. */}
       <Checkbox
-        label="No target price"
+        label={t('wishlist.no_target_filter')}
         checked={filters.noTargetOnly}
         onChange={(_, d) => update({ noTargetOnly: !!d.checked })}
       />

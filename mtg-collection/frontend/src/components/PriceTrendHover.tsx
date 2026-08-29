@@ -6,6 +6,7 @@ import { Sparkline } from './Sparkline';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 
+import { t } from '../i18n';
 const formatUsd = (v: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
 
@@ -124,7 +125,7 @@ export default function PriceTrendHover({ cardName, children, days = 14, label, 
           onMouseLeave={handleLeave}
         >
           <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginBottom: 4, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-            {label || `${days}-day trend`}
+            {label || t('price.trend_days', { days })}
           </div>
           {history.length > 1 ? (
             <>
@@ -135,13 +136,13 @@ export default function PriceTrendHover({ cardName, children, days = 14, label, 
             </>
           ) : (
             <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint }}>
-              No price history
+              {t('price.no_history')}
             </div>
           )}
           {longTerm && longTerm.series.length > 1 && (
             <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${sothera.glassBorder}` }}>
               <div style={{ fontFamily: sothera.fontMono, fontSize: 10, color: sothera.fgFaint, marginBottom: 4, letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                MTGStocks · 1y (USD)
+                {t('price.mtgstocks')}
               </div>
               <Sparkline
                 data={longTerm.series.map(p => ({ v: p.market ?? p.avg ?? p.low ?? 0, date: p.date }))}

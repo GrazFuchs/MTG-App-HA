@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/re
 import App from './App';
 import { ACCENTS, ACCENTS_LIGHT, type AccentName, type AccentDef } from './theme/sothera';
 import { SotheraThemeProvider, useSotheraTheme } from './theme';
+import './fonts.css';
 import './index.css';
 
 const queryClient = new QueryClient({

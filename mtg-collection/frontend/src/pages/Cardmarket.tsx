@@ -21,8 +21,9 @@ import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
 
+import { t } from '../i18n';
 const COLOR_OPTIONS = [
-  { value: '', label: 'All Colors' },
+  { value: '', label: t('color.all') },
   { value: 'W', label: '⚪ White' },
   { value: 'U', label: '🔵 Blue' },
   { value: 'B', label: '⚫ Black' },
@@ -34,12 +35,12 @@ const COLOR_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
-  { value: 'source_asc', label: 'Pending first' },
-  { value: 'price_desc', label: 'Price desc' },
-  { value: 'name_asc', label: 'Name asc' },
-  { value: 'set_asc', label: 'Set asc' },
-  { value: 'color_asc', label: 'Color asc' },
-  { value: 'qty_desc', label: 'Quantity desc' },
+  { value: 'source_asc', label: t('cardmarket.sort.pending_first') },
+  { value: 'price_desc', label: t('sort.price_desc') },
+  { value: 'name_asc', label: t('sort.name_asc') },
+  { value: 'set_asc', label: t('sort.set_asc') },
+  { value: 'color_asc', label: t('sort.color_asc') },
+  { value: 'qty_desc', label: t('sort.qty_desc') },
 ];
 
 const PRICE_TIERS = [
@@ -122,7 +123,7 @@ const useStyles = makeStyles({
 
 function PriceCell({ cardName }: { cardName: string }) {
   return (
-    <PriceTrendHover cardName={cardName} days={30} label="30-day trend">
+    <PriceTrendHover cardName={cardName} days={30} label={t('cardmarket.trend_30d')}>
       {cardName}
     </PriceTrendHover>
   );
@@ -233,11 +234,11 @@ export default function Cardmarket() {
     <div>
       <PageHeader
         eyebrow="⌖ COMMERCE TERMINAL · CARDMARKET LINK"
-        title="Cardmarket"
+        title={t('cardmarket.title')}
         accent={accent.oklch}
         right={
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase' }}>LISTINGS · TOTAL VALUE</div>
+            <div style={{ fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2, color: sothera.fgFaint, textTransform: 'uppercase' }}>{t('cardmarket.listings_total')}</div>
             <div style={{ fontFamily: sothera.fontDisplay, fontSize: 28, fontWeight: 700, color: sothera.fg, fontFeatureSettings: '"tnum"', letterSpacing: -0.8 }}>€{totalValue.toFixed(2)}</div>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: accent.oklch, letterSpacing: 1.5 }}>{stats?.unique_cards ?? 0} CARDS · {stats?.total_rows ?? 0} LISTINGS · {totalQty} COPIES</div>
           </div>
@@ -251,7 +252,7 @@ export default function Cardmarket() {
           setMsg(null);
           try {
             await api.exportCardmarketCSV();
-            setMsg({ type: 'success', text: 'CSV exported successfully' });
+            setMsg({ type: 'success', text: t('cardmarket.csv_exported') });
           } catch (e: any) {
             setMsg({ type: 'error', text: e.message });
           } finally {
@@ -269,7 +270,7 @@ export default function Cardmarket() {
           { l: '⇡ IMPORT CSV', primary: true, onClick: () => fileRef.current?.click(), disabled: importing },
           { l: '⇣ EXPORT CSV', primary: false, onClick: async () => {
             setExporting(true); setMsg(null);
-            try { await api.exportCardmarketCSV(); setMsg({ type: 'success', text: 'CSV exported successfully' }); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setExporting(false); }
+            try { await api.exportCardmarketCSV(); setMsg({ type: 'success', text: t('cardmarket.csv_exported') }); } catch (e: any) { setMsg({ type: 'error', text: e.message }); } finally { setExporting(false); }
           }, disabled: exporting || listings.length === 0 },
           { l: '↯ SYNC PRICES', primary: false, onClick: () => { setMsg(null); syncPricesMutation.mutate(); }, disabled: syncingPrices },
         ].map(b => (
@@ -289,7 +290,7 @@ export default function Cardmarket() {
           </div>
         ))}
         <Input
-          placeholder="Search..."
+          placeholder={t('common.search_placeholder')}
           value={searchInput}
           onChange={(_, d) => setSearchInput(d.value)}
           onKeyDown={(e) => {
@@ -305,13 +306,13 @@ export default function Cardmarket() {
           {COLOR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
         <Select value={setCodeFilter} onChange={(_, d) => setParam('set', d.value)} style={{ minWidth: 140 }}>
-          <option value="">All Sets</option>
+          <option value="">{t('common.all_sets')}</option>
           {availableSets.map(s => <option key={s.set_code} value={s.set_code}>{s.set_name}</option>)}
         </Select>
         <Select value={sourceFilter} onChange={(_, d) => setParam('source', d.value)} style={{ minWidth: 140 }}>
-          <option value="">All Sources</option>
-          <option value="manual">Manual (Draft)</option>
-          <option value="import">Imported</option>
+          <option value="">{t('common.all_sources')}</option>
+          <option value="manual">{t('cardmarket.manual_draft')}</option>
+          <option value="import">{t('cardmarket.imported')}</option>
         </Select>
         <Select value={sortParam} onChange={(_, d) => setParam('sort', d.value)} style={{ minWidth: 160 }}>
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
@@ -327,7 +328,7 @@ export default function Cardmarket() {
       {/* Price Alerts */}
       {!alertsLoading && alerts.length > 0 && (
         <>
-          <SectionHeader num="01" title="Price Spike Alerts" right={`${alerts.length} DETECTED`} accent={accent.oklch} />
+          <SectionHeader num="01" title={t('cardmarket.price_alerts')} right={`${alerts.length} DETECTED`} accent={accent.oklch} />
           <Panel>
             {(() => {
               const tierMap = new Map<string, PriceAlert[]>();
@@ -374,11 +375,11 @@ export default function Cardmarket() {
       )}
 
       {/* Listings table */}
-      <SectionHeader num="02" title="Active Listings" right={`${listingsTotal} LISTINGS`} accent={accent.oklch} />
+      <SectionHeader num="02" title={t('cardmarket.active_listings')} right={`${listingsTotal} LISTINGS`} accent={accent.oklch} />
       {loading ? (
-        <Spinner label="Loading..." style={{ marginTop: 24 }} />
+        <Spinner label={t('common.loading')} style={{ marginTop: 24 }} />
       ) : listings.length === 0 ? (
-        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 16, letterSpacing: 1 }}>No listings. Import a CSV or list duplicates from the Duplicates tab.</div>
+        <div style={{ fontFamily: sothera.fontMono, fontSize: 13, color: sothera.fgMuted, marginTop: 16, letterSpacing: 1 }}>{t('cardmarket.empty')}</div>
       ) : (() => {
         const pendingListings = listings.filter(l => l.source === 'manual');
         const liveListings = listings.filter(l => l.source !== 'manual');
@@ -414,7 +415,7 @@ export default function Cardmarket() {
 
         const gridHeader = (
           <div className={styles.gridHeader}>
-            <div>NAME</div><div>SET</div><div>QTY</div><div>COND</div><div>LANG</div><div>SOURCE</div><div style={{ textAlign: 'right' }}>EUR</div><div style={{ textAlign: 'right' }}>RARITY</div>
+            <div>{t('col.name')}</div><div>{t('col.set')}</div><div>{t('col.qty')}</div><div>{t('col.cond')}</div><div>{t('col.lang')}</div><div>{t('col.source')}</div><div style={{ textAlign: 'right' }}>{t('col.eur')}</div><div style={{ textAlign: 'right' }}>{t('col.rarity')}</div>
           </div>
         );
 
@@ -423,7 +424,7 @@ export default function Cardmarket() {
             <>
               <Panel>
                 <div style={{ fontFamily: sothera.fontMono, fontSize: 11, letterSpacing: 1.5, color: accent.oklch, marginBottom: 8, textTransform: 'uppercase' }}>
-                  ✏️ Pending Listings ({pendingListings.length}) — not yet on Cardmarket
+                  {t('cardmarket.section_pending_n', { count: pendingListings.length })}
                 </div>
                 {gridHeader}
                 {pendingListings.map((l, i) => renderRow(l, i, pendingListings.length))}
@@ -431,7 +432,7 @@ export default function Cardmarket() {
               <div style={{ height: 16 }} />
               <Panel>
                 <div style={{ fontFamily: sothera.fontMono, fontSize: 11, letterSpacing: 1.5, color: sothera.fgMuted, marginBottom: 8, textTransform: 'uppercase' }}>
-                  ✅ Live on Cardmarket ({liveListings.length})
+                  {t('cardmarket.section_live_n', { count: liveListings.length })}
                 </div>
                 {gridHeader}
                 {liveListings.map((l, i) => renderRow(l, i, liveListings.length))}
@@ -449,7 +450,7 @@ export default function Cardmarket() {
       })()}
 
       {/* Listing Health */}
-      <SectionHeader num="03" title="Listing Health" right="vs TREND" accent={accent.oklch} />
+      <SectionHeader num="03" title={t('cardmarket.listing_health')} right="vs TREND" accent={accent.oklch} />
       <ListingHealthPanel />
     </div>
   );

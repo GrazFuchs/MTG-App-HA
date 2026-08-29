@@ -1,3 +1,48 @@
+## 0.44.0 — Sprint 10: the interface was half in English, and unreachable without a mouse
+
+### The i18n sweep, in three passes and 433 strings
+
+The review counted "~222 hardcoded literals, 27 % coverage". The real number was 433, and finding the other 211 was the interesting part.
+
+A scanner over JSX text and string props found 324 and moved them. That left 45 keys marked "defined but never used" — and every one of them named a piece of interface that plainly exists, which meant the text had to be hardcoded somewhere the scanner could not see. It was: in object literals feeding a `.map()`, in options arrays, in ternaries, and in template literals with a value spliced into the middle of the sentence. **The dead-key list turned out to be the better scanner.** Two further passes cleared those.
+
+Three things fell out of it that were not on anyone's list:
+
+- **Ten `<option>` elements had no `value`.** In `<option>English</option>` the displayed text *is* the submitted value, so translating those alone would have posted "Englisch" to Cardmarket as a card's language. They got explicit values before their labels were touched.
+- **The colour list existed four times** — in `utils/colors.ts`, in the inbox, in Cardmarket, in the wishlist filter — and had already drifted: "All Colors" against "All colors", and the multicolour bucket keyed `M` in one place and `Multi` in another. Now one list.
+- **A local variable named `t`** in the deck view shadowed the translation function the moment those labels became keys. The compiler caught it; a reviewer would not have.
+
+35 keys really were obsolete and are deleted. What remains: **502 keys, 502 used, 0 hardcoded literals**, and English and German define exactly the same set.
+
+`npm run lint:i18n` checks all of that, and the test suite runs it — including the check that matters most, keys the code *calls* that nobody defined. Those do not throw; `t()` falls back to printing the key, so the page shows `inbox.sort_set` where a word belongs. That exact key slipped in during the sweep and this is what found it.
+
+### Fonts are in the bundle now
+
+The three UI fonts loaded from fonts.googleapis.com at runtime. Two problems at once here: the panel is opened on a LAN that is regularly without internet, and this household filters DNS on both resolvers — a blocklist entry for fonts.gstatic.com would have swapped the whole interface to a fallback face with nothing anywhere to say why.
+
+They are vendored as woff2, latin subset, **one file per family rather than one per weight**: all three are variable fonts, so the file behind Space Grotesk 500, 600 and 700 is the same bytes. Fetching per weight the obvious way ships 100 kB of duplicates. 102 kB total.
+
+### Keyboard and touch
+
+- **The main navigation was `<div onClick>`** — no tab stop, no Enter, nothing for a screen reader, and middle-click did nothing because there was no href. It is `<Link>` now, with `aria-current` on the active item. The accent picker was the same shape and is now real buttons.
+- **A skip link**, because eight navigation items sit between the top of the document and the content on every page.
+- **The sortable column headers** in Duplicates were also `<div onClick>`: the only way to reorder that table was a mouse. Buttons now, with `aria-sort`.
+- **The card image was hover-only.** It is the primary way to tell one printing from another during triage, and on a phone there is no hover — so on the device where the inbox is most often worked through, the image was simply unreachable. Tap or Enter now pins it; Escape closes it.
+- **The hand-built triage dialog** had no Escape, no focus trap and no focus restore: Tab walked out of the modal into the page behind it, where the user would have been typing into a form they could not see.
+
+### Narrow screens
+
+Each audit hint was checked against the code before being fixed; all four held.
+
+- **Collection had a dead zone between 601 and 768 px:** the column header hid at 768 and the row grid collapsed at 768, but the card layout only started at 600 — so in between you got unlabelled columns with no header to explain them. One breakpoint now.
+- **Duplicates' nine-column grid and the sync history's six** get a scroll container of their own, so the table scrolls and the *page* does not.
+- **PageHeader** could not wrap, so the title and whatever sat beside it overlapped at 320–375 px.
+- The settings grid was a hard `1fr 1fr`.
+
+### Carried over from Sprint 08
+
+The third render test — what happens to the loaded list when a card is decided — was deferred twice for wanting "a mocked API layer". It did not: the behaviour worth pinning is a pure transform of the cached page, and extracting it from the component left nothing to mock.
+
 ## 0.43.0 — Sprint 08: the inbox was the wrong unit, not the wrong interface
 
 The plan for this release was to hunt a bug: the suspicion was that aborted syncs were booking phantom acquisitions, and that the 964 decisions a month were largely fabricated. Measuring first said otherwise, so the release does something else.

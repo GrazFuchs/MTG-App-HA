@@ -5,6 +5,7 @@ import { Caption1 } from '@fluentui/react-components';
 import { DeckDetail } from '../../api';
 import styles from './AIAssessmentBox.module.css';
 
+import { t } from '../../i18n';
 interface Props {
   deck: DeckDetail;
 }
@@ -12,11 +13,11 @@ interface Props {
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return t('time.minutes_ago', { n: mins });
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('time.hours_ago', { n: hours });
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return t('time.days_ago', { n: days });
 }
 
 const STORAGE_KEY = 'ai-assessment-expanded';
@@ -33,7 +34,7 @@ export function AIAssessmentBox({ deck }: Props) {
   };
 
   if (!deck.ai_assessment) {
-    return <Caption1 style={{ opacity: 0.5, display: 'block', marginTop: 12 }}>No AI assessment yet. Ask the MCP assistant to analyze this deck.</Caption1>;
+    return <Caption1 style={{ opacity: 0.5, display: 'block', marginTop: 12 }}>{t('ai.empty')}</Caption1>;
   }
 
   return (
