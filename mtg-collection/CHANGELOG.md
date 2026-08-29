@@ -1,3 +1,41 @@
+## 0.45.0 — Sprint 11: the assistant could look, and mostly not write
+
+### One booking path, not two
+
+The MCP tool for deciding an inbox card had its own copy of the booking logic. Both copies "worked" — the card left the queue either way — but the MCP one wrote no `decision_snapshot`, kept no notes and never told the Home Assistant publisher. A card decided through Claude therefore showed up in the inbox archive with no record of what it had looked like or what was suggested, and the sensors kept reporting the old pending count until something else happened to trigger a publish.
+
+Both callers now go through `services/triage_decision.py`. The shape of that bug is the point, not the instance: two call sites doing "the same thing" drift apart quietly, because neither is wrong on its own.
+
+**The same class, found next door:** `get_suggestion` is sibling-aware — it counts the *other* pending events for the same card as already owned — but only when the caller passes the event's `id`, and it reads that with `.get()`, so omitting it is not an error. Of the four call sites, the MCP one was the one that omitted it. An assistant asked about a bulk import was therefore recommending something different from what the web UI displayed for the same card.
+
+### Three new tools, and two the prompts were already promising
+
+- **`compute_power_level`** and **`explain_bracket`** expose the Sprint 04/05 services: the 0–1000 score with the cards carrying it, and the bracket rule-by-rule with its evidence.
+- **`suggest_bracket_safe_upgrades`** starts from *copies you already own in surplus* — that is why `owned_only` defaults to true. An assistant asked for upgrades will otherwise cheerfully suggest buying a card that is sitting in a box. Every candidate is run through the bracket rules as if already in the deck, and anything that raises the bracket is reported separately rather than dropped: pushing a bracket-3 deck to 4 is a legitimate choice as long as it is a deliberate one.
+- **`set_deck_gameplan`** and **`set_deck_user_bracket`** exist now because the rewritten `analyze_deck` prompt names them. It named them before they existed, which is worse than not having the prompt: the assistant would have discovered that mid-task and improvised, and the improvisation looks like the intended behaviour. There is a test that walks every prompt and checks each tool it mentions is real.
+
+### The assessments were the problem the tools were meant to solve
+
+Measured against the live database: **4 of 22 decks had an assessment at all, and every one of the four predated its deck's last edit.** The old `analyze_deck` prompt only asked for an analysis, so the good paragraph appeared in the chat window and the add-on kept none of it.
+
+The prompt now names the write tools explicitly and points at `explain_bracket`/`compute_power_level` instead of asking for a judgement by eye — those apply the same rules to every deck, which a conversation cannot. A second prompt, **`refresh_stale_assessments`**, walks the decks and refreshes the ones whose assessment is older than the deck.
+
+In the web UI the deck page now shows an **"outdated"** badge when the assessment predates the last deck change. The comparison is against Archidekt's `updated_at`, not `last_synced` — the latter only says when we last looked.
+
+### Safety
+
+**`clear_cardmarket_listings` requires `confirm: true`.** It deletes every listing and cannot be undone: the prices, conditions and the link back to the triage decision that created each one are not recoverable from Cardmarket. Without the flag it now reports what it *would* delete and does nothing.
+
+### Fixed
+
+- The voice REST example in `docs/ha-integration.md` pointed at `http://localhost:8099`, which cannot work — the sensor is evaluated by Home Assistant Core, and from Core's container `localhost` is Core. It names the add-on's container host now.
+
+### Not done, and why
+
+**Voice is still not wired up, and that is a decision rather than a task.** Measured: the add-on's `/api/voice/*` endpoints work (`active-deals` answers 200), but this Home Assistant has no `custom_sentences/` directory at all and neither REST sensor is configured, so none of the seven intents can fire. Finishing it or deleting `voice/` are both defensible; picking one is not mine to do.
+
+**The weekly scheduled assistant run** — the thing that would turn 4 assessments out of 22 into 22 — is likewise left for the owner: it means an agent writing to the database unattended on a schedule.
+
 ## 0.44.0 — Sprint 10: the interface was half in English, and unreachable without a mouse
 
 ### The i18n sweep, in three passes and 433 strings

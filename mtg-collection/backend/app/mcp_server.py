@@ -533,12 +533,29 @@ async def add_cardmarket_listing(card_name: str, quantity: int = 1, price: float
 
 
 @mcp.tool()
-async def clear_cardmarket_listings() -> str:
-    """Delete all Cardmarket listings (both CSV-imported and manually created)."""
+async def clear_cardmarket_listings(confirm: bool = False) -> str:
+    """Delete ALL Cardmarket listings (both CSV-imported and manually created).
+
+    Destructive and not undoable: the listings carry prices, conditions and the
+    link back to the triage decision that created them, and none of that is
+    recoverable from Cardmarket. `confirm` must be passed explicitly — an
+    assistant reaching for this tool while "tidying up" would otherwise wipe the
+    lot on a single sentence.
+
+    Args:
+        confirm: must be true. Without it the tool reports what it *would*
+            delete and does nothing.
+    """
     from .database import get_db
     db = await get_db()
     cursor = await db.execute("SELECT COUNT(*) FROM cardmarket_listings")
     count = (await cursor.fetchone())[0]
+    if not confirm:
+        return json.dumps({
+            "status": "not_confirmed",
+            "would_delete": count,
+            "hint": "Call again with confirm=true. This cannot be undone.",
+        })
     await db.execute("DELETE FROM cardmarket_listings")
     await db.commit()
     return json.dumps({"status": "cleared", "deleted": count})
@@ -1288,6 +1305,13 @@ async def get_pending_triage(limit: int = 20, min_value_eur: float = 0.0) -> str
         events = []
         for r in rows:
             event_row = {
+                # `id` is what makes the suggestion sibling-aware: without it
+                # `get_suggestion` cannot see the *other* pending events for the
+                # same card and counts none of them as owned. This call site was
+                # the only one of four that left it out, so an assistant asking
+                # about a bulk import got a different recommendation than the
+                # web UI showed for the very same card.
+                "id": r["id"],
                 "card_id": r["card_id"],
                 "collection_id": r["collection_id"],
                 "is_foil": bool(r["is_foil"]),
@@ -1322,6 +1346,7 @@ async def decide_triage(
     source: str | None = None,
     listing_price_eur: float | None = None,
     sell_collection_id: int | None = None,
+    notes: str | None = None,
 ) -> str:
     """Decide what to do with a newly acquired card.
 
@@ -1333,96 +1358,216 @@ async def decide_triage(
     For sold_new/swap, listing_price_eur defaults to the suggestion's estimate.
     For swap, sell_collection_id defaults to the suggestion's pick.
 
+    Books through exactly the same service as the web UI, so the decision lands
+    in the inbox archive with its snapshot and the Home Assistant sensors
+    refresh. This tool used to have its own copy of the booking logic and did
+    neither.
+
     Args:
         event_id: ID of the acquisition event
         action: keep | sold_new | swap | dismiss
         source: cardmarket | whatnot | booster | trade | gift | shop | other
         listing_price_eur: price for the Cardmarket listing (sold_new/swap)
         sell_collection_id: for swap: which old copy to sell
+        notes: free text kept with the decision
     """
     from .database import get_db
+    from .models.schemas import TriageDecisionRequest
     from .services.triage_advisor import get_suggestion
+    from .services.triage_decision import TriageError, apply_decision, load_pending_event
     try:
-        valid_actions = {"keep", "sold_new", "swap", "dismiss"}
-        if action not in valid_actions:
-            return json.dumps({"error": f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"})
-
-        valid_sources = {"cardmarket", "whatnot", "booster", "trade", "gift", "shop", "other", None}
-        if source not in valid_sources:
-            return json.dumps({"error": f"Invalid source '{source}'"})
-
-        if action in ("keep", "sold_new", "swap") and source is None:
-            return json.dumps({"error": "source is required for keep/sold_new/swap"})
-
         db = await get_db()
-        cursor = await db.execute("SELECT * FROM acquisition_events WHERE id = ?", (event_id,))
-        event = await cursor.fetchone()
-        if not event:
-            return json.dumps({"error": f"Event {event_id} not found"})
-        if event["triage_state"] != "pending":
-            return json.dumps({"error": "Event already decided"})
+        event = await load_pending_event(db, event_id)
 
-        linked_listing_id = None
-        triage_state = action
-        if action == "swap":
-            triage_state = "swapped"
-
-        if action in ("sold_new", "swap"):
-            # Get suggestion for defaults
-            event_row = {
+        # The web dialog pre-fills the price from the suggestion; without this
+        # an assistant would have to know the market price to sell anything,
+        # and the shared service (rightly) refuses a sale without one.
+        price = listing_price_eur
+        if action in ("sold_new", "swap") and price is None:
+            suggestion, _, _ = await get_suggestion(db, {
+                "id": event["id"],
                 "card_id": event["card_id"],
                 "collection_id": event["collection_id"],
                 "is_foil": bool(event["is_foil"]),
                 "qty_delta": event["qty_delta"],
-            }
-            suggestion, _, _ = await get_suggestion(db, event_row)
+            })
+            price = suggestion.estimated_price_eur
 
-            price = listing_price_eur if listing_price_eur is not None else suggestion.estimated_price_eur
-
-            if action == "sold_new":
-                cursor = await db.execute("SELECT * FROM cards WHERE id = ?", (event["card_id"],))
-            else:
-                scid = sell_collection_id or suggestion.sell_collection_id
-                if not scid:
-                    return json.dumps({"error": "sell_collection_id required for swap"})
-                cursor = await db.execute(
-                    "SELECT c.* FROM collection col JOIN cards c ON c.id = col.card_id WHERE col.id = ?",
-                    (scid,),
-                )
-            card = await cursor.fetchone()
-            if not card:
-                return json.dumps({"error": "Card for listing not found"})
-
-            # Determine is_foil for the listing
-            is_foil_listing = int(event["is_foil"]) if action == "sold_new" else 0
-            if action == "swap" and scid:
-                foil_cursor = await db.execute(
-                    "SELECT quantity, foil_quantity FROM collection WHERE id = ?", (scid,)
-                )
-                foil_row = await foil_cursor.fetchone()
-                if foil_row and foil_row["foil_quantity"] > 0 and foil_row["quantity"] == 0:
-                    is_foil_listing = 1
-
-            listing_cursor = await db.execute(
-                """INSERT INTO cardmarket_listings
-                (card_name, set_name, set_code, quantity, price, condition, language, is_foil, rarity, source, card_id)
-                VALUES (?, ?, ?, 1, ?, ?, 'English', ?, ?, 'triage', ?)""",
-                (card["name"], card["set_name"] or "", card["set_code"] or "", price,
-                 event["condition"], is_foil_listing,
-                 card["rarity"] or "", card["id"]),
-            )
-            linked_listing_id = listing_cursor.lastrowid
-
-        await db.execute(
-            """UPDATE acquisition_events
-            SET triage_state = ?, triage_decision_at = CURRENT_TIMESTAMP,
-                source = ?, linked_listing_id = ?
-            WHERE id = ?""",
-            (triage_state, source, linked_listing_id, event_id),
+        req = TriageDecisionRequest(
+            action=action,
+            source=source,
+            listing_price_eur=price,
+            sell_collection_id=sell_collection_id,
+            notes=notes or "",
         )
-        await db.commit()
-        return json.dumps({"ok": True, "event_id": event_id, "triage_state": triage_state,
-                           "linked_listing_id": linked_listing_id})
+        return json.dumps(await apply_decision(db, event, req))
+    except TriageError as e:
+        return json.dumps({"error": str(e)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def compute_power_level(deck_id: int) -> str:
+    """Score a deck 0-1000 and say which cards carry the score.
+
+    The port of edhpowerlevel.com: demand (EDHREC rank) times price times a
+    curve-efficiency factor, summed over the list. It is a measure of *what the
+    deck is made of*, not of what it can do — a pile of expensive staples scores
+    high whether or not they work together. Read it next to the bracket, which
+    asks the opposite question.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+    """
+    from .services.power_level import compute_power_level as _compute, reference_url
+    try:
+        result = await _compute(deck_id)
+        if result.get("score") is None:
+            return json.dumps(result)
+        result["reference_url"] = await reference_url(deck_id)
+        return json.dumps(result, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def explain_bracket(deck_id: int) -> str:
+    """Why a deck sits in the bracket it does, rule by rule.
+
+    Returns the computed bracket, the evidence for each rule that fired (game
+    changers, two-card infinite combos, mass land denial, extra-turn plans) and
+    the cards behind it. Nothing is persisted.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+    """
+    from .services.bracket import compute_bracket
+    try:
+        result = await compute_bracket(deck_id, persist=False)
+        return json.dumps(result, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def suggest_bracket_safe_upgrades(
+    deck_id: int,
+    budget_eur: float | None = None,
+    owned_only: bool = True,
+    limit: int = 15,
+) -> str:
+    """Upgrade candidates that do not push the deck into a higher bracket.
+
+    Two sources, in this order:
+
+    1. **Your own surplus** — copies you already have beyond what your decks
+       need. These cost nothing and are the reason `owned_only` defaults to
+       true: an assistant asked for upgrades will otherwise happily suggest
+       buying a card that is sitting in a box.
+    2. **EDHREC recommendations** for the commander, when `owned_only` is off.
+
+    Every candidate is run through the bracket rules *as if it were already in
+    the deck*, and anything that raises the bracket is reported separately
+    under `would_raise_bracket` rather than dropped — a card that pushes a
+    bracket-3 deck to 4 is a legitimate choice as long as it is a deliberate
+    one.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+        budget_eur: skip candidates above this price each
+        owned_only: only surplus copies you already own (default true)
+        limit: maximum candidates to consider
+    """
+    from .database import get_db
+    from .services.bracket import bracket_impact_of_card, compute_bracket
+    from .services.queries import duplicates_extras_sql
+    try:
+        db = await get_db()
+
+        deck = await (await db.execute(
+            "SELECT id, name FROM decks WHERE id = ?", (deck_id,))).fetchone()
+        if not deck:
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+
+        current = await compute_bracket(deck_id, persist=False)
+
+        # Cards already in this deck cannot be an upgrade to it.
+        in_deck = {r["card_id"] for r in await (await db.execute(
+            "SELECT card_id FROM deck_cards WHERE deck_id = ?", (deck_id,))).fetchall()}
+
+        candidates: list[dict[str, Any]] = []
+
+        cursor = await db.execute(
+            f"""WITH per_row AS (
+                SELECT col.card_id, c.name, c.price_eur, col.is_foil,
+                       SUM(col.quantity + col.foil_quantity) AS total_copies,
+                       (SELECT SUM(quantity + foil_quantity) FROM collection
+                         WHERE card_id = col.card_id) AS total_global,
+                       COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc
+                                  WHERE dc.card_id = col.card_id), 0) AS in_decks
+                FROM collection col JOIN cards c ON c.id = col.card_id
+                GROUP BY col.card_id, col.is_foil
+            )
+            SELECT pr.card_id, pr.name, pr.price_eur,
+                   {duplicates_extras_sql()}
+            FROM per_row pr
+            ORDER BY pr.price_eur DESC"""
+        )
+        for row in await cursor.fetchall():
+            if row["card_id"] in in_deck or (row["extras"] or 0) <= 0:
+                continue
+            price = row["price_eur"] or 0.0
+            if budget_eur is not None and price > budget_eur:
+                continue
+            candidates.append({
+                "card_id": row["card_id"], "name": row["name"],
+                "price_eur": price, "owned_surplus": row["extras"],
+            })
+            if len(candidates) >= limit:
+                break
+
+        if not owned_only and len(candidates) < limit:
+            from .clients.edhrec import edhrec, parse_edhrec_recommendations, slugify_commander
+            commander = await (await db.execute(
+                """SELECT c.name FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
+                WHERE dc.deck_id = ? AND dc.is_commander = 1 LIMIT 1""",
+                (deck_id,))).fetchone()
+            if commander:
+                data = await edhrec.get_commander_recommendations(
+                    slugify_commander(commander["name"]))
+                for rec in parse_edhrec_recommendations(data or {}):
+                    if len(candidates) >= limit:
+                        break
+                    card = await (await db.execute(
+                        "SELECT id, price_eur FROM cards WHERE name = ? LIMIT 1",
+                        (rec["name"],))).fetchone()
+                    if not card or card["id"] in in_deck:
+                        continue
+                    price = card["price_eur"] or 0.0
+                    if budget_eur is not None and price > budget_eur:
+                        continue
+                    candidates.append({
+                        "card_id": card["id"], "name": rec["name"], "price_eur": price,
+                        "owned_surplus": 0, "edhrec_inclusion": rec.get("inclusion"),
+                    })
+
+        safe, raising = [], []
+        for cand in candidates:
+            impact = await bracket_impact_of_card(deck_id, cand["card_id"])
+            if impact is None:
+                safe.append(cand)
+            else:
+                raising.append({**cand, "bracket_impact": impact})
+
+        return json.dumps({
+            "deck": deck["name"],
+            "current_bracket": current.get("bracket"),
+            "owned_only": owned_only,
+            "budget_eur": budget_eur,
+            "safe": safe,
+            "would_raise_bracket": raising,
+        }, indent=2, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -1505,17 +1650,116 @@ async def set_deck_ai_assessment(deck_id: int, assessment: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@mcp.tool()
+async def set_deck_gameplan(deck_id: int, gameplan: str) -> str:
+    """Record how a deck wins, in one or two sentences.
+
+    Shown at the top of the deck page. Written here rather than left in a
+    conversation, which is the whole difference between an analysis and a
+    record.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+        gameplan: max 500 characters
+    """
+    from .database import get_db
+    try:
+        if len(gameplan) > 500:
+            return json.dumps({"error": "gameplan must be 500 characters or fewer"})
+        db = await get_db()
+        if not await (await db.execute("SELECT id FROM decks WHERE id = ?", (deck_id,))).fetchone():
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+        await db.execute("UPDATE decks SET gameplan = ? WHERE id = ?", (gameplan, deck_id))
+        await db.commit()
+        return json.dumps({"ok": True, "deck_id": deck_id, "char_count": len(gameplan)})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def set_deck_user_bracket(deck_id: int, bracket: int | None = None) -> str:
+    """Override the computed bracket for a deck — or clear the override.
+
+    Only set this when you disagree with `explain_bracket`, and say why in the
+    assessment. **Leaving it unset is the better default:** the computed
+    bracket keeps applying as the deck changes, a hand-set one does not and
+    goes quietly wrong the next time a game changer is added.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+        bracket: 1-5, or omit/null to clear the override
+    """
+    from .database import get_db
+    try:
+        if bracket is not None and not 1 <= bracket <= 5:
+            return json.dumps({"error": "bracket must be between 1 and 5, or null"})
+        db = await get_db()
+        if not await (await db.execute("SELECT id FROM decks WHERE id = ?", (deck_id,))).fetchone():
+            return json.dumps({"error": f"Deck {deck_id} not found"})
+        if bracket is None:
+            await db.execute("UPDATE decks SET user_bracket = NULL WHERE id = ?", (deck_id,))
+        else:
+            await db.execute("UPDATE decks SET user_bracket = ? WHERE id = ?", (bracket, deck_id))
+        await db.commit()
+        return json.dumps({"ok": True, "deck_id": deck_id, "user_bracket": bracket})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # --- Prompts ---
 
 @mcp.prompt()
 def analyze_deck(deck_name: str) -> str:
-    """Prompt template for analyzing a deck."""
+    """Analyse a deck and *write back* what was learned, in one pass.
+
+    The old version of this prompt only asked for an analysis, and the result
+    was that the assistant produced a good paragraph in the chat window and the
+    add-on kept none of it. Measured on 2026-08-29: 4 of 22 decks had an
+    assessment at all, and all four predated their deck's last edit.
+
+    So the prompt now names the three write tools explicitly. It also points at
+    `explain_bracket` and `compute_power_level` rather than asking for a
+    from-scratch judgement — those run the same rules for every deck, which a
+    conversation cannot.
+    """
     return (
-        f"Please analyze the MTG deck '{deck_name}'. "
-        "First use the list_decks tool to find it, then get_deck to see its cards. "
-        "Analyze the mana curve, color distribution, card types, synergies, "
-        "and suggest potential improvements. "
-        "Also check EDHREC recommendations for the commander."
+        f"Analyse the MTG deck '{deck_name}' and record the result.\n\n"
+        "1. `list_decks` to find its id, then `get_deck` for the list.\n"
+        "2. `explain_bracket` and `compute_power_level` — do not judge these by "
+        "eye; they apply the same rules to every deck.\n"
+        "3. `get_deck_combos` for what the deck can already do, and "
+        "`get_edhrec_recommendations` for what decks like it usually run.\n\n"
+        "Then write, in this order:\n"
+        "- `set_deck_gameplan` — one or two sentences on how the deck wins. "
+        "Skip if a gameplan is already set and still accurate.\n"
+        "- `set_deck_ai_assessment` — the analysis itself: curve, colours, "
+        "synergies, weaknesses, concrete improvements. Markdown.\n"
+        "- `set_deck_user_bracket` — only if you disagree with the computed "
+        "bracket, and say why in the assessment. If you agree, leave it unset "
+        "so the computed one keeps applying as the deck changes.\n\n"
+        "Keeping the assessment out of the database means it is gone the moment "
+        "the conversation ends."
+    )
+
+
+@mcp.prompt()
+def refresh_stale_assessments() -> str:
+    """Bring every deck's assessment up to date with the current list.
+
+    The counterpart to the "outdated" badge in the web UI: an assessment
+    written before the deck was last edited describes a list that no longer
+    exists, and nothing in the panel can fix that by itself.
+    """
+    return (
+        "Bring the deck assessments up to date.\n\n"
+        "1. `list_decks`, then `get_deck` for each one, and compare "
+        "`ai_assessment_updated_at` against `updated_at` (Archidekt's edit "
+        "time). Work on decks where the assessment is missing or older.\n"
+        "2. For each, follow the `analyze_deck` prompt.\n"
+        "3. Report at the end: how many were refreshed, which decks changed "
+        "bracket or power level since their last assessment, and anything "
+        "worth acting on — a combo now one card short, a bracket that moved.\n\n"
+        "Do not touch decks whose assessment is already newer than the deck."
     )
 
 
@@ -1524,9 +1768,11 @@ def suggest_upgrades(deck_name: str, budget: str = "20 EUR") -> str:
     """Prompt template for suggesting deck upgrades within a budget."""
     return (
         f"I want to upgrade my MTG deck '{deck_name}' with a budget of {budget}. "
-        "First use list_decks and get_deck to see the current deck list. "
-        "Then use get_edhrec_recommendations for the commander. "
-        "Suggest cards to add and remove, staying within budget. "
+        "First use list_decks and get_deck to see the current deck list.\n"
+        "Then `suggest_bracket_safe_upgrades` — it starts from copies I already "
+        "own in surplus, which cost nothing, and tells you which candidates "
+        "would push the deck into a higher bracket.\n"
+        "Set owned_only=false to include EDHREC suggestions I would have to buy. "
         "Use get_card_price to verify current prices."
     )
 

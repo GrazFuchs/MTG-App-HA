@@ -16,6 +16,7 @@ from ..models.schemas import (
     TriageDecisionRequest,
 )
 from ..services.ha_publisher import schedule_inbox_publish
+from ..services.triage_decision import TriageError, apply_decision, load_pending_event
 from ..services.queries import (
     basic_land_exclusion_sql,
     color_identity_condition,
@@ -308,137 +309,18 @@ async def backfill_colors():
 
 @router.post("/{event_id}/decide")
 async def decide_triage(event_id: int, req: TriageDecisionRequest):
+    """Book one decision.
+
+    The work is in `services/triage_decision.py` because the MCP tool books the
+    same thing and the two implementations had already drifted — see that
+    module's docstring for what went missing.
+    """
     db = await get_db()
-
-    # Fetch event
-    cursor = await db.execute(
-        "SELECT * FROM acquisition_events WHERE id = ?", (event_id,)
-    )
-    event = await cursor.fetchone()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    if event["triage_state"] != "pending":
-        raise HTTPException(status_code=400, detail="Already decided")
-
-    # Cross-field validation
-    if req.action in ("keep", "sold_new", "swap") and req.source is None:
-        raise HTTPException(status_code=422, detail="source is required for keep/sold_new/swap")
-    if req.action in ("sold_new", "swap") and req.listing_price_eur is None:
-        raise HTTPException(status_code=422, detail="listing_price_eur is required for sold_new/swap")
-    if req.sell_qty is not None and req.action == "sold_new":
-        if req.sell_qty > event["qty_delta"]:
-            raise HTTPException(status_code=422, detail=f"sell_qty ({req.sell_qty}) exceeds qty_delta ({event['qty_delta']})")
-
-    # Snapshot the suggestion + card state exactly as shown at decision time so
-    # the Inbox history/archive can later show how the item was booked and how
-    # it was presented when confirmed.
-    snapshot_card = (await (await db.execute(
-        "SELECT * FROM cards WHERE id = ?", (event["card_id"],)
-    )).fetchone())
-    event_row = {
-        "id": event["id"],
-        "card_id": event["card_id"],
-        "collection_id": event["collection_id"],
-        "is_foil": bool(event["is_foil"]),
-        "qty_delta": event["qty_delta"],
-    }
-    suggestion, printings, in_decks = await get_suggestion(db, event_row)
-
-    linked_listing_id = None
-    triage_state = req.action
-    if req.action == "swap":
-        triage_state = "swapped"
-
-    if req.action in ("sold_new", "swap"):
-        # Determine which card to list
-        if req.action == "sold_new":
-            # List the new card
-            cursor = await db.execute("SELECT * FROM cards WHERE id = ?", (event["card_id"],))
-        else:
-            # swap: list the old card (default to the suggestion's pick)
-            sell_col_id = req.sell_collection_id
-            if sell_col_id is None:
-                sell_col_id = suggestion.sell_collection_id
-            if sell_col_id is None:
-                raise HTTPException(status_code=422, detail="sell_collection_id required for swap (no suggestion available)")
-
-            cursor = await db.execute(
-                """SELECT c.* FROM collection col JOIN cards c ON c.id = col.card_id
-                WHERE col.id = ?""",
-                (sell_col_id,),
-            )
-
-        card_to_list = await cursor.fetchone()
-        if not card_to_list:
-            raise HTTPException(status_code=400, detail="Card for listing not found")
-
-        # Create cardmarket listing
-        is_foil_listing = int(event["is_foil"]) if req.action == "sold_new" else 0
-        if req.action == "swap" and sell_col_id is not None:
-            # For swap, check if the OLD collection entry is foil
-            foil_cursor = await db.execute(
-                "SELECT quantity, foil_quantity FROM collection WHERE id = ?", (sell_col_id,)
-            )
-            foil_row = await foil_cursor.fetchone()
-            if foil_row and foil_row["foil_quantity"] > 0 and foil_row["quantity"] == 0:
-                is_foil_listing = 1
-
-        listing_cursor = await db.execute(
-            """INSERT INTO cardmarket_listings
-            (card_name, set_name, set_code, quantity, price, condition, language, is_foil, rarity, comments, source, card_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'triage', ?)""",
-            (
-                card_to_list["name"],
-                card_to_list["set_name"] or "",
-                card_to_list["set_code"] or "",
-                req.sell_qty if req.action == "sold_new" and req.sell_qty else (req.listing_quantity or 1),
-                req.listing_price_eur,
-                req.listing_condition or "NM",
-                req.listing_language or "English",
-                is_foil_listing,
-                card_to_list["rarity"] or "",
-                card_to_list["id"],
-            ),
-        )
-        linked_listing_id = listing_cursor.lastrowid
-
-    # Build the booking-history snapshot.
-    snap_price = None
-    if snapshot_card is not None:
-        snap_price = snapshot_card["price_eur_foil"] if event["is_foil"] else snapshot_card["price_eur"]
-    snapshot = {
-        "decided_action": req.action,
-        "triage_state": triage_state,
-        "source": req.source,
-        "listing_price_eur": req.listing_price_eur,
-        "sell_qty": req.sell_qty,
-        "linked_listing_id": linked_listing_id,
-        "card": {
-            "name": snapshot_card["name"] if snapshot_card else None,
-            "set_code": snapshot_card["set_code"] if snapshot_card else None,
-            "set_name": snapshot_card["set_name"] if snapshot_card else None,
-            "is_foil": bool(event["is_foil"]),
-            "qty_delta": event["qty_delta"],
-            "price_eur": snap_price,
-        },
-        "suggestion": suggestion.model_dump(),
-        "existing_printings": [p.model_dump() for p in printings],
-        "in_decks": in_decks,
-    }
-
-    # Update event
-    await db.execute(
-        """UPDATE acquisition_events
-        SET triage_state = ?, triage_decision_at = CURRENT_TIMESTAMP,
-            source = ?, linked_listing_id = ?, notes = ?, decision_snapshot = ?
-        WHERE id = ?""",
-        (triage_state, req.source, linked_listing_id, req.notes or "",
-         json.dumps(snapshot, default=str), event_id),
-    )
-    await db.commit()
-
-    schedule_inbox_publish()
-    return {"status": "ok", "event_id": event_id, "triage_state": triage_state}
+    try:
+        event = await load_pending_event(db, event_id)
+        return await apply_decision(db, event, req)
+    except TriageError as e:
+        raise HTTPException(status_code=e.status, detail=str(e)) from e
 
 
 class BulkDecideRequest(BaseModel):

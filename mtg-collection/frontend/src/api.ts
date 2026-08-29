@@ -135,6 +135,9 @@ export interface DeckDetail {
   gameplan: string;
   ai_assessment: string;
   ai_assessment_updated_at: string | null;
+  /** Archidekt's own edit timestamp — what "the deck changed" means. Not
+   *  `last_synced`, which only says when we last looked. */
+  updated_at: string | null;
   featured_image: string;
   owner_username: string;
   cards: DeckCardEntry[];

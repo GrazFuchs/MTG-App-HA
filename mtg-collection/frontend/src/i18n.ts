@@ -514,6 +514,9 @@ export const translations: Record<string, Record<string, string>> = {
     'time.days_ago': '{n}d ago',
     'inbox.undo_one': '1 card · {action}',
     'inbox.undo_many': '{count} cards · {action}',
+    'ai.title': 'AI Assessment',
+    'ai.stale': 'outdated',
+    'ai.stale_hint': 'Written before the deck was last edited — it describes an older list',
   },
   de: {
     'nav.dashboard': 'Übersicht',
@@ -1023,6 +1026,9 @@ export const translations: Record<string, Record<string, string>> = {
     'time.days_ago': 'vor {n} Tg.',
     'inbox.undo_one': '1 Karte · {action}',
     'inbox.undo_many': '{count} Karten · {action}',
+    'ai.title': 'KI-Einschätzung',
+    'ai.stale': 'veraltet',
+    'ai.stale_hint': 'Vor der letzten Deckänderung geschrieben — sie beschreibt eine ältere Liste',
   },
 };
 

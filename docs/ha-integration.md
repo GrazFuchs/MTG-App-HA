@@ -426,13 +426,18 @@ GET /api/voice/active-deals
 
 ### Setting up REST sensors in HA
 
+> ⚠️ **The host is the container name, not `localhost`.** This example said
+> `http://localhost:8099` until 2026-08-29, which cannot work: the sensor is
+> evaluated by Home Assistant Core, and from Core's container `localhost` is
+> Core itself. The add-on answers on `http://0c11a0b9-mtg-collection:8099`.
+
 Add to your `configuration.yaml`:
 
 ```yaml
 sensor:
   - platform: rest
     name: "MTG Card Count Query"
-    resource_template: "http://localhost:8099/api/voice/card-count?name={{ states('input_text.mtg_card_query') }}"
+    resource_template: "http://0c11a0b9-mtg-collection:8099/api/voice/card-count?name={{ states('input_text.mtg_card_query') }}"
     value_template: "{{ value_json.quantity }}"
     json_attributes:
       - card_name
@@ -441,7 +446,7 @@ sensor:
 
   - platform: rest
     name: "MTG Active Deals Count"
-    resource: "http://localhost:8099/api/voice/active-deals"
+    resource: "http://0c11a0b9-mtg-collection:8099/api/voice/active-deals"
     value_template: "{{ value_json.deals_count }}"
     json_attributes:
       - items
@@ -454,6 +459,13 @@ Copy [voice/sentences.yaml](../mtg-collection/voice/sentences.yaml) into your HA
 `custom_sentences/en/mtg_collection.yaml` and restart HA.
 
 Then configure response scripts/automations to call the REST sensors above.
+
+> **Status, measured 2026-08-29 — this is set up on neither side.** The
+> add-on's `/api/voice/*` endpoints **do** work (`active-deals` answers 200),
+> but there is no `custom_sentences/` directory in this Home Assistant at all,
+> and the two REST sensors above are not in `configuration.yaml`. So none of
+> the seven intents can fire. Whether to finish it or drop `voice/` is a
+> product decision, not a bug — see `docs/sprints/sprint-11-ai-mcp.md`.
 
 ---
 

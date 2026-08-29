@@ -13,6 +13,7 @@ def client(tmp_path):
         '<html><script src="./assets/index-abc123.js"></script></html>'
     )
     (tmp_path / "assets" / "index-abc123.js").write_text("console.log(1)")
+    (tmp_path / "assets" / "Inter-abc123.woff2").write_bytes(b"wOF2fake")
     (tmp_path / "favicon.ico").write_text("icon")
 
     app = FastAPI()
@@ -39,6 +40,20 @@ def test_index_is_never_cached(client):
 def test_hashed_assets_are_cached_forever(client):
     resp = client.get("/assets/index-abc123.js")
     assert resp.status_code == 200
+    assert resp.headers["cache-control"] == IMMUTABLE
+
+
+def test_bundled_fonts_get_the_font_media_type(client):
+    """Not `application/octet-stream`.
+
+    Python's mimetypes table does not know woff2 on every platform, so the
+    guessed type was octet-stream. The page still rendered — the @font-face
+    declares `format('woff2')` — which is precisely why this would never have
+    been noticed by looking at the panel.
+    """
+    resp = client.get("/assets/Inter-abc123.woff2")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "font/woff2"
     assert resp.headers["cache-control"] == IMMUTABLE
 
 

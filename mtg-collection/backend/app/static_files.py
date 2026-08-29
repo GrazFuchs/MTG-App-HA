@@ -40,6 +40,12 @@ INDEX = "index.html"
 # — index.html, favicon, manifest — keeps a stable name and must revalidate.
 HASHED_DIR = "assets/"
 
+# Python's mimetypes table predates woff2 on some platforms, so Starlette
+# guesses `application/octet-stream` for a bundled font. Browsers still render
+# it — the @font-face carries `format('woff2')` — but the wrong type costs the
+# font-specific caching path and makes any future CORS setup fail confusingly.
+EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
+
 NO_CACHE = "no-cache, must-revalidate"
 IMMUTABLE = "public, max-age=31536000, immutable"
 
@@ -137,6 +143,10 @@ class SpaStaticFiles(StaticFiles):
         if response.status_code < 400:
             hashed = _posix(path).startswith(HASHED_DIR)
             response.headers["cache-control"] = IMMUTABLE if hashed else NO_CACHE
+            for suffix, media_type in EXTRA_TYPES.items():
+                if _posix(path).endswith(suffix):
+                    response.headers["content-type"] = media_type
+                    break
         return response
 
     def _shell(self, scope: Any) -> Response:
