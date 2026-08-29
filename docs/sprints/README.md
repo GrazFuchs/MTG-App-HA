@@ -15,8 +15,8 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 | 07 | [HA-Brücke begradigen](sprint-07-ha-bruecke.md) | — | ✅ umgesetzt (0.41.0 + HA-Seite), deployed |
 | 08 | [Inbox/Triage entlasten](sprint-08-inbox-triage.md) | — | ✅ umgesetzt (0.43.0), deployed — ⚠️ Stufe-1-Hypothese widerlegt |
 | 09 | [Display & Fehlerzustände](sprint-09-display-fehlerzustaende.md) | — | ✅ umgesetzt (0.42.0), deployed |
-| 10 | [i18n, A11y, Responsive](sprint-10-i18n-a11y-responsive.md) | — | offen |
-| 11 | [AI über MCP](sprint-11-ai-mcp.md) | am wertvollsten nach 04/05 | offen |
+| 10 | [i18n, A11y, Responsive](sprint-10-i18n-a11y-responsive.md) | — | ✅ umgesetzt (0.44.0), deployed |
+| 11 | [AI über MCP](sprint-11-ai-mcp.md) | am wertvollsten nach 04/05 | ✅ Add-on umgesetzt (0.45.0), deployed — ⚠️ Client-Pakete 4+5 sind Entscheidungen |
 | — | [Backlog](backlog.md) (bewusst ohne Sprint) | — | — |
 
 ```
