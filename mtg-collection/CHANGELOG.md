@@ -1,3 +1,21 @@
+## 0.45.1 — the reference check Sprint 05 said needed a browser
+
+It needed a browser to compare *scores*. It did not need one to compare the thing that actually drifts.
+
+edhpowerlevel.com is a client-side app, so the constants it scores with are in a script it hands to anyone who asks. Its whole `factors` object was read out of `main-C1lbqCDd.js` and diffed against the port: **all nine values match exactly** — the three curves, the two efficiency limits, the mana-value floor and ceiling, the land and Reserved-List multipliers, and the price/popularity weighting.
+
+So does the interpolator, including the detail the port's own docstring calls "the single most likely way to drift": the fraction inside a decile is *not* multiplied by the weight, only the decile boundary is. Writing that the clean way changes every score in the app and looks like a tidy-up. There is a test now that samples all four curves at three weights against a transcription of the site's function, and it was verified to fail on exactly that "improvement".
+
+### Found by looking
+
+The site's `factors` carries one constant the port did not: **`bracketCurve: [0, 4.7, 6.7, 7.7, 9.25, 10]`**, which maps the 0–10 power level onto a 1–5 bracket.
+
+It is now reported as `reference_bracket` in the power detail, and deliberately kept apart from `computed_bracket`: that one applies the WotC rules — game changers, two-card combos, mass land denial, extra turns — and remains the authority. **The disagreement is the useful part.** A deck whose rules say bracket 2 while its power curve says 4 is stronger than its label, and until now nothing in the app said so.
+
+### A note on why the reference is copied, not fetched
+
+The test holds its own transcription rather than downloading the script. A test that reaches the internet fails on a train, and a reference that can change under you without a commit is not a reference. When the site changes, that file is what gets edited — deliberately, with the diff in the history.
+
 ## 0.45.0 — Sprint 11: the assistant could look, and mostly not write
 
 ### One booking path, not two

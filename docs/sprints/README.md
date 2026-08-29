@@ -10,7 +10,7 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 | 02 | [Scryfall-Datenfundament](sprint-02-scryfall-fundament.md) | — | ✅ umgesetzt (0.36.0), deployed |
 | 03 | [Combo-Abdeckung reparieren](sprint-03-combos.md) | — | ✅ umgesetzt (0.37.0), deployed |
 | 04 | [Bracket: pflegbar + berechnet](sprint-04-bracket.md) | 02, 03 | ✅ umgesetzt (0.38.2), deployed |
-| 05 | [Power-Level (edhpowerlevel-Port)](sprint-05-powerlevel.md) | 02 | ✅ umgesetzt (0.39.0), Referenz-Diff offen |
+| 05 | [Power-Level (edhpowerlevel-Port)](sprint-05-powerlevel.md) | 02 | ✅ umgesetzt (0.39.0), Referenz-Diff erledigt (0.45.1) |
 | 06 | [Wishlist: Deals & Bracket-Brücke](sprint-06-wishlist-deals.md) | 01, 03, 04 | ✅ umgesetzt (0.40.0), deployed |
 | 07 | [HA-Brücke begradigen](sprint-07-ha-bruecke.md) | — | ✅ umgesetzt (0.41.0 + HA-Seite), deployed |
 | 08 | [Inbox/Triage entlasten](sprint-08-inbox-triage.md) | — | ✅ umgesetzt (0.43.0), deployed — ⚠️ Stufe-1-Hypothese widerlegt |

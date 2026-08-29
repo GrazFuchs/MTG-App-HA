@@ -26,6 +26,7 @@ port is against the original. Five places look wrong and are deliberate:
 """
 import json
 import logging
+import math
 from typing import Any
 from urllib.parse import quote
 
@@ -46,6 +47,12 @@ FACTORS: dict[str, Any] = {
     "cmcFloor": 1.75,
     "cmcCeiling": 6,
     "efficiencyLimits": [0.65, 1.1],
+    #: Maps the 0-10 power level onto a 1-5 Commander bracket. Added 2026-08-29
+    #: after diffing the port against the site's own shipped script — it was
+    #: the one constant in its `factors` object the port did not have.
+    #: The site uses it as `ceil(de(level, bracketCurve))` and then takes the
+    #: larger of that and its rule-based answer.
+    "bracketCurve": [0, 4.7, 6.7, 7.7, 9.25, 10],
 }
 
 #: ⚠️ `popCurve` was derived in September 2024, when 27,686 cards were Commander
@@ -281,6 +288,14 @@ async def compute_power_level(deck_id: int) -> dict[str, Any]:
         "efficiency": round(efficiency * 10, 2),  # the site shows Ce x 10
         "tipping_point": tipping_point,
         "avg_cost": round(avg_cost, 2),
+        # What the reference site would call this deck's bracket, derived from
+        # the power level alone. **Not** the same thing as `computed_bracket`
+        # from services/bracket.py, which applies the WotC rules (game
+        # changers, two-card combos, mass land denial, extra turns) and is the
+        # authority. Kept because the disagreement is the interesting part: a
+        # deck whose rules say 2 while its power curve says 4 is stronger than
+        # its label, and nothing else in the app says so.
+        "reference_bracket": max(1, min(5, math.ceil(de(level, FACTORS["bracketCurve"])))),
         "total_impact": round(total_impact, 1),
         "nonland_impact": round(nonland_impact, 1),
         "cards": len(rows),

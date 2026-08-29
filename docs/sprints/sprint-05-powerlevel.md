@@ -105,3 +105,43 @@ Lauf hätte kein MDFC als Land gezählt.
 - **Eine echte `popCurve`-Neuableitung** (alle elf Stützstellen aus der heutigen Rangverteilung) —
   bewusst nicht als Einzelwert-Änderung gemacht, Begründung oben.
 - **HA sieht den Score nur für bespielte Decks**, wie beim Bracket — gehört zu Sprint 07.
+
+## Nachtrag 2026-08-29 — der Referenz-Diff ist erledigt, ohne Browser
+
+Der offene Punkt lautete „Referenz-Diff gegen edhpowerlevel.com braucht einen Browser". Für einen
+Vergleich der **Scores** stimmt das. Für das, was tatsächlich driftet, nicht: die Seite ist eine
+Client-App, ihre Konstanten stehen in einem Skript, das sie jedem ausliefert.
+
+Aus `main-C1lbqCDd.js` gelesen und gegen den Port gestellt — **alle neun Werte identisch**:
+
+| | Seite | Port |
+|---|---|---|
+| `land` · `reserved` · `favorPrice` | 0.6 · 0.2 · 0.25 | identisch |
+| `powerCurve` · `popCurve` · `priceCurve` | je 11 Stützstellen | identisch |
+| `cmcFloor` · `cmcCeiling` | 1.75 · 6 | identisch |
+| `efficiencyLimits` | [0.65, 1.1] | identisch |
+
+Und die Rechenvorschrift ebenfalls, Zeile für Zeile:
+`impact = (de(price, priceCurve, 1+favorPrice) + de(popCurve[10]−rank, popCurve, 1−favorPrice)) × qty`
+· Kipppunkt = erster Manawert, an dem der kumulierte Nicht-Land-Impact 65 % überschreitet
+· `g = (avgCost + Kipppunkt)/2` · `Ce = (ceiling−g)/(ceiling−floor)`
+· `score = totalImpact × (low + (high−low)·Ce)` · `level = de(score, powerCurve)`.
+
+**Auch der Interpolator stimmt** — samt der Eigenheit, vor der der Port selbst warnt: der Bruchteil
+innerhalb einer Dezile wird **nicht** mit dem Gewicht multipliziert, nur die Dezilgrenze. Die
+„saubere" Schreibweise verändert jeden Score in der App und sieht wie eine Aufräumarbeit aus.
+`tests/test_power_reference.py` prüft das über alle vier Kurven bei drei Gewichten und **fällt
+nachweislich**, wenn man es sauber schreibt.
+
+### Der eine Fund
+
+Das `factors`-Objekt der Seite trägt eine Konstante, die der Port nicht hatte:
+**`bracketCurve: [0, 4.7, 6.7, 7.7, 9.25, 10]`** — sie bildet das 0–10-Power-Level auf ein
+1–5-Bracket ab. Sie steht jetzt als **`reference_bracket`** im Power-Detail und ist bewusst von
+`computed_bracket` getrennt: letzteres wendet die WotC-Regeln an und bleibt maßgeblich.
+**Interessant ist die Abweichung** — ein Deck, dessen Regeln Bracket 2 sagen, während die
+Power-Kurve 4 sagt, ist stärker als sein Etikett, und das sagte bisher nichts in der App.
+
+⚠️ **Was damit NICHT gezeigt ist:** dass ein konkretes Deck hier genauso viele Punkte bekommt wie
+dort. Dafür braucht es weiterhin einen Browser. Gezeigt ist, dass eine Abweichung dann jedenfalls
+nicht an einer vertippten Kurve läge.
