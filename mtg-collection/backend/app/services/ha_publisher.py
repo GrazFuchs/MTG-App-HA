@@ -64,30 +64,30 @@ AGGREGATE_SENSORS = [
     ),
     # Spending / acquisition sensors (last 30 days)
     Entity(
-        key="spending_30d", name="MTG Spending 30d",
+        key="spending_30d", name="Spending 30d",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:cash-multiple",
     ),
     Entity(
-        key="spending_30d_value", name="MTG Acquired Value 30d",
+        key="spending_30d_value", name="Acquired Value 30d",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:trending-up",
     ),
     Entity(
-        key="acquired_count_30d", name="MTG Acquired Count 30d",
+        key="acquired_count_30d", name="Acquired Count 30d",
         icon="mdi:cards-playing-heart-multiple", state_class="measurement",
     ),
     # Listing health sensors
     Entity(
-        key="listings_underpriced", name="MTG Listings Underpriced",
+        key="listings_underpriced", name="Listings Underpriced",
         icon="mdi:tag-arrow-down", state_class="measurement",
     ),
     Entity(
-        key="listings_overpriced", name="MTG Listings Overpriced",
+        key="listings_overpriced", name="Listings Overpriced",
         icon="mdi:tag-arrow-up", state_class="measurement",
     ),
     Entity(
-        key="listings_fair", name="MTG Listings Fair",
+        key="listings_fair", name="Listings Fair",
         icon="mdi:tag-check", state_class="measurement",
     ),
 ]
@@ -95,32 +95,32 @@ AGGREGATE_SENSORS = [
 # Inbox / acquisition triage
 INBOX_SENSORS = [
     Entity(
-        key="inbox_pending", name="MTG Inbox Pending",
+        key="inbox_pending", name="Inbox Pending",
         icon="mdi:tray-full", state_class="measurement", has_attributes=True,
     ),
     Entity(
-        key="inbox_needs_sell", name="MTG Inbox Needs Sell",
+        key="inbox_needs_sell", name="Inbox Needs Sell",
         icon="mdi:tag-arrow-right", state_class="measurement",
     ),
     Entity(
-        key="inbox_needs_keep", name="MTG Inbox Needs Keep",
+        key="inbox_needs_keep", name="Inbox Needs Keep",
         icon="mdi:archive-check", state_class="measurement",
     ),
     Entity(
-        key="inbox_pending_value_eur", name="MTG Inbox Pending Value",
+        key="inbox_pending_value_eur", name="Inbox Pending Value",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:cash-clock",
     ),
     Entity(
-        key="inbox_oldest_age_days", name="MTG Inbox Oldest Age",
+        key="inbox_oldest_age_days", name="Inbox Oldest Age",
         unit="d", state_class="measurement", icon="mdi:clock-alert-outline",
     ),
     Entity(
-        key="inbox_decided_30d", name="MTG Inbox Decided 30d",
+        key="inbox_decided_30d", name="Inbox Decided 30d",
         icon="mdi:check-decagram", state_class="measurement", has_attributes=True,
     ),
     Entity(
-        key="inbox_has_pending", name="MTG Inbox Has Pending",
+        key="inbox_has_pending", name="Inbox Has Pending",
         component="binary_sensor", icon="mdi:tray-alert",
         extra={"payload_on": "ON", "payload_off": "OFF"},
     ),
@@ -129,25 +129,25 @@ INBOX_SENSORS = [
 # Selling: advisor candidates, duplicate surplus, unlisted backlog
 SELL_SENSORS = [
     Entity(
-        key="sell_candidates", name="MTG Sell Candidates",
+        key="sell_candidates", name="Sell Candidates",
         icon="mdi:tag-multiple", state_class="measurement", has_attributes=True,
     ),
     Entity(
-        key="sell_potential_eur", name="MTG Sell Potential",
+        key="sell_potential_eur", name="Sell Potential",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:cash-plus",
     ),
     Entity(
-        key="duplicates_surplus_cards", name="MTG Duplicates Surplus",
+        key="duplicates_surplus_cards", name="Duplicates Surplus",
         icon="mdi:content-duplicate", state_class="measurement",
     ),
     Entity(
-        key="duplicates_surplus_value_eur", name="MTG Duplicates Surplus Value",
+        key="duplicates_surplus_value_eur", name="Duplicates Surplus Value",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:cash-multiple",
     ),
     Entity(
-        key="unlisted_value_eur", name="MTG Unlisted Value",
+        key="unlisted_value_eur", name="Unlisted Value",
         device_class="monetary", unit="EUR", state_class="total",
         icon="mdi:tag-off", has_attributes=True,
     ),
@@ -156,7 +156,7 @@ SELL_SENSORS = [
 # Add-on itself
 ADDON_SENSORS = [
     Entity(
-        key="ingress_url", name="MTG Ingress URL",
+        key="ingress_url", name="Ingress URL",
         icon="mdi:link-variant", has_attributes=True,
     ),
 ]
@@ -164,16 +164,16 @@ ADDON_SENSORS = [
 # Deck performance (overall; per-deck sensors are published dynamically)
 DECK_SENSORS = [
     Entity(
-        key="games_30d", name="MTG Games 30d",
+        key="games_30d", name="Games 30d",
         icon="mdi:cards-playing", state_class="measurement",
     ),
     Entity(
-        key="winrate_30d", name="MTG Win Rate 30d",
+        key="winrate_30d", name="Win Rate 30d",
         icon="mdi:trophy", unit="%", state_class="measurement", has_attributes=True,
     ),
-    Entity(key="last_game_at", name="MTG Last Game At", device_class="timestamp"),
+    Entity(key="last_game_at", name="Last Game At", device_class="timestamp"),
     Entity(
-        key="last_game_result", name="MTG Last Game Result",
+        key="last_game_result", name="Last Game Result",
         icon="mdi:flag-checkered", has_attributes=True,
     ),
 ]
@@ -182,11 +182,11 @@ DECK_SENSORS = [
 # MTGStocks integration is enabled.
 SIGNAL_SENSORS = [
     Entity(
-        key="signals_buy", name="MTG Buy Signals",
+        key="signals_buy", name="Buy Signals",
         icon="mdi:trending-down", state_class="measurement", has_attributes=True,
     ),
     Entity(
-        key="signals_sell", name="MTG Sell Signals",
+        key="signals_sell", name="Sell Signals",
         icon="mdi:trending-up", state_class="measurement", has_attributes=True,
     ),
 ]
@@ -221,7 +221,7 @@ def _deck_entity(deck_id: int, deck_name: str, prefix: str) -> Entity:
     state_topic = f"{prefix}/deck/{deck_id}/state"
     return Entity(
         key=f"deck_{deck_id}_winrate",
-        name=f"MTG Deck {deck_name} Win Rate",
+        name=f"Deck {deck_name} Win Rate",
         unique_id=f"mtg_deck_{deck_id}_winrate",
         state_topic=state_topic,
         value_template="{{ value_json.win_rate }}",
@@ -667,7 +667,7 @@ def _wishlist_entity(item_id: int, card_name: str, set_code: str, prefix: str) -
     state_topic = f"{prefix}/wishlist/{item_id}/state"
     return Entity(
         key=f"wishlist_{item_id}",
-        name=f"MTG Wishlist {card_name}{display_set}",
+        name=f"Wishlist {card_name}{display_set}",
         unique_id=f"mtg_wishlist_{item_id}",
         state_topic=state_topic,
         value_template="{{ value_json.current_price_eur }}",

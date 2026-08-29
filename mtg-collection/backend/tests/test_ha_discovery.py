@@ -127,7 +127,10 @@ def test_wishlist_entity_shape_unchanged():
     assert discovery_topic(entity) == "homeassistant/sensor/mtg_wishlist_42/config"
     assert payload["unique_id"] == "mtg_wishlist_42"
     assert payload["object_id"] == "mtg_wishlist_42"
-    assert payload["name"] == "MTG Wishlist Sol Ring (C21)"
+    # No "MTG" prefix: HA renders `<device name> <entity name>`, and the
+    # device is already called "MTG Collection Manager" — the prefix made it
+    # read "MTG Collection Manager MTG Wishlist Sol Ring" on screen.
+    assert payload["name"] == "Wishlist Sol Ring (C21)"
     assert payload["state_topic"] == "mtg-collection/wishlist/42/state"
     assert payload["json_attributes_topic"] == "mtg-collection/wishlist/42/state"
     assert payload["value_template"] == "{{ value_json.current_price_eur }}"
@@ -144,7 +147,7 @@ def test_wishlist_entity_shape_unchanged():
 
 def test_wishlist_entity_without_set_code():
     entity = ha_publisher._wishlist_entity(7, "Sol Ring", "", "mtg-collection")
-    assert entity.name == "MTG Wishlist Sol Ring"
+    assert entity.name == "Wishlist Sol Ring"
 
 
 def test_payload_is_json_serialisable():
@@ -518,7 +521,7 @@ async def test_deck_sensors_publish_active_and_clear_inactive(fake_mqtt):
     # Active deck: discovery + state
     config = json.loads(published[f"homeassistant/sensor/mtg_deck_{active}_winrate/config"])
     assert config["unique_id"] == f"mtg_deck_{active}_winrate"
-    assert config["name"] == "MTG Deck Atraxa Win Rate"
+    assert config["name"] == "Deck Atraxa Win Rate"
     assert config["value_template"] == "{{ value_json.win_rate }}"
     state = json.loads(published[f"mtg-collection/deck/{active}/state"])
     assert state["win_rate"] == 100.0

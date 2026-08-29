@@ -98,6 +98,30 @@ export function DeckCombosSection({ deckId }: Props) {
 
   if (loading) return <Spinner size="tiny" />;
 
+  const [wishlistBusy, setWishlistBusy] = useState<number | null>(null);
+  const [wishlisted, setWishlisted] = useState<Set<string>>(new Set());
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
+
+  /**
+   * Put the one missing card on the wishlist, tied to this deck.
+   *
+   * `deck_id` is the whole point: without it the entry is just another card to
+   * buy, and the reason it is wanted — that it finishes a combo *here* — is
+   * lost the moment you close the page.
+   */
+  const addMissingToWishlist = async (cardName: string, comboId: number) => {
+    setWishlistBusy(comboId);
+    setWishlistError(null);
+    try {
+      await api.addToWishlist({ card_name: cardName, deck_id: deckId, quantity: 1 });
+      setWishlisted(prev => new Set(prev).add(cardName));
+    } catch (err) {
+      setWishlistError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWishlistBusy(null);
+    }
+  };
+
   const fullCombos = combos.filter(c => !c.is_partial);
   const partialCombos = combos.filter(c => c.is_partial);
 
@@ -129,7 +153,7 @@ export function DeckCombosSection({ deckId }: Props) {
         <SectionHeader
           num=""
           title={`${open ? '▾' : '▸'} Combos`}
-          right={`${fullCombos.length} IN DECK · ${partialCombos.length} ONE CARD AWAY`}
+          right={t('combo.header_counts', { full: fullCombos.length, partial: partialCombos.length })}
           accent={accent.oklch}
         />
       </div>
@@ -139,7 +163,7 @@ export function DeckCombosSection({ deckId }: Props) {
           {/* Full combos column */}
           <div>
             <div className={styles.columnTitle}>
-              Complete — every card in the deck ({fullCombos.length})
+              {t('combo.col_complete', { count: fullCombos.length })}
             </div>
             {fullCombos.map(combo => (
               <div
@@ -163,7 +187,7 @@ export function DeckCombosSection({ deckId }: Props) {
           {/* Partial combos column */}
           <div>
             <div className={styles.columnTitle}>
-              One card away — not in the deck yet ({partialCombos.length})
+              {t('combo.col_partial', { count: partialCombos.length })}
             </div>
             {partialCombos.map(combo => (
               <div
@@ -177,8 +201,26 @@ export function DeckCombosSection({ deckId }: Props) {
                 </div>
                 {combo.missing_cards.length > 0 && (
                   <div className={styles.missingHint}>
-                    Missing: {combo.missing_cards.join(', ')}
+                    {t('combo.missing', { cards: combo.missing_cards.join(', ') })}
                   </div>
+                )}
+                {/* The other direction of the combo bridge. The wishlist already
+                    says "this card completes a combo in deck X" when you are
+                    shopping; this is the same fact from where you actually
+                    notice it — looking at the deck. One card only: with two or
+                    more missing, which to buy is a decision, not a click. */}
+                {combo.missing_cards.length === 1 && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    disabled={wishlistBusy === combo.id || wishlisted.has(combo.missing_cards[0])}
+                    onClick={(e) => { e.stopPropagation(); addMissingToWishlist(combo.missing_cards[0], combo.id); }}
+                    style={{ marginTop: 4, fontSize: 10 }}
+                  >
+                    {wishlisted.has(combo.missing_cards[0])
+                      ? t('combo.on_wishlist')
+                      : t('combo.add_missing')}
+                  </Button>
                 )}
               </div>
             ))}
@@ -189,6 +231,14 @@ export function DeckCombosSection({ deckId }: Props) {
             )}
           </div>
         </div>
+
+        {/* A failed add must be visible: the button goes back to its normal
+            state either way, so without this the click looks like it worked. */}
+        {wishlistError && (
+          <div style={{ marginTop: 10, fontSize: 11, color: sothera.negative, fontFamily: sothera.fontMono }}>
+            {t('combo.wishlist_failed', { error: wishlistError })}
+          </div>
+        )}
 
         <div style={{ marginTop: 14 }}>
           <Button

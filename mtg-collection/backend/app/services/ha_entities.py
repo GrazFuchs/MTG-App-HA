@@ -34,6 +34,13 @@ WISHLIST_DEVICE_INFO: dict[str, Any] = {
 class Entity:
     """A single HA entity exposed via MQTT Discovery.
 
+    ⚠️ **Do not put "MTG" at the front of `name`.** Home Assistant renders an
+    entity as `<device name> <entity name>`, and both devices above are already
+    called "MTG …" — so a name of "MTG Inbox Pending" reads as
+    *"MTG Collection Manager MTG Inbox Pending"* on screen. 25 of these carried
+    the prefix until 2026-08-29 and 74 of the 115 published entities showed the
+    doubling.
+
     ``unique_id`` defaults to ``mtg_collection_{key}`` and doubles as the
     discovery node id; ``state_topic`` defaults to ``{prefix}/{key}``.
     """

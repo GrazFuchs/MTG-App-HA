@@ -1,3 +1,23 @@
+## 0.46.0 — three carried-over items, and one of them was described wrongly
+
+### The combo bridge, now in both directions
+
+The wishlist has said "this card completes a combo in *deck X*" since 0.40.0 — useful while shopping. The deck page said nothing, which is where you actually notice that a combo is one card short.
+
+A partial combo missing exactly **one** card now offers a button that puts it on the wishlist, bound to this deck. One card only: with two or more missing, which to buy is a decision rather than a click. `deck_id` is the whole point — without it the entry is just another card to buy and the reason it was wanted is lost as soon as the page closes.
+
+### A target price you do not have to look up first
+
+A wishlist target of 0 means "never alert me", and 25 entries had one — because setting a sensible number by hand means going and finding the price. The edit dialog now offers **85 % of the current market**, filled into the field rather than saved, so it can be argued with. It is deliberately a round fraction and not a computed "fair price": the wishlist is about what you are willing to pay, and a cleverer number would look like advice the data cannot support.
+
+### 74 entities were named "MTG Collection Manager MTG …"
+
+The note carried since 0.41.0 said the display names still read "MTG Collection Manager MTG Wishlist …" and that fixing it meant a rename sweep over 75 entities. **Both halves were wrong.**
+
+The prefix is not in the registry at all. Home Assistant renders an entity as `<device name> <entity name>`, the devices are already called "MTG Collection" and "MTG Collection Manager", and 25 entity names started with "MTG" on top of that. Measured live: **74 of 115** published entities showed the doubling.
+
+So it is not a rename sweep, it is 25 strings in `ha_publisher` — and fixing it there is permanent, where a registry rename would have been a second thing to keep in step. Entity IDs are untouched; only `original_name` changes, which HA picks up from the next discovery message. The rule is now written where the next entity gets added.
+
 ## 0.45.1 — the reference check Sprint 05 said needed a browser
 
 It needed a browser to compare *scores*. It did not need one to compare the thing that actually drifts.
