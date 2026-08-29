@@ -115,7 +115,7 @@ def _field_entity(spec: FormField, prefix: str, deck_options: list[str]) -> Enti
 
     return Entity(
         key=spec.entity_key,
-        name=f"MTG Log {spec.name}",
+        name=f"Log {spec.name}",
         component=spec.component,
         state_topic=state_topic(prefix, spec.key),
         icon=spec.icon,
@@ -130,7 +130,7 @@ def form_entities(prefix: str, deck_options: list[str]) -> list[Entity]:
 
     entities.append(Entity(
         key=f"log_{SUBMIT_KEY}",
-        name="MTG Log Game",
+        name="Log Game",
         component="button",
         has_state=False,
         icon="mdi:content-save-check",
@@ -142,7 +142,7 @@ def form_entities(prefix: str, deck_options: list[str]) -> list[Entity]:
     ))
     entities.append(Entity(
         key=f"log_{STATUS_KEY}",
-        name="MTG Log Status",
+        name="Log Status",
         state_topic=state_topic(prefix, STATUS_KEY),
         icon="mdi:information-outline",
         device=FORM_DEVICE_INFO,

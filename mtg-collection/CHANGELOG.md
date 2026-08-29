@@ -1,3 +1,7 @@
+## 0.46.1 — the same prefix, in the file the sweep missed
+
+The 25 names in `ha_publisher` were not all of them: the game logger's eleven form entities live in `ha_form.py` and carried three more. Live measurement after deploying 0.46.0 showed the names unchanged, which is what sent me looking.
+
 ## 0.46.0 — three carried-over items, and one of them was described wrongly
 
 ### The combo bridge, now in both directions
