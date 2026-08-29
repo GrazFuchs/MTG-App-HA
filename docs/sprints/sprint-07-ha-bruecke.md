@@ -93,8 +93,25 @@ Raten, kein Sonderfall für Karten mit Komma im Namen.
 ## Offen
 
 - **Der Nachweis des actionable Push** (siehe Akzeptanz) — braucht eine echte Triage-Entscheidung.
-- **Die Anzeigenamen** der 75 umbenannten Entities tragen weiter „MTG Collection Manager MTG
-  Wishlist …". Umbenannt wurden nur die IDs; ein Namens-Sweep wäre ein eigener, kosmetischer Lauf.
+- ~~**Die Anzeigenamen** der 75 umbenannten Entities…~~ **Erledigt in 0.46.0/0.46.1 — und der
+  Eintrag hier war in beiden Hälften falsch.**
+
+  Das Präfix stand **nicht in der Registry**. Home Assistant rendert eine Entity als
+  `<Gerätename> <Entityname>`; die Geräte heißen bereits „MTG Collection" bzw. „MTG Collection
+  Manager", und 28 Entity-Namen setzten „MTG" nochmal davor. Es war also **kein Rename-Lauf über
+  75 Registry-Einträge**, sondern 28 Strings in `ha_publisher.py` (25) und `ha_form.py` (3).
+
+  An der Quelle behoben bleibt es behoben; ein Registry-Rename wäre eine zweite Stelle gewesen, die
+  man nachziehen muss. Entity-IDs sind unangetastet, nur `original_name` ändert sich — HA übernimmt
+  das aus der nächsten Discovery-Nachricht.
+
+  **Live gemessen:** vorher **74 von 115** doppelt, nach 0.46.0 noch **10**, nach 0.46.1 **0**.
+  ⚠️ Die 10 waren der Grund für den Nachschlag: die Formular-Entities des Game Loggers stehen in
+  `ha_form.py`, nicht in `ha_publisher.py`, und der erste Sweep hat die Datei nicht angefasst.
+  Aufgefallen ist es nur, weil nach dem Deploy nachgemessen wurde.
+  ⚠️ Zweite Falle beim Nachmessen: `friendly_name` beginnt auch **richtigerweise** mit
+  „MTG Collection Manager…" — die erste Messung zählte deshalb weiter 74 und sah wie ein
+  Fehlschlag aus. Gesucht ist die **Dopplung** (`count("MTG ") > 1`), nicht das Präfix.
 - **B29s eigentliche Empfehlung ist nicht umgesetzt:** `docs/dashboard-strategie.md` schlägt vor,
   den MTG-Teil „auf eine Sektion einzudampfen, Rest hinter Deep-Link" — von 28 Controls tun 5 etwas,
   10 davon sind Formularfelder des Game-Loggers mit einer erfassten Partie. Das ist eine

@@ -98,12 +98,16 @@ Deck 5 auf der Liste — ein zweites Exemplar. Die Zuordnung ist also gewollt, n
 
 ## Offen / bewusst nicht gemacht
 
-- **Die Gegenrichtung der Combo-Brücke** („1 Karte bis zum Infinite — auf die Wunschliste?" mit
-  Ein-Klick-Hinzufügen im Deck) ist **nicht** gebaut. Der Weg von der Wunschliste zum Deck ist der,
-  den man beim Einkaufen geht; der umgekehrte gehört in die `DeckCombosSection` und ist ein eigenes
-  Stück UI-Arbeit.
-- **Der Zielpreis-Vorschlag „85 % vom Trend"** ist nicht gebaut — 25 Einträge ohne Ziel sind jetzt
-  sichtbar und filterbar, aber sie müssen von Hand gesetzt werden. Ein Vorschlagsknopf wäre der
-  nächste Schritt.
+- ~~**Die Gegenrichtung der Combo-Brücke**~~ — **gebaut in 0.46.0.** In der
+  `DeckCombosSection` bekommt eine Teil-Combo, der **genau eine** Karte fehlt, einen Knopf, der sie
+  **an dieses Deck gebunden** (`deck_id`) auf die Wunschliste legt. Bei zwei oder mehr fehlenden
+  Karten bewusst nicht: welche man kauft, ist dann eine Entscheidung und kein Klick. Ein
+  fehlgeschlagener Zugriff zeigt eine Meldung — der Knopf geht sonst in beiden Fällen in denselben
+  Zustand zurück und ein Fehler sähe aus wie Erfolg.
+- ~~**Der Zielpreis-Vorschlag „85 % vom Trend"**~~ — **gebaut in 0.46.0.** Der Bearbeiten-Dialog
+  bietet 85 % des aktuellen Marktpreises an und **füllt sie ins Feld, statt sie zu speichern** —
+  so lässt sich widersprechen. Bewusst ein runder Anteil und kein berechneter „fairer Preis": die
+  Wunschliste ist, was man zu zahlen bereit ist, und eine klügere Zahl sähe nach einer Empfehlung
+  aus, die die Daten nicht tragen.
 - **Die erste echte Deal-Meldung kann frühestens beim nächsten Preis-Sync entstehen**, weil dieser
   Lauf nur den Vergleichspunkt gesetzt hat. Das ist keine offene Arbeit, sondern die Bauart.
