@@ -70,6 +70,14 @@ export function DeckCombosSection({ deckId }: Props) {
   const [open, setOpen] = useState<boolean>(() => {
     try { return localStorage.getItem('deck.combosExpanded') === 'true'; } catch { return false; }
   });
+  // Diese drei muessen VOR dem `if (loading)`-Return unten stehen. Ein Hook
+  // hinter einem fruehen Return wird im ersten Render uebersprungen und im
+  // zweiten aufgerufen — React bricht das mit Fehler #310 ab ("rendered more
+  // hooks than during the previous render"), und die ganze Deck-Seite bleibt
+  // leer. Genau so kam der Fehler mit v0.46.0 herein.
+  const [wishlistBusy, setWishlistBusy] = useState<number | null>(null);
+  const [wishlisted, setWishlisted] = useState<Set<string>>(new Set());
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
 
   useEffect(() => {
     try { localStorage.setItem('deck.combosExpanded', String(open)); } catch { /* ignore */ }
@@ -97,10 +105,6 @@ export function DeckCombosSection({ deckId }: Props) {
   };
 
   if (loading) return <Spinner size="tiny" />;
-
-  const [wishlistBusy, setWishlistBusy] = useState<number | null>(null);
-  const [wishlisted, setWishlisted] = useState<Set<string>>(new Set());
-  const [wishlistError, setWishlistError] = useState<string | null>(null);
 
   /**
    * Put the one missing card on the wishlist, tied to this deck.

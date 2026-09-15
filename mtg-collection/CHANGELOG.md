@@ -1,3 +1,13 @@
+## 0.46.2 — the deck page did not render at all
+
+Opening a deck showed only "This page could not be rendered — minified React error #310".
+
+The combo bridge from 0.46.0 added three `useState` calls to `DeckCombosSection`, and it put them *below* the `if (loading) return <Spinner />` that was already there. So the first render — the one while the combos are still being fetched — leaves before them, and the second render calls three hooks the first one never did. React refuses that outright: hooks are matched positionally between renders, and "more hooks than during the previous render" is not a warning, it takes the subtree down. The error boundary then swallows the whole page, which is why nothing at all appeared rather than one broken section.
+
+Nothing in the toolchain was looking. `tsc -b` is green on this — hook order is not a type. The 45 existing tests are green too, because none of them renders this component. The rule's own tool, `eslint-plugin-react-hooks`, is not installed here; there is no ESLint in this project at all.
+
+So the guard is a test that reads the source instead of rendering it: `rules-of-hooks.test.ts` walks every `.ts`/`.tsx` under `src/` and fails on a hook call that sits below a return at component level. It costs 8 ms, imports nothing, and covers the whole tree rather than the one component that happened to break. Verified against the broken file — it names all three lines. It deliberately only checks the component's own indentation level: a hook nested inside an `if` block slips past, and a scanner that cries wolf gets switched off instead of fixed.
+
 ## 0.46.1 — the same prefix, in the file the sweep missed
 
 The 25 names in `ha_publisher` were not all of them: the game logger's eleven form entities live in `ha_form.py` and carried three more. Live measurement after deploying 0.46.0 showed the names unchanged, which is what sent me looking.
