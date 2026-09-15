@@ -216,10 +216,20 @@ The sensor stays *unknown* when the add-on runs outside Home Assistant
 | `sensor.mtg_last_game_result` | `win` / `loss` / `draw` (attribute: `deck_name`) | – |
 | `sensor.mtg_deck_<deck_id>_winrate` | Win rate per deck played in the last 90 days | % |
 
-Per-deck sensors carry `games`, `wins`, `losses`, `draws`, `last_played` and
-`deck_name` as attributes. They are keyed by deck **id**, so renaming a deck in
-Archidekt keeps the sensor and its history. A deck that has not been played for
-90 days is removed from HA again; logging a game brings it straight back.
+Per-deck sensors carry `games`, `wins`, `losses`, `draws`, `last_played`,
+`deck_name` and `format` as attributes, plus `bracket`, `bracket_source`,
+`power_score` and `power_level`. They are keyed by deck **id**, so renaming a
+deck in Archidekt keeps the sensor and its history. A deck that has not been
+played for 90 days is removed from HA again; logging a game brings it straight
+back.
+
+> **`bracket` and `power_score` are `null` for any format that has neither.**
+> The WotC bracket describes Commander and the power score is a port of a
+> Commander tool, so a 60-card deck gets no number rather than a misleading one
+> — `bracket_source` then reads `not_applicable`. A template must test for null
+> rather than for zero: `{{ state_attr('sensor.mtg_deck_61_winrate', 'bracket')
+> is not none }}`. Sending 0 either way would make "no bracket in this format"
+> indistinguishable from "bracket 0", which is why it is not done.
 
 ### MTGStocks signals
 
