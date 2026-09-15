@@ -158,7 +158,43 @@ Re-Sync):
 | 8 General Humphrey… | Work in Progress | 43 | Entwurf |
 | 14 Entchantment DECK | Work in Progress | 2 | Entwurf |
 
-## Offen — eine Entscheidung, keine Arbeit
+## Entschieden — und gebaut (2026-09-15, Nachtrag in 0.49.1)
+
+**Soll „Work in Progress" den Legalitäts-PUSH unterdrücken?** Ein Deck, das gerade gebaut wird, ist
+nicht *illegal* — die Frage gilt für es noch gar nicht, und das ist genau die Hausregel „nicht
+anwendbar heißt NULL plus Begründung, nie eine Zahl". Zwei der drei Befunde sind Entwürfe, und ein
+Prüfer, der bei jeder Änderung an einem 2-Karten-Entwurf pusht, wird abgeschaltet statt repariert
+(die Lehre aus Sprint 14).
+
+**Max' Antwort am 2026-09-15: ja — plus ein Schalter je Deck.** Gebaut in **0.49.1**, in derselben
+Zwei-Spalten-Form wie `binds_copies`:
+
+* `legality_push` — aus dem Ordner abgeleitet (neue Option `no_legality_push_folders`, Default
+  `["Work in Progress"]`), bei jedem Sync neu geschrieben.
+* `legality_push_override` — die Entscheidung von Hand, die ein Sync nie anfasst.
+* Gelesen an **einer** Stelle: `legality_push_effective()`.
+
+**Zwei getrennte Ordnerregeln, bewusst keine abgeleitete.** `non_binding_folders` sagt, wessen
+Karten im Regal liegen; `no_legality_push_folders` sagt, wessen Probleme eine Nachricht wert sind.
+Ein Deck im Bau **bindet** seine Karten und soll trotzdem niemanden unterbrechen — die zweite Regel
+aus der ersten abzuleiten wäre die erfundene Politik gewesen, die dieser Sprint sich verboten hat.
+
+⚠️ **Unterdrückt wird die Meldung, nie die Prüfung.** Der Deck-Check läuft weiter über jedes Deck,
+die Deckseite listet weiter jeden Verstoß, und der HA-Sensor trägt weiter `legal`/`violations` —
+dazu neu `legality_push`, damit das Stummschalten dort sichtbar ist, wo die Zahlen stehen.
+
+**Gemessen (Migration 29, 0,04 s, idempotent):** 4 Decks stumm (8, 9, 14, 53 — alle „Work in
+Progress"), Meldungen **3 → 1**. Übrig bleibt **Deck 6 „Intergalactic planetary"** — das aktive Deck
+mit 98 Karten, also genau der Befund, für den der Prüfer gebaut wurde. Der Push wurde leiser, ohne
+weniger nützlich zu werden.
+
+Nebenbei eingelöst: die Einschränkung „nur bindende Decks melden", die der Docstring von
+`notify_newly_illegal_decks` seit 0.48.0 verspricht. Sie war bis 0.49.0 gar nicht baubar — es gab
+`binds_copies` noch nicht.
+
+---
+
+## Offen war — eine Entscheidung, keine Arbeit
 
 **Soll „Work in Progress" den Legalitäts-PUSH unterdrücken?** Ein Deck, das gerade gebaut wird, ist
 nicht *illegal* — die Frage gilt für es noch gar nicht, und das ist genau die Hausregel „nicht

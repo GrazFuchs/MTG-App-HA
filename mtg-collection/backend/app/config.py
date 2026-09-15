@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     #: what made 268 cards read as "needed more often than owned".
     #: A deck can be told otherwise individually; see `decks.binds_copies`.
     non_binding_folders: list[str] = ["Disassembled", "Older Versions"]
+    #: Archidekt folders whose decks never raise a legality notification. A
+    #: deck that is being built is not *illegal* — the question does not apply
+    #: to it yet, which is the house rule "not applicable means NULL plus a
+    #: reason, never a number". Two of the three findings on the first full
+    #: check were 43-card and 2-card drafts, and a checker that pushes on every
+    #: change to a 2-card draft gets switched off rather than fixed.
+    #: A deck can be told otherwise individually; see `decks.legality_push`.
+    no_legality_push_folders: list[str] = ["Work in Progress"]
     sync_enabled: bool = True
     sync_hour: int = 3
     mtgstocks_enabled: bool = False

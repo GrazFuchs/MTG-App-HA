@@ -335,6 +335,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     cursor = await db.execute(
         """SELECT d.id, d.name, d.format, d.bracket, d.user_bracket, d.computed_bracket,
                   d.power_score, d.power_level, d.legality_json,
+                  d.legality_push, d.legality_push_override,
                   COUNT(g.id) AS games,
                   SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
                   SUM(CASE WHEN g.result = 'loss' THEN 1 ELSE 0 END) AS losses,
@@ -348,6 +349,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     )
 
     from . import formats
+    from .queries import legality_push_effective
 
     stats = []
     for r in await cursor.fetchall():
@@ -382,6 +384,10 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
             # template must tell that from False, because "we did not look" and
             # "we looked and it is wrong" call for different reactions.
             **_legality_attrs(r["legality_json"] if "legality_json" in r.keys() else None),
+            # Whether a violation here would be announced. `violations` stays
+            # truthful either way — silencing a deck hides the interruption,
+            # never the number, so a card that reads the sensor still sees it.
+            "legality_push": legality_push_effective(r),
             "games": games,
             "wins": wins,
             "losses": int(r["losses"] or 0),

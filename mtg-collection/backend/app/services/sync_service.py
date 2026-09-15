@@ -41,6 +41,27 @@ async def apply_binding_from_folder(
     )
 
 
+async def apply_legality_push_from_folder(
+    db: aiosqlite.Connection, deck_id: int, folder_name: str | None
+) -> None:
+    """Derive "should a violation on this deck be announced" from the folder.
+
+    A deck in "Work in Progress" is being built; 43 cards out of 60 is not a
+    rules violation, it is Tuesday. Moving it out of that folder on Archidekt
+    is how someone says it is finished and wants to hear about it.
+
+    Writes the *derived* column only — `legality_push_override` belongs to the
+    deck page, and a sync must never undo a decision. Same arrangement as
+    `apply_binding_from_folder`, and deliberately a *second* rule rather than a
+    reuse of the first: binding is about cards, this is about attention.
+    """
+    settings = get_settings()
+    await db.execute(
+        "UPDATE decks SET legality_push = ? WHERE id = ?",
+        (0 if (folder_name or "") in settings.no_legality_push_folders else 1, deck_id),
+    )
+
+
 async def upsert_card(db, card_data: dict) -> int:
     """Insert or update a card, return its DB id."""
     keywords = card_data.get("keywords", [])
@@ -209,6 +230,7 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
     local_deck_id = deck_row[0]
 
     await apply_binding_from_folder(db, local_deck_id, folder_name)
+    await apply_legality_push_from_folder(db, local_deck_id, folder_name)
 
     # Clear old deck cards
     await db.execute("DELETE FROM deck_cards WHERE deck_id=?", (local_deck_id,))

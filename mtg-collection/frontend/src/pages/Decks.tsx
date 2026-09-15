@@ -7,6 +7,7 @@ import { api, DeckSummary } from '../api';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
 import { Panel, PageHeader, SectionHeader } from '../components/sothera';
+import { LegalityPushBadge } from '../components/deck/LegalityPushBadge';
 
 import { t } from '../i18n';
 const useStyles = makeStyles({
@@ -299,6 +300,17 @@ export default function Decks() {
                         {t('binds.not_binding')}
                       </span>
                     )}
+                    {/* A silenced deck looks exactly like a clean one from
+                        here, and that is the state worth seeing: nothing will
+                        be reported about it until someone says so. Clicking it
+                        opens the same three-state control as the deck page —
+                        the tile navigates on click, so the badge stops the
+                        event itself. */}
+                    <LegalityPushBadge
+                      compact
+                      deck={d}
+                      onUpdated={() => queryClient.invalidateQueries({ queryKey: ['decks'] })}
+                    />
                   </div>
                   <div className={styles.cardFooter}>
                     {/* "60 + 15" says more about a constructed deck than "75"

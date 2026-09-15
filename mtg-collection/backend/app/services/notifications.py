@@ -225,8 +225,13 @@ async def notify_newly_illegal_decks() -> int:
     worse than none:
 
     * **Only decks that bind copies.** A deck in "Disassembled" going illegal is
-      not news; the cards are in other decks. (Sprint 13 introduces the flag;
-      until then every deck binds, which is the safe direction.)
+      not news; the cards are in other decks.
+    * **Only decks that are finished.** A deck in "Work in Progress" is being
+      built, and 43 cards out of 60 is not a fault — the question does not
+      apply to it yet. This is its own flag rather than a second use of the
+      binding one: a work-in-progress deck *does* tie up its cards and still
+      should not push. Per deck overridable on the deck page, because the
+      folder is a habit and not a rule.
     * **Only a change.** The dedup key is a signature of the violations
       themselves. ⚠️ The obvious version — compare `legality_notified_at`
       against `legality_checked_at` — reads plausibly and is wrong: the check
@@ -245,9 +250,13 @@ async def notify_newly_illegal_decks() -> int:
 
     from ..database import get_db
 
+    from .queries import binds_effective, legality_push_effective
+
     db = await get_db()
     cursor = await db.execute(
-        """SELECT id, name, format, legality_json, legality_notified_key
+        """SELECT id, name, format, legality_json, legality_notified_key,
+                  binds_copies, binds_copies_override,
+                  legality_push, legality_push_override
            FROM decks
            WHERE legality_json IS NOT NULL
            ORDER BY id"""
@@ -256,6 +265,11 @@ async def notify_newly_illegal_decks() -> int:
 
     sent = 0
     for row in rows:
+        # Both gates before anything else is parsed. Silence here is not a
+        # missed problem: the check still ran, the deck page still shows it,
+        # and the HA attributes still carry it. Only the interruption stops.
+        if not binds_effective(row) or not legality_push_effective(row):
+            continue
         try:
             check = _json.loads(row["legality_json"] or "{}")
         except (TypeError, ValueError):

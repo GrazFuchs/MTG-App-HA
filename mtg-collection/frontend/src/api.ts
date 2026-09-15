@@ -106,6 +106,11 @@ export interface DeckSummary {
   binds_copies: boolean;
   /** The hand-set decision; null while the Archidekt folder still decides. */
   binds_copies_override: boolean | null;
+  /** Whether a rules violation on this deck is announced. A deck being built
+   *  is not illegal — the question does not apply to it yet. The check itself
+   *  runs regardless; only the notification stops. */
+  legality_push: boolean;
+  legality_push_override: boolean | null;
   last_synced: string;
 }
 
@@ -180,7 +185,10 @@ export interface DeckDetail {
   gameplan: string;
   binds_copies: boolean;
   binds_copies_override: boolean | null;
-  /** The folder the derived value came from — so the toggle can say why. */
+  /** Whether a rules violation here is announced; see `DeckSummary`. */
+  legality_push: boolean;
+  legality_push_override: boolean | null;
+  /** The folder the derived values came from — so the toggles can say why. */
   folder_name: string;
   ai_assessment: string;
   ai_assessment_updated_at: string | null;
@@ -806,6 +814,7 @@ export const api = {
       user_bracket?: number | null;
       gameplan?: string;
       binds_copies_override?: boolean | null;
+      legality_push_override?: boolean | null;
     },
   ) =>
     request<DeckDetail>(`/api/decks/${deckId}/user-fields`, {

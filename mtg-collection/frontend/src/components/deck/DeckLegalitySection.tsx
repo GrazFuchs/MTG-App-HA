@@ -53,7 +53,14 @@ const KIND_LABEL: Record<LegalityViolation['kind'], string> = {
   legality: 'deck.legality_card',
 };
 
-export function DeckLegalitySection({ deckId }: { deckId: number }) {
+interface Props {
+  deckId: number;
+  /** The "announce violations on this deck" control, passed in rather than
+   *  built here: this section knows the check, the deck page knows the deck. */
+  pushToggle?: React.ReactNode;
+}
+
+export function DeckLegalitySection({ deckId, pushToggle }: Props) {
   const styles = useStyles();
   const { accent } = useAccent();
 
@@ -74,6 +81,7 @@ export function DeckLegalitySection({ deckId }: { deckId: number }) {
         <SectionHeader num="--" title={t('deck.legality_title')} accent={accent.oklch} />
         <Panel>
           <div className={styles.note}>{t('deck.legality_unchecked')}</div>
+          {pushToggle && <div style={{ marginTop: 10 }}>{pushToggle}</div>}
         </Panel>
       </div>
     );
@@ -104,6 +112,8 @@ export function DeckLegalitySection({ deckId }: { deckId: number }) {
           </span>
           <span>{data.format}</span>
         </div>
+
+        {pushToggle && <div style={{ marginBottom: 10 }}>{pushToggle}</div>}
 
         {violations.length === 0 ? (
           <div className={styles.row}>

@@ -1,5 +1,5 @@
 name: "MTG Collection Manager"
-version: "0.49.0"
+version: "0.49.1"
 slug: "mtg-collection"
 description: "Magic: The Gathering collection manager with Archidekt sync, Scryfall/EDHREC integration, and MCP server"
 arch:
@@ -29,6 +29,8 @@ options:
   non_binding_folders:
     - "Disassembled"
     - "Older Versions"
+  no_legality_push_folders:
+    - "Work in Progress"
   sync_enabled: true
   sync_hour: 3
   mtgstocks_enabled: false
@@ -50,6 +52,8 @@ schema:
   archidekt_deck_ids:
     - "int"
   non_binding_folders:
+    - "str"
+  no_legality_push_folders:
     - "str"
   sync_enabled: "bool"
   sync_hour: "int(0,23)"

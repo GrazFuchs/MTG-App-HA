@@ -1220,6 +1220,60 @@ async def _migration_28(db: aiosqlite.Connection):
     """)
 
 
+#: Archidekt folders whose decks never raise a legality notification. A deck
+#: being built is not illegal — the question does not apply to it yet.
+#: Overridable per deck; see `decks.legality_push`.
+DEFAULT_NO_LEGALITY_PUSH_FOLDERS = ("Work in Progress",)
+
+
+async def _migration_29(db: aiosqlite.Connection):
+    """A deck that is being built is not illegal — the question does not apply yet.
+
+    The first full legality run over the real collection found three decks, and
+    two of them were drafts: 43 cards and 2 cards, both sitting in "Work in
+    Progress". Neither is a fault. Announcing them as one is how a checker
+    loses its credibility — the same lesson the copy-limit exemption for Rat
+    Colony carries, one layer up: **a checker that cries wolf gets switched off
+    rather than fixed.**
+
+    Two columns, not one, for the same reason `binds_copies` has two: the
+    folder decides by default and is re-derived on every sync, so a decision
+    somebody made by hand needs a column a sync never writes. A single column
+    with `DEFAULT 1` cannot tell "nobody has decided" from "somebody said yes".
+
+    ⚠️ This suppresses the **notification**, never the check. The deck page
+    still shows every violation, `GET /decks/{id}/legality` still answers, and
+    the HA attributes still carry `legal` and `violations`. What stops is the
+    push and the fault-board card — the two things that demand attention for
+    something nobody asked about.
+    """
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("legality_push", "ALTER TABLE decks ADD COLUMN legality_push INTEGER DEFAULT 1"),
+        ("legality_push_override",
+         "ALTER TABLE decks ADD COLUMN legality_push_override INTEGER"),
+    ):
+        if column_name not in columns:
+            await db.execute(ddl)
+
+    # Same guard as migration 28: `folder_name` arrives with migration 3, and a
+    # database old enough to be missing it skipped that migration.
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    deck_columns = {row[1] for row in await cursor.fetchall()}
+    if "folder_name" in deck_columns:
+        placeholders = ",".join("?" * len(DEFAULT_NO_LEGALITY_PUSH_FOLDERS))
+        cursor = await db.execute(
+            f"UPDATE decks SET legality_push = 0 WHERE folder_name IN ({placeholders})",
+            list(DEFAULT_NO_LEGALITY_PUSH_FOLDERS),
+        )
+        if cursor.rowcount:
+            logger.info(
+                "Migration 29: %d deck(s) in %s no longer raise a legality push",
+                cursor.rowcount, ", ".join(DEFAULT_NO_LEGALITY_PUSH_FOLDERS),
+            )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -1248,6 +1302,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     26: _migration_26,
     27: _migration_27,
     28: _migration_28,
+    29: _migration_29,
 }
 
 

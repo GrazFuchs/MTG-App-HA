@@ -10,7 +10,12 @@ from ..models.schemas import (
     DeckGame, DeckGameCreate, DeckGameUpdate, DeckPerformanceStats,
 )
 from ..services import formats
-from ..services.queries import binds_effective, parse_color_identity, query_all_decks
+from ..services.queries import (
+    binds_effective,
+    legality_push_effective,
+    parse_color_identity,
+    query_all_decks,
+)
 from ..services.deck_performance import compute_performance_stats
 from ..services.bracket import effective_bracket
 
@@ -280,6 +285,13 @@ async def get_deck(deck_id: int):
             None if _col(deck, "binds_copies_override") is None
             else bool(_col(deck, "binds_copies_override"))
         ),
+        # The second folder-derived decision, built and read exactly like the
+        # first. It silences the notification, never the check below it.
+        legality_push=legality_push_effective(deck),
+        legality_push_override=(
+            None if _col(deck, "legality_push_override") is None
+            else bool(_col(deck, "legality_push_override"))
+        ),
         folder_name=deck["folder_name"] or "",
         ai_assessment=deck["ai_assessment"] or "",
         ai_assessment_updated_at=deck["ai_assessment_updated_at"],
@@ -316,6 +328,12 @@ async def update_deck_user_fields(deck_id: int, body: DeckUserFieldsUpdate):
         else:
             fields.append("binds_copies_override = ?")
             params.append(1 if body.binds_copies_override else 0)
+    if "legality_push_override" in body.model_fields_set:
+        if body.legality_push_override is None:
+            fields.append("legality_push_override = NULL")
+        else:
+            fields.append("legality_push_override = ?")
+            params.append(1 if body.legality_push_override else 0)
 
     if fields:
         params.append(deck_id)

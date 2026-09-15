@@ -66,6 +66,33 @@ def binds_effective(row) -> bool:
     return True if derived is None else bool(derived)
 
 
+def legality_push_effective(row) -> bool:
+    """Should this deck's violations be announced?
+
+    Built exactly like `binds_effective`, and read the same way: the folder
+    decides, a hand-set override wins, and the answer is computed in one place
+    so the deck page, the deck list and the notifier cannot disagree.
+
+    ⚠️ This is about the **push**, not the check. `check_deck` runs on every
+    deck regardless; the deck page shows every violation regardless. A deck
+    that is mid-build is simply not something to be told about at 3 a.m.
+
+    Two folder rules, deliberately separate: `non_binding_folders` says whose
+    cards are on the shelf, this one says whose problems are news. Deriving the
+    second from the first would be inventing policy — a disassembled deck binds
+    nothing *and* should not push, but a work-in-progress deck binds its cards
+    and still should not push.
+    """
+    try:
+        override = row["legality_push_override"]
+        derived = row["legality_push"]
+    except (KeyError, IndexError):
+        return True
+    if override is not None:
+        return bool(override)
+    return True if derived is None else bool(derived)
+
+
 def token_exclusion_sql(alias: str = "c") -> str:
     """Return a SQL boolean excluding token rows."""
     layout = f"COALESCE({alias}.layout, '')" if alias else "COALESCE(layout, '')"
@@ -634,7 +661,8 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         COALESCE(SUM(CASE WHEN dc.board = 'maybe' AND {no_token} THEN dc.quantity END), 0) as maybeboard_count,
         d.folder_name, d.bracket, d.user_bracket, d.computed_bracket,
         d.power_score, d.power_level,
-        d.binds_copies, d.binds_copies_override
+        d.binds_copies, d.binds_copies_override,
+        d.legality_push, d.legality_push_override
         FROM decks d
         LEFT JOIN deck_cards dc ON dc.deck_id = d.id
         LEFT JOIN cards c ON c.id = dc.card_id
@@ -668,6 +696,12 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         "binds_copies": binds_effective(
             {"binds_copies": r[16], "binds_copies_override": r[17]}),
         "binds_copies_override": None if r[17] is None else bool(r[17]),
+        # Whether a violation on this deck is worth a notification. Same
+        # shape, same helper, same reason — the tile has to be able to say
+        # "silenced" without knowing which folder means what.
+        "legality_push": legality_push_effective(
+            {"legality_push": r[18], "legality_push_override": r[19]}),
+        "legality_push_override": None if r[19] is None else bool(r[19]),
     } for r in rows]
 
 

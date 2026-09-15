@@ -1,3 +1,69 @@
+## 0.49.1 — a deck being built is not illegal
+
+Sprint 14 left one open decision rather than deciding it unilaterally: should
+"Work in Progress" suppress the legality push? Max answered yes, and asked for
+a per-deck switch alongside it.
+
+The first full deck check over the real collection found three decks, and two
+of them were drafts sitting in "Work in Progress" — 43 cards out of 60, and 2
+cards out of 60. Neither is a fault. A deck being built is not *illegal*; the
+question does not apply to it yet, which is the house rule "not applicable
+means NULL plus a reason, never a number". A checker that pushes on every
+change to a 2-card draft gets switched off rather than fixed — the same lesson
+the Rat Colony copy-limit exemption carries, one layer up.
+
+**Two columns, not one**, exactly like `binds_copies` and for exactly the same
+reason: `legality_push` is derived from the Archidekt folder and rewritten on
+every sync, `legality_push_override` is a decision somebody made by hand and a
+sync never touches it. A single column with `DEFAULT 1` cannot tell "nobody has
+decided" from "somebody said yes". Read in one place (`legality_push_effective`),
+so the deck page, the deck list, the HA sensor and the notifier cannot drift
+apart — they did once, over the bracket, for a whole deploy.
+
+**A second folder rule, deliberately not a reuse of the first.**
+`non_binding_folders` says whose cards are on the shelf; the new
+`no_legality_push_folders` (default `["Work in Progress"]`) says whose problems
+are news. A work-in-progress deck *does* tie up its cards and still should not
+interrupt anyone — deriving one rule from the other would have been invented
+policy.
+
+⚠️ **This silences the notification, never the check.** `check_deck` still runs
+on every deck, the deck page still lists every violation, `GET
+/decks/{id}/legality` still answers, and the HA deck sensor still carries
+`legal` and `violations` — plus a new `legality_push` attribute, so the
+silencing is visible where the numbers are. What stops is the push and the
+`stoerung_mtg_deck_illegal_<id>` card.
+
+**Also wired at last:** the "only decks that bind copies" narrowing that this
+function's docstring has promised since 0.48.0. It could not be implemented
+until `binds_copies` existed in 0.49.0. A disassembled deck going illegal is
+not news.
+
+### The control
+
+A three-state badge, the same shape as the bracket and binding toggles. On the
+deck page it sits in the Deck-Check section — the place you decide "stop
+telling me about this" is the place you are reading what you are being told —
+and it is **always** visible there, because a switch you can only find once it
+is already flipped is not a switch. On the deck list it is a marker: it appears
+only on a silenced deck, where it is the state worth seeing, and clicking it
+opens the same control without navigating away.
+
+### Measured against the live database (352 MB, 24 decks)
+
+Migration 29: **0.04 s**, idempotent (second run 0.02 s, same four decks,
+`deck_demand` unchanged at 1490 rows / 1797 cards).
+
+| | |
+|---|---|
+| Decks silenced by the folder | **4** — 8, 9, 14, 53, all in "Work in Progress" |
+| Decks that would be announced | **3 → 1** |
+| The one that remains | Deck 6 "Intergalactic planetary" (folder "Maxi"), 98 cards |
+
+Two of the three that fell away are the drafts; the third never was one — deck
+6 is an active deck two cards short, and it is exactly the finding the check
+was built for. **The push got quieter and did not get less useful.**
+
 ## 0.49.0 — Sprint 13: what a deck actually demands
 
 "How many copies do my decks need" was asked in **seven** places, each with its

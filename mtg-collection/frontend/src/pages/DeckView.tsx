@@ -8,6 +8,7 @@ import { ManaCost, ManaSymbol } from '../components/ManaSymbol';
 import { CardHoverPreview } from '../components/CardHoverPreview';
 import { UserBracketBadge } from '../components/deck/UserBracketBadge';
 import { BindsCopiesBadge } from '../components/deck/BindsCopiesBadge';
+import { LegalityPushBadge } from '../components/deck/LegalityPushBadge';
 import { GameplanBox } from '../components/deck/GameplanBox';
 import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 import { DeckCombosSection } from '../components/deck/DeckCombosSection';
@@ -349,8 +350,16 @@ export default function DeckView() {
       {deck.format_rules?.power_applies && <DeckPowerSection deck={deck} onUpdate={setDeck} />}
 
       {/* Below the bracket, not instead of it: one asks what the deck can do,
-          the other whether it is a deck at all. Shown for every format. */}
-      <DeckLegalitySection deckId={deck.id} />
+          the other whether it is a deck at all. Shown for every format.
+          The push toggle rides along, because the place you decide "stop
+          telling me about this deck" is the place you are reading what it is
+          being told about. */}
+      <DeckLegalitySection
+        deckId={deck.id}
+        pushToggle={
+          <LegalityPushBadge deck={deck} onUpdated={() => api.getDeck(deck.id).then(setDeck)} />
+        }
+      />
 
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />

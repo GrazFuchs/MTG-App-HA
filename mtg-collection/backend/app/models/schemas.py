@@ -110,6 +110,11 @@ class DeckSummary(BaseModel):
     #: columns as the bracket, for the same reason: a sync must never undo a
     #: choice someone made by hand.
     binds_copies_override: bool | None = None
+    #: Whether a rules violation on this deck is worth a notification. A deck
+    #: being built is not illegal — the question does not apply to it yet.
+    #: Suppresses the push only; the check itself runs on every deck.
+    legality_push: bool = True
+    legality_push_override: bool | None = None
     last_synced: datetime | None = None
 
 
@@ -160,8 +165,13 @@ class DeckDetail(BaseModel):
     #: The effective answer; `binds_copies_override` says who decided it.
     binds_copies: bool = True
     binds_copies_override: bool | None = None
-    #: The folder the derived value came from, so the toggle can say *why* a
-    #: deck does not bind without the frontend knowing the folder list.
+    #: Whether a violation here is announced. Separate from `binds_copies` on
+    #: purpose: a work-in-progress deck ties up its cards and still should not
+    #: interrupt anyone.
+    legality_push: bool = True
+    legality_push_override: bool | None = None
+    #: The folder the derived values came from, so the toggles can say *why*
+    #: without the frontend knowing either folder list.
     folder_name: str = ""
     ai_assessment: str = ""
     ai_assessment_updated_at: datetime | None = None
@@ -178,6 +188,7 @@ class DeckUserFieldsUpdate(BaseModel):
     #: Three states, like `user_bracket`: absent leaves it alone, a bool sets
     #: the override, an explicit `null` hands the deck back to its folder.
     binds_copies_override: bool | None = None
+    legality_push_override: bool | None = None
 
 
 # --- Deck Performance Tracker ---
