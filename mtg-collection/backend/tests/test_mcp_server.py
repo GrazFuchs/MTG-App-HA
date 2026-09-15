@@ -33,7 +33,14 @@ def test_prompts_only_reference_tools_that_exist(tool_names):
     # Field names appear the same way, so they are listed as known exceptions
     # rather than guessed at — a heuristic that silently skips things would
     # defeat the point of the test.
-    field_names = {"ai_assessment_updated_at", "updated_at", "owned_only"}
+    field_names = {
+        "ai_assessment_updated_at", "updated_at", "owned_only",
+        # From `format_rules`, which the analyse prompt tells the assistant to
+        # read before choosing tools (0.47.0).
+        "format_rules", "bracket_applies", "power_applies", "format_mismatch",
+        # The answer a gated tool gives instead of a number.
+        "not_applicable",
+    }
     referenced = {
         n for n in re.findall(r"`([a-z_]{4,})`", prompts_src)
         if "_" in n and n not in field_names

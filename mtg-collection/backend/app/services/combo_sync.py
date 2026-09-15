@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 from ..database import get_db
 from ..clients.spellbook import spellbook
+from . import formats
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +159,20 @@ async def sync_combos_for_deck(deck_id: int) -> int:
         logger.warning("Deck %d has no cards, skipping combo sync", deck_id)
         return 0
 
-    # Get commander name
+    # Get commander name and format. The commander is only sent for formats
+    # that have one — Spellbook takes `commanders` as a colour-identity
+    # constraint, so naming one on a 60-card deck would narrow the search to
+    # the wrong colours.
     cursor = await db.execute(
-        "SELECT commander_name FROM decks WHERE id = ?", (deck_id,)
+        "SELECT commander_name, format FROM decks WHERE id = ?", (deck_id,)
     )
     deck_row = await cursor.fetchone()
-    commander_name = deck_row["commander_name"] if deck_row else None
+    deck_format = deck_row["format"] if deck_row else None
+    commander_name = (
+        deck_row["commander_name"]
+        if deck_row and formats.has_commander(deck_format)
+        else None
+    )
 
     # 2. Call Spellbook API
     data = await spellbook.find_combos_in_decklist(card_names, commander_name)
@@ -206,10 +215,18 @@ async def sync_combos_for_deck(deck_id: int) -> int:
     # Separate call, separate failure. The combos are already stored; losing
     # them because the classification endpoint had a bad minute would be the
     # wrong trade.
-    try:
-        await classify_deck_cards(deck_id, card_names, commander_name)
-    except Exception as exc:
-        logger.warning("Bracket classification failed for deck %d: %s", deck_id, exc)
+    #
+    # ⚠️ Only for formats the bracket applies to. `/estimate-bracket` answers in
+    # the WotC Commander scale and sets `spellbook_bracket_tag`; asking it about
+    # a Standard deck yields a label for a system that format is not part of,
+    # and the UI would show it next to an empty bracket as if the two belonged
+    # together. The per-card facts it also writes (`mass_land_denial`,
+    # `extra_turn`) are lost with it — they are only ever read by the bracket.
+    if formats.bracket_applies(deck_format):
+        try:
+            await classify_deck_cards(deck_id, card_names, commander_name)
+        except Exception as exc:
+            logger.warning("Bracket classification failed for deck %d: %s", deck_id, exc)
 
     # Both bracket inputs this deck owns have just changed, so the standing
     # answer is stale. Local SQL, no network — cheaper than leaving it wrong.

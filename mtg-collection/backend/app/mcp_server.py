@@ -1417,6 +1417,12 @@ async def compute_power_level(deck_id: int) -> str:
     high whether or not they work together. Read it next to the bracket, which
     asks the opposite question.
 
+    **Commander only.** For any other format this returns
+    `{"score": null, "reason": "not_applicable"}` — the port's popularity curve
+    was derived from Commander-legal cards and its land factor assumes 99+1, so
+    a number for a 60-card deck would be in the same range and mean nothing.
+    Do not work around it; report that the deck has no score.
+
     Args:
         deck_id: internal deck id (from list_decks)
     """
@@ -1438,6 +1444,11 @@ async def explain_bracket(deck_id: int) -> str:
     Returns the computed bracket, the evidence for each rule that fired (game
     changers, two-card infinite combos, mass land denial, extra-turn plans) and
     the cards behind it. Nothing is persisted.
+
+    **Commander only.** The WotC bracket system describes casual multiplayer
+    Commander; for any other format this returns
+    `{"bracket": null, "reason": "not_applicable"}`. A Standard deck has no
+    bracket — not bracket 2.
 
     Args:
         deck_id: internal deck id (from list_decks)
@@ -1486,11 +1497,18 @@ async def suggest_bracket_safe_upgrades(
         db = await get_db()
 
         deck = await (await db.execute(
-            "SELECT id, name FROM decks WHERE id = ?", (deck_id,))).fetchone()
+            "SELECT id, name, format FROM decks WHERE id = ?", (deck_id,))).fetchone()
         if not deck:
             return json.dumps({"error": f"Deck {deck_id} not found"})
 
-        current = await compute_bracket(deck_id, persist=False)
+        # Outside Commander there is no bracket to stay safe of, so the whole
+        # promise of this tool changes: it becomes "cheap upgrades from cards
+        # you already own", which is still useful and must not be dressed up as
+        # bracket advice.
+        from .services import formats
+        bracket_matters = formats.bracket_applies(deck["format"])
+
+        current = await compute_bracket(deck_id, persist=False) if bracket_matters else {}
 
         # Cards already in this deck cannot be an upgrade to it.
         in_deck = {r["card_id"] for r in await (await db.execute(
@@ -1554,7 +1572,10 @@ async def suggest_bracket_safe_upgrades(
 
         safe, raising = [], []
         for cand in candidates:
-            impact = await bracket_impact_of_card(deck_id, cand["card_id"])
+            impact = (
+                await bracket_impact_of_card(deck_id, cand["card_id"])
+                if bracket_matters else None
+            )
             if impact is None:
                 safe.append(cand)
             else:
@@ -1562,7 +1583,12 @@ async def suggest_bracket_safe_upgrades(
 
         return json.dumps({
             "deck": deck["name"],
+            "format": deck["format"] or "Unknown",
+            # Null outside Commander, with `bracket_checked` saying why — so an
+            # assistant reports "no bracket in this format" rather than reading
+            # the empty `would_raise_bracket` list as "nothing raises it".
             "current_bracket": current.get("bracket"),
+            "bracket_checked": bracket_matters,
             "owned_only": owned_only,
             "budget_eur": budget_eur,
             "safe": safe,
@@ -1725,18 +1751,32 @@ def analyze_deck(deck_name: str) -> str:
     return (
         f"Analyse the MTG deck '{deck_name}' and record the result.\n\n"
         "1. `list_decks` to find its id, then `get_deck` for the list.\n"
-        "2. `explain_bracket` and `compute_power_level` — do not judge these by "
+        "2. **Read `format_rules` in that answer before doing anything else.** "
+        "It says which of the tools below apply to this deck:\n"
+        "   - `bracket_applies` / `power_applies` true (Commander): run "
+        "`explain_bracket` and `compute_power_level`. Do not judge these by "
         "eye; they apply the same rules to every deck.\n"
-        "3. `get_deck_combos` for what the deck can already do, and "
-        "`get_edhrec_recommendations` for what decks like it usually run.\n\n"
+        "   - both false (Standard, Modern, Pauper, Premodern, ...): **skip "
+        "them**. They return `not_applicable`, and a bracket or a power score "
+        "for such a deck would be a statement about a system it is not part "
+        "of. Judge it on its own terms instead: curve, mana base, sideboard "
+        "plan, and how it beats the decks it expects to meet.\n"
+        "   - `commander` false: skip `get_edhrec_recommendations` too, it "
+        "needs a commander.\n"
+        "3. `get_deck_combos` for what the deck can already do — this works for "
+        "every format.\n\n"
         "Then write, in this order:\n"
         "- `set_deck_gameplan` — one or two sentences on how the deck wins. "
         "Skip if a gameplan is already set and still accurate.\n"
         "- `set_deck_ai_assessment` — the analysis itself: curve, colours, "
         "synergies, weaknesses, concrete improvements. Markdown.\n"
-        "- `set_deck_user_bracket` — only if you disagree with the computed "
-        "bracket, and say why in the assessment. If you agree, leave it unset "
-        "so the computed one keeps applying as the deck changes.\n\n"
+        "- `set_deck_user_bracket` — **Commander only**, and only if you "
+        "disagree with the computed bracket; say why in the assessment. If you "
+        "agree, leave it unset so the computed one keeps applying as the deck "
+        "changes.\n\n"
+        "If `format_mismatch` is set on the deck, say so in the assessment and "
+        "do not paper over it: it means the deck does not look like the format "
+        "it claims, and the format table has been wrong before.\n\n"
         "Keeping the assessment out of the database means it is gone the moment "
         "the conversation ends."
     )
@@ -2199,6 +2239,11 @@ async def analyze_deck(deck_id: int) -> str:
     """Structured deck analysis: mana curve, colour-pip distribution, card-type
     breakdown and average mana value. Use for a quick health snapshot.
 
+    Counts the **main deck only**. A curve that folds in the sideboard and the
+    maybeboard describes a pile nobody plays — and it is the one thing that
+    changes character with 60-card formats, where a sideboard is 15 real cards
+    rather than a handful of "maybe later" notes.
+
     Args:
         deck_id: Local deck ID (from list_decks).
     """
@@ -2219,6 +2264,8 @@ async def analyze_deck(deck_id: int) -> str:
         lands = 0
 
         for c in detail["cards"]:
+            if (c.get("board") or "main") != "main":
+                continue
             qty = c.get("quantity") or 1
             type_line = (c.get("type_line") or "")
             is_land = "Land" in type_line
@@ -2246,7 +2293,10 @@ async def analyze_deck(deck_id: int) -> str:
         return json.dumps({
             "deck": detail["name"],
             "format": detail.get("format"),
+            "format_rules": detail.get("format_rules"),
             "total_cards": detail.get("card_count"),
+            "sideboard_cards": detail.get("sideboard_count"),
+            "maybeboard_cards": detail.get("maybeboard_count"),
             "lands": lands,
             "nonland_cards": nonland_cards,
             "average_cmc": avg_cmc,

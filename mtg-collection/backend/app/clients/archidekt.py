@@ -8,6 +8,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+from ..services.formats import format_name
 from ..version import VERSION
 
 ARCHIDEKT_BASE = "https://archidekt.com"
@@ -250,10 +251,20 @@ def parse_archidekt_deck(data: dict[str, Any]) -> dict[str, Any]:
         except ValueError:
             bracket = 0
 
+    format_id = data.get("deckFormat")
+    try:
+        format_id = int(format_id) if format_id is not None else None
+    except (TypeError, ValueError):
+        format_id = None
+
     return {
         "archidekt_id": data.get("id"),
         "name": data.get("name", ""),
-        "format": _format_name(data.get("deckFormat")),
+        # The number is stored alongside the name it resolves to. The name is
+        # a lookup that was wrong for every number above 6 until 0.47.0; the
+        # number is what Archidekt actually said.
+        "format": format_name(format_id),
+        "archidekt_format_id": format_id,
         "description": data.get("description", ""),
         "featured_image": data.get("featured", ""),
         "commander_name": commander_name,
@@ -262,7 +273,73 @@ def parse_archidekt_deck(data: dict[str, Any]) -> dict[str, Any]:
         "created_at": data.get("createdAt"),
         "updated_at": data.get("updatedAt"),
         "bracket": bracket,
+        # Which pile each of the deck's categories belongs to, so the card
+        # parser can answer it per entry. See `deck_boards`.
+        "boards": deck_boards(data),
     }
+
+
+# ---------------------------------------------------------------------------
+# Which pile is a card in?
+# ---------------------------------------------------------------------------
+
+#: The one category name Archidekt treats as a real sideboard. Everything else
+#: a user invents ("Slot In", "Backlog", "Considering") is just a category, and
+#: whether it counts towards the deck is the user's own setting -- which is
+#: exactly what `includedInDeck` reports.
+_SIDEBOARD_CATEGORY = "sideboard"
+
+BOARD_MAIN = "main"
+BOARD_SIDE = "side"
+BOARD_MAYBE = "maybe"
+
+
+def deck_boards(data: dict[str, Any]) -> dict[str, str]:
+    """Map each deck-wide category name to 'main', 'side' or 'maybe'.
+
+    Archidekt keeps this on the deck, not on the card: every category carries
+    `includedInDeck`, and the user decides per category whether it counts. That
+    is the answer we want, and it beats the hardcoded name list the frontend
+    has been using -- "Slot In" is not a sideboard because it is called that,
+    it is outside the deck because the owner said so.
+
+    ⚠️ The flag alone is not enough, and this was measured rather than assumed
+    (2026-09-15, deck 26328851): **`Sideboard` carries `includedInDeck: true`.**
+    Archidekt counts the sideboard towards the deck's price and its card count,
+    so main and sideboard are indistinguishable by the flag. Hence one name
+    rule on top of it -- for the one name Archidekt itself defines.
+
+    A category the deck does not declare falls back to 'main': an undeclared
+    category is one nobody excluded.
+    """
+    boards: dict[str, str] = {}
+    for category in data.get("categories") or []:
+        name = (category.get("name") or "").strip()
+        if not name:
+            continue
+        if not category.get("includedInDeck", True):
+            boards[name] = BOARD_MAYBE
+        elif name.lower() == _SIDEBOARD_CATEGORY:
+            boards[name] = BOARD_SIDE
+        else:
+            boards[name] = BOARD_MAIN
+    return boards
+
+
+def board_of(categories: list[str], boards: dict[str, str]) -> str:
+    """The pile a card entry sits in, given the deck's category map.
+
+    A card can carry several categories ("Ramp, Plan Enablers"). The strictest
+    one wins: anything outside the deck makes the whole entry outside the deck,
+    because a card cannot be half in the maybeboard. Archidekt shows such an
+    entry under its excluded category too.
+    """
+    seen = {boards.get(c.strip(), BOARD_MAIN) for c in categories if c and c.strip()}
+    if BOARD_MAYBE in seen:
+        return BOARD_MAYBE
+    if BOARD_SIDE in seen:
+        return BOARD_SIDE
+    return BOARD_MAIN
 
 
 def _type_line(oracle: dict[str, Any]) -> str:
@@ -286,8 +363,15 @@ def _type_line(oracle: dict[str, Any]) -> str:
     return head or subtypes
 
 
-def parse_archidekt_card(card_entry: dict[str, Any]) -> dict[str, Any]:
-    """Parse a card entry from an Archidekt deck into Scryfall-compatible format."""
+def parse_archidekt_card(
+    card_entry: dict[str, Any], boards: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Parse a card entry from an Archidekt deck into Scryfall-compatible format.
+
+    `boards` is the deck's category map from `deck_boards`. It is optional
+    because the collection sync parses entries that belong to no deck at all —
+    those get 'main' and nothing reads it.
+    """
     card_info = card_entry.get("card", {})
     oracle = card_info.get("oracleCard", {})
     edition = card_info.get("edition", {})
@@ -332,40 +416,19 @@ def parse_archidekt_card(card_entry: dict[str, Any]) -> dict[str, Any]:
         },
         "quantity": card_entry.get("quantity", 1),
         "category": ", ".join(categories) if categories else "",
+        "board": board_of(categories, boards or {}),
         "is_commander": is_commander,
         "is_companion": is_companion,
         "modifier": card_entry.get("modifier", "Normal"),
     }
 
 
-def _format_name(format_id: int | None) -> str:
-    formats = {
-        1: "Standard",
-        2: "Modern",
-        3: "Commander",
-        4: "Legacy",
-        5: "Vintage",
-        6: "Pauper",
-        7: "Frontier",
-        8: "Future Standard",
-        9: "Penny Dreadful",
-        10: "1v1 Commander",
-        11: "Duel Commander",
-        12: "Brawl",
-        13: "Oathbreaker",
-        14: "Pioneer",
-        15: "Historic",
-        16: "Pauper Commander",
-        17: "Alchemy",
-        18: "Explorer",
-        19: "Historic Brawl",
-        20: "Gladiator",
-        21: "Premodern",
-        22: "Predh",
-        23: "Timeless",
-        24: "Standard Brawl",
-    }
-    return formats.get(format_id or 0, "Unknown")
+# The format table used to live here, written from memory when Commander was
+# the only format that mattered. It was shifted by one from number 7 upward and
+# nobody noticed for two years, because Commander is 3 in both the wrong table
+# and the right one. It now lives in `services/formats.py`, where every entry
+# is a measurement rather than a recollection, and where an unmeasured number
+# is left blank instead of filled in from the pattern.
 
 
 # Singleton

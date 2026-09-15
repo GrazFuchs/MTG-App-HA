@@ -309,7 +309,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     Inactive decks are included so their sensors can be cleared from HA.
     """
     cursor = await db.execute(
-        """SELECT d.id, d.name, d.bracket, d.user_bracket, d.computed_bracket,
+        """SELECT d.id, d.name, d.format, d.bracket, d.user_bracket, d.computed_bracket,
                   d.power_score, d.power_level,
                   COUNT(g.id) AS games,
                   SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
@@ -323,24 +323,35 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         (f"-{ACTIVE_DECK_WINDOW_DAYS} days",),
     )
 
+    from . import formats
+
     stats = []
     for r in await cursor.fetchall():
         games = int(r["games"] or 0)
         wins = int(r["wins"] or 0)
         last_played = r["last_played"]
+        # A bracket and a power score only exist where the format has them.
+        # Sending 0 or a leftover number would put a Commander measurement on a
+        # Standard deck's sensor, where nothing downstream could tell the two
+        # apart -- the same reason `sensor.astro_score` goes unavailable rather
+        # than reporting a quiet zero.
+        deck_format = r["format"] or "Unknown"
+        has_bracket = formats.bracket_applies(deck_format)
+        has_power = formats.power_applies(deck_format)
         stats.append({
             "deck_id": r["id"],
             "deck_name": r["name"] or f"Deck {r['id']}",
+            "format": deck_format,
             "bracket": effective_bracket(
                 r["user_bracket"], r["computed_bracket"], r["bracket"]
-            ),
+            ) if has_bracket else None,
             "bracket_source": (
                 "user" if r["user_bracket"]
                 else "computed" if r["computed_bracket"]
                 else "archidekt" if r["bracket"] else "unset"
-            ),
-            "power_score": r["power_score"],
-            "power_level": r["power_level"],
+            ) if has_bracket else "not_applicable",
+            "power_score": r["power_score"] if has_power else None,
+            "power_level": r["power_level"] if has_power else None,
             "games": games,
             "wins": wins,
             "losses": int(r["losses"] or 0),

@@ -564,25 +564,41 @@ async def query_collection_stats(db: aiosqlite.Connection) -> dict[str, Any]:
 
 
 async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
-    """List all decks with card counts."""
+    """List all decks with card counts.
+
+    `card_count` is the **main deck only** — the number that answers "is this
+    deck the size it should be". Maybeboard cards counted towards it until
+    0.47.0, which is why deck 53 read as 125 cards in a 100-card format. The
+    other two piles are reported beside it rather than folded in: "60 + 15" and
+    "75" are different statements about the same deck.
+    """
     cursor = await db.execute(
         """SELECT d.id, d.archidekt_id, d.name, d.format, d.commander_name,
-        d.featured_image, d.last_synced, COALESCE(SUM(dc.quantity), 0) as card_count,
+        d.featured_image, d.last_synced,
+        COALESCE(SUM(CASE WHEN dc.board = 'main' THEN dc.quantity END), 0) as card_count,
+        COALESCE(SUM(CASE WHEN dc.board = 'side' THEN dc.quantity END), 0) as sideboard_count,
+        COALESCE(SUM(CASE WHEN dc.board = 'maybe' THEN dc.quantity END), 0) as maybeboard_count,
         d.folder_name, d.bracket, d.user_bracket, d.computed_bracket,
         d.power_score, d.power_level
         FROM decks d LEFT JOIN deck_cards dc ON dc.deck_id = d.id
         GROUP BY d.id ORDER BY d.name"""
     )
     rows = await cursor.fetchall()
+    from . import formats
     from .bracket import effective_bracket
     return [{
         "id": r[0], "archidekt_id": r[1], "name": r[2], "format": r[3],
         "commander_name": r[4] or "", "featured_image": r[5] or "",
         "last_synced": r[6], "card_count": r[7],
-        "folder_name": r[8] or "", "bracket": r[9] or 0,
-        "user_bracket": r[10], "computed_bracket": r[11],
-        "effective_bracket": effective_bracket(r[10], r[11], r[9]),
-        "power_score": r[12], "power_level": r[13],
+        "sideboard_count": r[8], "maybeboard_count": r[9],
+        "folder_name": r[10] or "", "bracket": r[11] or 0,
+        "user_bracket": r[12], "computed_bracket": r[13],
+        "effective_bracket": effective_bracket(r[12], r[13], r[11]),
+        "power_score": r[14], "power_level": r[15],
+        # Sent with every deck so no consumer keeps its own copy of the format
+        # table — the same arrangement the drying card has, where the numbers
+        # are read off the button instead of held twice.
+        "format_rules": formats.rules_payload(r[3]),
     } for r in rows]
 
 
@@ -595,22 +611,31 @@ async def query_deck_detail(db: aiosqlite.Connection, deck_id: int) -> dict[str,
 
     cursor = await db.execute(
         """SELECT c.name, c.mana_cost, c.type_line, c.cmc,
-        dc.quantity, dc.category, dc.is_commander, c.price_eur, c.price_usd
+        dc.quantity, dc.category, dc.board, dc.is_commander, c.price_eur, c.price_usd
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id=? ORDER BY dc.category, c.name""",
+        WHERE dc.deck_id=? ORDER BY dc.board, dc.category, c.name""",
         (deck_id,),
     )
     cards = [{
         "name": r[0], "mana_cost": r[1], "type_line": r[2], "cmc": r[3],
-        "quantity": r[4], "category": r[5], "is_commander": bool(r[6]),
-        "price_eur": r[7], "price_usd": r[8],
+        "quantity": r[4], "category": r[5], "board": r[6] or "main",
+        "is_commander": bool(r[7]),
+        "price_eur": r[8], "price_usd": r[9],
     } for r in await cursor.fetchall()]
 
+    from . import formats
     return {
         "name": deck["name"], "format": deck["format"],
         "commander": deck["commander_name"],
         "bracket": deck["bracket"] if "bracket" in deck.keys() else 0,
-        "card_count": sum(c["quantity"] for c in cards), "cards": cards,
+        # Main deck only, same reasoning as in `query_all_decks`. The MCP tools
+        # read this, so an assistant asked "how big is this deck" gets the
+        # number a player would give.
+        "card_count": sum(c["quantity"] for c in cards if c["board"] == "main"),
+        "sideboard_count": sum(c["quantity"] for c in cards if c["board"] == "side"),
+        "maybeboard_count": sum(c["quantity"] for c in cards if c["board"] == "maybe"),
+        "format_rules": formats.rules_payload(deck["format"]),
+        "cards": cards,
     }
 
 

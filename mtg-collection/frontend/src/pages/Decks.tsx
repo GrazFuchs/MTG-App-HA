@@ -121,6 +121,7 @@ export default function Decks() {
   const queryClient = useQueryClient();
   const { accent } = useAccent();
   const [bracketFilter, setBracketFilter] = useState('');
+  const [formatFilter, setFormatFilter] = useState('');
 
   const { data: decks = [], isLoading: loading } = useQuery<DeckSummary[]>({
     queryKey: ['decks'],
@@ -137,12 +138,22 @@ export default function Decks() {
   };
 
   const filteredDecks = useMemo(() => {
-    if (!bracketFilter) return decks;
-    const b = parseInt(bracketFilter, 10);
-    // The effective bracket, not the Archidekt import — the import is null on
-    // every deck, which is what made this filter unusable in the first place.
-    return decks.filter(d => d.effective_bracket === b);
-  }, [decks, bracketFilter]);
+    let out = decks;
+    if (formatFilter) out = out.filter(d => (d.format || 'Unknown') === formatFilter);
+    if (bracketFilter) {
+      const b = parseInt(bracketFilter, 10);
+      // The effective bracket, not the Archidekt import — the import is null on
+      // every deck, which is what made this filter unusable in the first place.
+      out = out.filter(d => d.effective_bracket === b);
+    }
+    return out;
+  }, [decks, bracketFilter, formatFilter]);
+
+  /** Only the formats actually present, so the picker never offers an empty set. */
+  const availableFormats = useMemo(() => {
+    const set = new Set(decks.map(d => d.format || 'Unknown'));
+    return [...set].sort();
+  }, [decks]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, DeckSummary[]>();
@@ -187,6 +198,20 @@ export default function Decks() {
       {/* The compare entry used to live inside the bracket block, so it was
           invisible whenever no deck had a bracket — which was every deck. */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Only offered once there is more than one format to choose between —
+            a picker with a single option is furniture, not a filter. */}
+        {availableFormats.length > 1 && (
+          <Select
+            value={formatFilter}
+            onChange={(_, d) => setFormatFilter(d.value)}
+            style={{ minWidth: 160 }}
+          >
+            <option value="">{t('decks.all_formats')}</option>
+            {availableFormats.map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </Select>
+        )}
         {availableBrackets.length > 0 && (
           <Select
             value={bracketFilter}
@@ -263,9 +288,19 @@ export default function Decks() {
                     <span className={styles.formatBadge}>{d.format || 'Unknown'}</span>
                   </div>
                   <div className={styles.cardFooter}>
-                    <span>{d.card_count} CARDS</span>
+                    {/* "60 + 15" says more about a constructed deck than "75"
+                        does, and the count is the main deck since 0.47.0 —
+                        maybeboard cards used to inflate it (deck 53 read as
+                        125 cards in a 100-card format). */}
+                    <span>
+                      {d.sideboard_count > 0
+                        ? `${d.card_count} + ${d.sideboard_count}`
+                        : `${d.card_count} ${t('decks.cards_suffix')}`}
+                    </span>
                     <span className={styles.cardValue} style={{ color: accent.oklch }}>
-                      {d.commander_name ? `⚔ ${d.commander_name}` : ''}
+                      {d.commander_name && d.format_rules?.commander
+                        ? `⚔ ${d.commander_name}`
+                        : ''}
                     </span>
                   </div>
                 </div>

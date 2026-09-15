@@ -58,6 +58,27 @@ export interface Card {
   price_eur_foil: string;
 }
 
+/**
+ * What this deck's format allows, from the backend's one table
+ * (`services/formats.py`). It travels with the deck so the frontend keeps no
+ * second copy — that table was wrong for two years, and one wrong copy is
+ * already one too many.
+ */
+export interface FormatRules {
+  format: string;
+  family: 'commander' | 'constructed' | 'unknown';
+  commander: boolean;
+  bracket_applies: boolean;
+  power_applies: boolean;
+  legality_key: string | null;
+  main_min: number | null;
+  main_max: number | null;
+  side_max: number;
+  max_copies: number;
+  singleton: boolean;
+  default_pod_size: number;
+}
+
 export interface DeckSummary {
   id: number;
   archidekt_id: number;
@@ -65,12 +86,19 @@ export interface DeckSummary {
   format: string;
   commander_name: string;
   featured_image: string;
+  /** Main deck only; the other two piles are counted beside it. */
   card_count: number;
+  sideboard_count: number;
+  maybeboard_count: number;
+  format_rules: FormatRules;
   folder_name: string;
   bracket: number;
   user_bracket: number | null;
   computed_bracket: number | null;
-  /** What to show: hand-set beats computed beats the (always empty) import. */
+  /**
+   * What to show: hand-set beats computed beats the (always empty) import.
+   * Null where the format has no bracket at all.
+   */
   effective_bracket: number | null;
   power_score: number | null;
   power_level: number | null;
@@ -108,10 +136,14 @@ export interface BracketDetail {
   scale: string;
 }
 
+/** Which pile a card sits in. From Archidekt's own category flags. */
+export type Board = 'main' | 'side' | 'maybe';
+
 export interface DeckCardEntry {
   card: Card;
   quantity: number;
   category: string;
+  board: Board;
   is_commander: boolean;
 }
 
@@ -120,6 +152,15 @@ export interface DeckDetail {
   archidekt_id: number;
   name: string;
   format: string;
+  /** Archidekt's raw number, kept beside the name it resolves to. */
+  archidekt_format_id: number | null;
+  format_rules: FormatRules;
+  /**
+   * Set when the deck does not look like its format claims — a commander in a
+   * format that has none, playsets in a singleton format. Reported, not
+   * resolved: the format table has been wrong before, and so can a deck.
+   */
+  format_mismatch: string | null;
   description: string;
   commander_name: string;
   bracket: number;

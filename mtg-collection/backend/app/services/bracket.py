@@ -115,6 +115,39 @@ _CARD_COLUMNS = """c.name, c.game_changer, c.mass_land_denial, c.extra_turn,
                    c.oracle_text, c.cmc, c.scryfall_enriched_at"""
 
 
+async def _bracket_applies(db, deck_id: int, persist: bool) -> bool:
+    """Does the WotC bracket mean anything for this deck's format?
+
+    Clears a stored bracket when it does not, so a deck that moves from
+    Commander to another format on Archidekt does not keep the number it had.
+    """
+    from . import formats
+
+    cursor = await db.execute("SELECT format FROM decks WHERE id = ?", (deck_id,))
+    row = await cursor.fetchone()
+    if row is None:
+        return False
+    if formats.bracket_applies(row["format"]):
+        return True
+
+    if persist:
+        # `spellbook_bracket_tag` goes with it. It is Spellbook's own label on
+        # the same scale question, and leaving it behind would put "Exhibition"
+        # next to an empty bracket as though the two belonged together — which
+        # is how the two Premodern decks looked after the gate alone.
+        await db.execute(
+            """UPDATE decks SET computed_bracket = NULL,
+               computed_bracket_detail = NULL, spellbook_bracket_tag = '',
+               computed_bracket_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND (computed_bracket IS NOT NULL
+                                 OR computed_bracket_detail IS NOT NULL
+                                 OR COALESCE(spellbook_bracket_tag, '') != '')""",
+            (deck_id,),
+        )
+        await db.commit()
+    return False
+
+
 async def compute_bracket(
     deck_id: int, extra_card_ids: list[int] | None = None, persist: bool = True
 ) -> dict[str, Any]:
@@ -124,8 +157,20 @@ async def compute_bracket(
     without touching the deck — it runs the very same rules over the very same
     columns, which is the only way the answer means anything. Such a run never
     persists.
+
+    A deck whose format has no bracket gets `None` and a reason, and any stored
+    bracket is cleared. Both halves matter: answering "2" for a Standard deck
+    is an invented fact, and leaving an old answer behind is how a deck that
+    was re-pointed at another format on Archidekt keeps a label it no longer
+    earns.
     """
     db = await get_db()
+
+    if not await _bracket_applies(db, deck_id, persist):
+        return {
+            "deck_id": deck_id, "bracket": None, "reason": "not_applicable",
+            "detail": None,
+        }
 
     cursor = await db.execute(
         f"""SELECT {_CARD_COLUMNS}
@@ -315,6 +360,9 @@ async def compute_brackets_for_all_decks() -> dict[str, Any]:
             results.append({"deck_id": row["id"], "name": row["name"], "error": str(exc)})
 
     computed = [r for r in results if r.get("bracket")]
+    # "of N decks" counts every deck, including the ones the bracket does not
+    # apply to — they are visited so a stale number gets cleared, and the gap
+    # between the two figures is the honest answer to "why is this not 24".
     logger.info("Bracket recompute: %d of %d decks", len(computed), len(results))
     return {"decks": len(results), "computed": len(computed), "results": results}
 

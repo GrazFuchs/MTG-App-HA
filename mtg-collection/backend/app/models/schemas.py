@@ -55,6 +55,29 @@ class CardResponse(CardBase):
 
 # --- Deck Models ---
 
+class FormatRules(BaseModel):
+    """What this deck's format allows — from `services/formats.py`.
+
+    Travels with the deck so neither the frontend nor the MCP tools keep a
+    second copy of the table. A format nobody has verified reports family
+    "unknown" with every gate false, which is what makes an unrecognised deck
+    show no bracket instead of an invented one.
+    """
+
+    format: str = "Unknown"
+    family: str = "unknown"
+    commander: bool = False
+    bracket_applies: bool = False
+    power_applies: bool = False
+    legality_key: str | None = None
+    main_min: int | None = None
+    main_max: int | None = None
+    side_max: int = 0
+    max_copies: int = 4
+    singleton: bool = False
+    default_pod_size: int = 2
+
+
 class DeckSummary(BaseModel):
     id: int
     archidekt_id: int | None = None
@@ -62,15 +85,21 @@ class DeckSummary(BaseModel):
     format: str = ""
     commander_name: str = ""
     featured_image: str = ""
+    #: Main deck only. The other two piles are counted separately, because
+    #: "60 + 15" and "75" say different things about the same deck.
     card_count: int = 0
+    sideboard_count: int = 0
+    maybeboard_count: int = 0
+    format_rules: FormatRules = FormatRules()
     folder_name: str = ""
     bracket: int = 0
     user_bracket: int | None = None
     computed_bracket: int | None = None
     #: What to show: hand-set beats computed beats the (always empty) import.
+    #: `None` for a format the bracket does not apply to — see services/formats.
     effective_bracket: int | None = None
     #: Deliberately separate from the bracket — demand x curve efficiency, not
-    #: what the deck can do (services/power_level.py).
+    #: what the deck can do (services/power_level.py). `None` outside Commander.
     power_score: float | None = None
     power_level: float | None = None
     last_synced: datetime | None = None
@@ -80,6 +109,9 @@ class DeckCardEntry(BaseModel):
     card: CardResponse
     quantity: int = 1
     category: str = ""
+    #: 'main' | 'side' | 'maybe', from Archidekt's own category flags rather
+    #: than from the category name.
+    board: str = "main"
     is_commander: bool = False
     is_companion: bool = False
     modifier: str = "Normal"
@@ -90,6 +122,14 @@ class DeckDetail(BaseModel):
     archidekt_id: int | None = None
     name: str
     format: str = ""
+    #: Archidekt's raw number, kept beside the name so a table correction is a
+    #: lookup rather than a re-sync. See services/formats.py.
+    archidekt_format_id: int | None = None
+    format_rules: FormatRules = FormatRules()
+    #: Set when the deck does not look like its format claims — a commander in
+    #: a format that has none, playsets in a singleton format. Reported, not
+    #: resolved: the format table has been wrong before, and so can a deck.
+    format_mismatch: str | None = None
     description: str = ""
     featured_image: str = ""
     commander_name: str = ""

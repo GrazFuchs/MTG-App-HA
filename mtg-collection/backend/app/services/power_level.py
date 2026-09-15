@@ -228,8 +228,46 @@ def _card_impact(row: Any, quantity: int, is_commander: bool) -> dict[str, Any]:
 
 
 async def compute_power_level(deck_id: int) -> dict[str, Any]:
-    """Score one deck and store the result with the numbers behind it."""
+    """Score one deck and store the result with the numbers behind it.
+
+    Commander only, and that is not a restriction added for tidiness. Three
+    parts of the original assume it: `popCurve` was derived from the cards that
+    were Commander-legal in 2024, the land factor assumes a 99-card deck plus a
+    commander, and `commanderImpact` assumes there is one. A 60-card deck run
+    through the same arithmetic produces a number in the same range, which is
+    worse than no number — it invites comparison with decks it cannot be
+    compared to.
+    """
     db = await get_db()
+
+    from . import formats
+
+    cursor = await db.execute("SELECT format FROM decks WHERE id = ?", (deck_id,))
+    deck_row = await cursor.fetchone()
+    if deck_row is None:
+        return {"deck_id": deck_id, "score": None, "reason": "deck not found"}
+    if not formats.power_applies(deck_row["format"]):
+        # Clear a stored score for the same reason the bracket does: a deck
+        # re-pointed at another format must not keep the number it had.
+        await db.execute(
+            """UPDATE decks SET power_score = NULL, power_level = NULL,
+               power_detail = NULL, power_computed_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND power_score IS NOT NULL""",
+            (deck_id,),
+        )
+        await db.commit()
+        return {
+            "deck_id": deck_id, "score": None, "level": None,
+            "reason": "not_applicable", "format": deck_row["format"] or "Unknown",
+        }
+
+    # ⚠️ Every card of the deck, maybeboard included — deliberately unchanged
+    # in 0.47.0. Since `board` exists the filter is one clause away, and it
+    # belongs there: deck 10 scores 824.7 with 32 Backlog cards that are not in
+    # the deck. But changing the gate and the arithmetic in the same release
+    # would make the before/after comparison meaningless, and that comparison
+    # is the only evidence that the 22 Commander decks were left alone. Sprint
+    # 13 moves it, with its own measurement.
     cursor = await db.execute(
         """SELECT c.name, c.cmc, c.type_line, c.layout, c.edhrec_rank, c.reserved,
                   c.price_usd, c.price_usd_foil, dc.quantity, dc.is_commander
@@ -344,6 +382,8 @@ async def compute_power_for_all_decks() -> dict[str, Any]:
             results.append({"deck_id": row["id"], "name": row["name"], "error": str(exc)})
 
     scored = [r for r in results if r.get("score") is not None]
+    # As with the bracket: every deck is visited so a stale score is cleared,
+    # and the two figures differ by the decks the score does not apply to.
     logger.info("Power recompute: %d of %d decks", len(scored), len(results))
     return {"decks": len(results), "computed": len(scored), "results": results}
 

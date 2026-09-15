@@ -1,3 +1,86 @@
+## 0.47.0 — Sprint 12: the format table was wrong, and four analyses never asked
+
+Two Premodern decks appeared in the database on 2026-09-12. Nothing rejected
+them — the sync has never filtered by format — and by the next morning both
+were labelled **bracket 2**, carried an edhpowerlevel score and wore a Commander
+Spellbook tag. None of those means anything for a 60-card deck, and none of them
+declined to answer.
+
+### The format table had been wrong for two years
+
+Archidekt sends a `deckFormat` number. The table that turned it into a name was
+written from memory when Commander was the only format that mattered, and it was
+**shifted by one from 7 upward**. Measured against Archidekt's own
+`/formats/<slug>` pages on 2026-09-15:
+
+| number | actually | we said |
+|---|---|---|
+| 13, 14, 15 | Brawl, Oathbreaker, Pioneer | Oathbreaker, Pioneer, Historic |
+| 22, 23, 24 | Premodern, Predh, Timeless | Predh, Timeless, Standard Brawl |
+
+It never showed because Commander is 3 in both readings and all 22 decks were
+Commander — the same accident that kept the colour bug alive, where White, Black
+and Red happen to contain exactly one colour letter.
+
+Sixteen numbers are now measured. The nine nobody has confirmed resolve to
+`Unknown` rather than to the name the shift would predict: the pattern is almost
+certainly right, and that is exactly why writing it down as fact would be wrong.
+Archidekt's raw number is stored alongside the name, so the next correction is a
+lookup rather than a re-sync.
+
+### Nothing is claimed for a format it does not describe
+
+`services/formats.py` is the one table everything asks. The bracket and the power
+score are Commander-only, and both now return `not_applicable` and **clear any
+stored value** — a deck re-pointed at another format must not keep the number it
+earned as a Commander deck. Spellbook's bracket label goes with them; leaving it
+behind put "Exhibition" next to an empty bracket as if the two belonged together.
+
+The table is not trusted alone either. `check_shape` compares what it claims
+against what the deck looks like — a commander in a format that has none,
+playsets in a singleton format — and reports the contradiction rather than
+resolving it. The table has been wrong before; so can a deck.
+
+### Which pile a card is in was never stored
+
+The deck page guessed it from the category *name* against a hardcoded list; the
+backend did not look at all, so a maybeboard card counted as deck demand in the
+surplus, the sell advisor and the completeness check while the page hid it.
+
+Archidekt answers this properly: every deck-wide category carries
+`includedInDeck`, and the owner decides per category. That beats a name list —
+"Slot In" is outside the deck because its owner said so, not because of what it
+is called. One measurement shaped the rule: **`Sideboard` carries
+`includedInDeck: true`**, because Archidekt counts it towards the deck, so the
+flag alone cannot separate main from side and one name rule sits on top of it.
+
+`board` also joins the unique key, and that fixes a real loss. Deck 61 had 3x
+Ravenous Baloth under Lifegain and 1x in the sideboard; the two rows collapsed
+into one, the quantities added up, the last category won, and the deck read as
+**57 main cards instead of 60**. Migration 26 cannot split rows that already
+merged — it marks the affected decks for a full re-sync instead, because **an
+incremental sync never repairs stale master data, only changed data.**
+
+### Verified against the real database
+
+Migration 26 ran against a copy of the live 352 MB database: 0.1 s, no row and no
+card lost, idempotent. Then bracket and power were recomputed over all 24 decks:
+
+- **all 22 Commander decks byte-identical**, bracket and score unchanged
+- the distribution still reads 7x bracket 2, 6x bracket 3, 9x bracket 4 — the
+  same table Sprint 04 produced
+- both Premodern decks now report `null` for bracket, score and Spellbook tag
+- boards land where they should: Sligh 60 + 15, The Rock 57 + 18 until its
+  re-sync undoes the merge
+
+One thing was deliberately *not* changed: the power score still counts every
+card, maybeboard included. The filter is one clause away now that `board` exists,
+and it belongs there — deck 10 scores 824.7 with 32 Backlog cards that are not in
+the deck. But moving the gate and the arithmetic in the same release would make
+that before/after comparison meaningless, and the comparison is the only evidence
+that the Commander decks were left alone. Sprint 13 moves it, with its own
+measurement.
+
 ## 0.46.2 — the deck page did not render at all
 
 Opening a deck showed only "This page could not be rendered — minified React error #310".

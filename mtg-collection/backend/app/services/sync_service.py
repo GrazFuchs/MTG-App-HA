@@ -149,11 +149,14 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
 
     # Upsert deck
     await db.execute(
-        """INSERT INTO decks (archidekt_id, name, format, description, featured_image,
+        """INSERT INTO decks (archidekt_id, name, format, archidekt_format_id,
+            description, featured_image,
             commander_name, owner_username, view_count, created_at, updated_at, folder_name, bracket, last_synced)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(archidekt_id) DO UPDATE SET
-            name=excluded.name, format=excluded.format, description=excluded.description,
+            name=excluded.name, format=excluded.format,
+            archidekt_format_id=excluded.archidekt_format_id,
+            description=excluded.description,
             featured_image=excluded.featured_image, commander_name=excluded.commander_name,
             owner_username=excluded.owner_username, view_count=excluded.view_count,
             updated_at=excluded.updated_at, folder_name=excluded.folder_name,
@@ -163,6 +166,7 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
             deck_data["archidekt_id"],
             deck_data["name"],
             deck_data["format"],
+            deck_data.get("archidekt_format_id"),
             deck_data["description"],
             deck_data["featured_image"],
             deck_data["commander_name"],
@@ -185,18 +189,21 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
     # Clear old deck cards
     await db.execute("DELETE FROM deck_cards WHERE deck_id=?", (local_deck_id,))
 
-    # Insert cards
+    # Insert cards. `boards` says which pile each of this deck's categories
+    # belongs to; it is read once per deck rather than per card because the
+    # answer lives on the deck (see clients/archidekt.deck_boards).
+    boards = deck_data.get("boards") or {}
     cards_synced = 0
     for card_entry in raw.get("cards", []):
         try:
-            parsed = parse_archidekt_card(card_entry)
+            parsed = parse_archidekt_card(card_entry, boards)
             card_id = await upsert_card(db, parsed["card"])
 
             await db.execute(
                 """INSERT INTO deck_cards
-                (deck_id, card_id, quantity, category, is_commander, is_companion, modifier)
-                VALUES (?,?,?,?,?,?,?)
-                ON CONFLICT(deck_id, card_id, modifier) DO UPDATE SET
+                (deck_id, card_id, quantity, category, board, is_commander, is_companion, modifier)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(deck_id, card_id, modifier, board) DO UPDATE SET
                     quantity = deck_cards.quantity + excluded.quantity,
                     category = CASE WHEN excluded.category != '' THEN excluded.category ELSE deck_cards.category END,
                     is_commander = excluded.is_commander OR deck_cards.is_commander,
@@ -206,6 +213,7 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
                     card_id,
                     parsed["quantity"],
                     parsed["category"],
+                    parsed["board"],
                     parsed["is_commander"],
                     parsed["is_companion"],
                     parsed["modifier"],

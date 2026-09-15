@@ -22,9 +22,21 @@ const COLOR_MAP: Record<string, string> = {
   W: '#F9FAF4', U: '#0E68AB', B: '#150B00', R: '#D3202A', G: '#00733E',
 };
 
-const SIDEBOARD_CATEGORIES = new Set([
-  'Sideboard', 'Maybeboard', 'Considering', 'Slot In', 'Slot Out',
-]);
+/**
+ * Which pile a card is in used to be guessed here, from a hardcoded list of
+ * category names:
+ *
+ *     const SIDEBOARD_CATEGORIES = new Set([
+ *       'Sideboard', 'Maybeboard', 'Considering', 'Slot In', 'Slot Out',
+ *     ]);
+ *
+ * That was a guess about what the deck's owner meant by a category they made
+ * up themselves, and the backend never shared it — so a maybeboard card counted
+ * as deck demand in the surplus, the sell advisor and the completeness check,
+ * while the deck page hid it. Since 0.47.0 Archidekt's own `includedInDeck`
+ * flag decides, and the answer arrives on each card as `board`.
+ */
+const isMain = (entry: { board?: string }) => (entry.board ?? 'main') === 'main';
 
 function scryfallUrl(card: { set_code: string; collector_number: string; name: string }) {
   if (card.set_code && card.collector_number) {
@@ -182,12 +194,14 @@ export default function DeckView() {
       const price = parseFloat(entry.card.price_eur) || 0;
       value += price * entry.quantity;
 
-      if (SIDEBOARD_CATEGORIES.has(primaryCat)) {
-        if (!side.has(primaryCat)) side.set(primaryCat, []);
-        side.get(primaryCat)!.push(entry);
-      } else {
+      if (isMain(entry)) {
         if (!main.has(primaryCat)) main.set(primaryCat, []);
         main.get(primaryCat)!.push(entry);
+      } else {
+        // Sideboard and maybeboard share the lower block, each under its own
+        // category heading — which is what Archidekt shows too.
+        if (!side.has(primaryCat)) side.set(primaryCat, []);
+        side.get(primaryCat)!.push(entry);
       }
     }
     return {
@@ -208,7 +222,7 @@ export default function DeckView() {
   const manaCurve = (() => {
     const cmc: Record<number, number> = {};
     for (const c of deck.cards) {
-      if (SIDEBOARD_CATEGORIES.has(c.category || '')) continue;
+      if (!isMain(c)) continue;
       if (c.card.type_line.includes('Land')) continue;
       const bucket = Math.min(Math.floor(c.card.cmc), 7);
       cmc[bucket] = (cmc[bucket] || 0) + c.quantity;
@@ -220,7 +234,7 @@ export default function DeckView() {
   const colorPips = (() => {
     const pips: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
     for (const c of deck.cards) {
-      if (SIDEBOARD_CATEGORIES.has(c.category || '')) continue;
+      if (!isMain(c)) continue;
       for (const ch of (c.card.mana_cost || '')) {
         if (ch in pips) pips[ch] += c.quantity;
       }
@@ -230,8 +244,12 @@ export default function DeckView() {
   const pipMax = Math.max(...colorPips.map(p => p.count), 1);
 
   const mainCount = deck.cards
-    .filter(e => !SIDEBOARD_CATEGORIES.has(e.category || ''))
+    .filter(isMain)
     .reduce((s, e) => s + e.quantity, 0);
+  const sideboardCount = deck.cards
+    .filter(e => e.board === 'side')
+    .reduce((s, e) => s + e.quantity, 0);
+  const heroImage = commander?.card.image_art_crop || deck.featured_image || '';
 
   return (
     <div className={styles.page}>
@@ -239,9 +257,13 @@ export default function DeckView() {
 
       {/* Hero banner */}
       <div className={styles.hero}>
-        {commander?.card.image_art_crop && (
+        {/* A commander's art is the best banner there is, but a deck without
+            one is not a deck without a picture — Archidekt's featured image is
+            what it shows on its own deck page. Before 0.47.0 the whole hero
+            was blank for any format that has no commander. */}
+        {heroImage && (
           <>
-            <img src={commander.card.image_art_crop} alt={deck.name} className={styles.heroImg} />
+            <img src={heroImage} alt={deck.name} className={styles.heroImg} />
             <div className={styles.heroOverlay} />
             <div style={{ position: 'absolute', inset: 0, background: accent.soft, mixBlendMode: 'color', opacity: 0.4 }} />
             <div className={styles.heroScanline} />
@@ -251,7 +273,13 @@ export default function DeckView() {
         <div className={styles.heroContent}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: sothera.fontMono, fontSize: 10, letterSpacing: 2.5, color: accent.oklch, textTransform: 'uppercase', marginBottom: 12 }}>
             <span style={{ display: 'inline-block', width: 24, height: 1, background: accent.oklch }} />
-            DOSSIER · {deck.format} · BRACKET {deck.bracket || '—'}
+            {/* The bracket read `deck.bracket` — the Archidekt import, which is
+                null on every deck, so this line said "BRACKET —" always. It now
+                shows the effective one, and only where the format has one. */}
+            DOSSIER · {deck.format}
+            {deck.format_rules?.bracket_applies
+              ? ` · ${t('deck.bracket_label')} ${deck.effective_bracket ?? '—'}`
+              : sideboardCount > 0 ? ` · ${mainCount} + ${sideboardCount}` : ''}
           </div>
           <div className={styles.heroTitle}>{deck.name}</div>
           <div className={styles.heroMeta}>
@@ -271,7 +299,9 @@ export default function DeckView() {
                 <Button appearance="subtle" size="small" style={{ color: '#9A9AB0' }}>Archidekt ↗</Button>
               </a>
             )}
-            {deck.commander_name && (
+            {/* EDHREC indexes decks by commander, so the link only means
+                something for a format that has one. */}
+            {deck.commander_name && deck.format_rules?.commander && (
               <a
                 href={`https://edhrec.com/commanders/${deck.commander_name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`}
                 target="_blank"
@@ -284,15 +314,29 @@ export default function DeckView() {
         </div>
       </div>
 
-      {/* Bracket & Gameplan */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-        <UserBracketBadge deck={deck} onUpdate={setDeck} />
-      </div>
+      {/* The deck does not look like the format it claims. Shown rather than
+          resolved: the format table has been wrong before, and so can a deck. */}
+      {deck.format_mismatch && (
+        <Panel>
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 12, color: sothera.fgMuted, padding: '4px 0' }}>
+            ⚠ {t('deck.format_mismatch')}: {deck.format_mismatch}
+          </div>
+        </Panel>
+      )}
+
+      {/* Bracket & Gameplan. The bracket and the power score describe
+          Commander; for any other format the sections are absent rather than
+          empty, because an empty bracket picker invites someone to fill it in. */}
+      {deck.format_rules?.bracket_applies && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <UserBracketBadge deck={deck} onUpdate={setDeck} />
+        </div>
+      )}
       <GameplanBox deck={deck} onUpdate={setDeck} />
       <AIAssessmentBox deck={deck} />
 
       {/* Combos & Completeness */}
-      <DeckPowerSection deck={deck} onUpdate={setDeck} />
+      {deck.format_rules?.power_applies && <DeckPowerSection deck={deck} onUpdate={setDeck} />}
 
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />
@@ -337,7 +381,7 @@ export default function DeckView() {
             {(() => {
               const comp: Record<string, number> = {};
               for (const e of deck.cards) {
-                if (SIDEBOARD_CATEGORIES.has(e.category || '')) continue;
+                if (!isMain(e)) continue;
                 // Named `line`, not `t`: the i18n helper is also called t(), and
                 // the local shadowed it the moment these labels became keys.
                 const line = e.card.type_line;

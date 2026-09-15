@@ -59,6 +59,9 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
   - Incremental page-by-page commit (progress survives interruption)
   - Robust sync: stale-entry cleanup only on a complete sync
 - **Scryfall Integration**: Card search, USD/EUR prices, autocomplete, direct Scryfall links
+- **Multi-format**: Commander, Standard, Pioneer, Modern, Legacy, Pauper, Premodern and more.
+  The bracket and the power score apply to Commander only; every other format is described on its
+  own terms rather than scored on a Commander scale (`backend/app/services/formats.py`)
 - **EDHREC Integration**: Commander recommendations and combo suggestions
 - **Commander Spellbook**: Infinite combo detection per deck (full + partial combos)
 - **Cardmarket**: CSV import for listings, price data sync, price-spike detection
@@ -84,7 +87,7 @@ A Home Assistant add-on for managing your Magic: The Gathering collection with a
   - **Accent system**: 6 oklch accent families (Sothera / Nebula / Endstone / Stellar / Drift / Ember) — swappable from the topbar, persisted to localStorage
   - Dashboard: stats overview cards + price-spike alerts
   - Decks: collapsible folders, bracket badges, deck previews
-  - Deck Detail: Commander header, user bracket, gameplan, AI assessment (Markdown), mana curve, performance tracker
+  - Deck Detail: hero banner, format rules, gameplan, AI assessment (Markdown), mana curve, performance tracker; user bracket and power score where the format has them
   - Collection: set filter, deck filter, collection-tag filter, grouping by card name, in-decks column
   - Duplicates: duplicate view (incl. "includes colour" + Monocolor filter) with sell dialog for Cardmarket listings
   - Cardmarket: price alerts, sparkline graphs, CSV import/export, workflow banner
@@ -343,8 +346,8 @@ SQLite with WAL mode and foreign keys enabled. Schema:
 | Table | Description |
 |---|---|
 | `cards` | All cards (Scryfall ID, name, mana cost, prices, …) |
-| `decks` | Deck metadata (name, format, Commander, bracket, user bracket, gameplan, AI assessment) |
-| `deck_cards` | Card-to-deck mapping (quantity, category, Commander flag) |
+| `decks` | Deck metadata (name, format + Archidekt's raw format number, Commander, bracket, user bracket, gameplan, AI assessment) |
+| `deck_cards` | Card-to-deck mapping (quantity, category, board = main/side/maybe, Commander flag) |
 | `deck_games` | Per-game performance log (result, mulligans, missed land drops, turns, notes) |
 | `collection` | Personal collection (quantity, foil, condition, language) |
 | `cardmarket_listings` | Cardmarket offer listings |

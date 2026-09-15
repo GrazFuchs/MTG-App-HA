@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS decks (
     archidekt_id INTEGER UNIQUE,
     name TEXT NOT NULL,
     format TEXT DEFAULT '',
+    -- Archidekt's raw `deckFormat` number, kept beside the name it resolves
+    -- to. The name comes from a table that was wrong for every number from 7
+    -- upward until 0.47.0 (see services/formats.py); keeping the number means
+    -- a later correction is a lookup rather than a re-sync of every deck.
+    archidekt_format_id INTEGER,
     description TEXT DEFAULT '',
     featured_image TEXT DEFAULT '',
     commander_name TEXT DEFAULT '',
@@ -155,10 +160,20 @@ CREATE TABLE IF NOT EXISTS deck_cards (
     card_id INTEGER NOT NULL REFERENCES cards(id),
     quantity INTEGER DEFAULT 1,
     category TEXT DEFAULT '',
+    -- 'main' | 'side' | 'maybe'. Derived at sync time from Archidekt's
+    -- deck-wide category flags rather than from the category name -- see
+    -- clients/archidekt.py.
+    board TEXT DEFAULT 'main',
     is_commander BOOLEAN DEFAULT FALSE,
     is_companion BOOLEAN DEFAULT FALSE,
     modifier TEXT DEFAULT 'Normal',
-    UNIQUE(deck_id, card_id, modifier)
+    -- `board` belongs in this key. Without it a card held in both the main
+    -- deck and the sideboard collapses into one row: the quantities add up and
+    -- whichever category was written last wins. Measured on deck 61 before
+    -- 0.47.0 -- Archidekt had 3x Ravenous Baloth under Lifegain plus 1x in the
+    -- sideboard, the database had 4x Sideboard, and the deck read as 57 main
+    -- cards instead of 60.
+    UNIQUE(deck_id, card_id, modifier, board)
 );
 
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck ON deck_cards(deck_id);
@@ -872,6 +887,150 @@ async def _migration_25(db: aiosqlite.Connection):
             await db.execute(ddl)
 
 
+#: Names the pre-0.47.0 format table produced, mapped to what Archidekt's
+#: number actually means. That table was off by one from 7 upward, so a stored
+#: name identifies the number it came from, and the number identifies the real
+#: format (services/formats.py). Numbers nobody has verified resolve to
+#: `Unknown` rather than to the name the shift would suggest.
+#:
+#: 1-6 are absent on purpose: they were correct, so there is nothing to fix.
+_FORMAT_NAME_CORRECTIONS: dict[str, str] = {
+    "Frontier": "Unknown",            # old 7  -> 7 unverified
+    "Future Standard": "Frontier",    # old 8  -> 8 Frontier
+    "Penny Dreadful": "Unknown",      # old 9  -> 9 unverified
+    "1v1 Commander": "Unknown",       # old 10 -> 10 unverified
+    "Duel Commander": "Unknown",      # old 11 -> 11 unverified
+    "Brawl": "Unknown",               # old 12 -> 12 unverified
+    "Oathbreaker": "Brawl",           # old 13 -> 13 Brawl
+    "Pioneer": "Oathbreaker",         # old 14 -> 14 Oathbreaker
+    "Historic": "Pioneer",            # old 15 -> 15 Pioneer
+    "Pauper Commander": "Historic",   # old 16 -> 16 Historic
+    "Alchemy": "Unknown",             # old 17 -> 17 unverified
+    "Explorer": "Alchemy",            # old 18 -> 18 Alchemy
+    "Historic Brawl": "Unknown",      # old 19 -> 19 unverified
+    "Gladiator": "Unknown",           # old 20 -> 20 unverified
+    "Premodern": "Gladiator",         # old 21 -> 21 Gladiator
+    "Predh": "Premodern",             # old 22 -> 22 Premodern
+    "Timeless": "Predh",              # old 23 -> 23 Predh
+    "Standard Brawl": "Timeless",     # old 24 -> 24 Timeless
+}
+
+
+async def _migration_26(db: aiosqlite.Connection):
+    """Boards, and the format names that were wrong for two years.
+
+    Three things that only look unrelated:
+
+    **`deck_cards.board`.** Which pile a card sits in was never stored. The
+    frontend guessed it from the category *name* against a hardcoded list, the
+    backend did not look at all, and so a Maybeboard card counted as deck
+    demand everywhere — in the surplus, in the sell advisor, in completeness.
+    The value comes from Archidekt's own deck-wide flags at sync time; the
+    backfill here is the name-based guess, so that an un-synced database is no
+    worse than it was rather than blank.
+
+    **`board` joins the unique key.** Without it a card held in both the main
+    deck and the sideboard is one row: the quantities add and the last category
+    written wins. Deck 61 had 3x Ravenous Baloth under Lifegain and 1x in the
+    sideboard, and the database showed 4x Sideboard — the deck read as 57 main
+    cards instead of 60. The merge already happened, so the rows cannot be
+    split here; the re-sync below is what restores them.
+
+    **`decks.archidekt_format_id` + the name correction.** Archidekt's format
+    numbers were transcribed from memory when only Commander mattered, and
+    everything from 7 upward was shifted by one: 22 is Premodern, we called it
+    Predh. Two decks had been carrying the wrong name since 2026-09-12. The
+    number is stored from now on, so the next correction needs no re-sync.
+
+    ⚠️ The decks whose name changes are marked for a full re-sync
+    (`updated_at = NULL`), because the incremental sync skips anything
+    Archidekt has not touched — without this, a deck nobody edits would keep
+    its wrong format and its merged rows forever. That is the general trap:
+    **an incremental sync never repairs stale master data, only changed data.**
+    """
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    deck_columns = {row[1] for row in await cursor.fetchall()}
+    if "archidekt_format_id" not in deck_columns:
+        await db.execute("ALTER TABLE decks ADD COLUMN archidekt_format_id INTEGER")
+
+    # --- the format names ------------------------------------------------
+    corrected = 0
+    for old_name, new_name in _FORMAT_NAME_CORRECTIONS.items():
+        cursor = await db.execute(
+            "UPDATE decks SET format = ?, updated_at = NULL WHERE format = ?",
+            (new_name, old_name),
+        )
+        corrected += cursor.rowcount or 0
+    if corrected:
+        logger.info(
+            "Migration 26: corrected the format name on %d deck(s) and marked "
+            "them for a full re-sync", corrected,
+        )
+
+    # --- the board column ------------------------------------------------
+    cursor = await db.execute("PRAGMA table_info(deck_cards)")
+    card_columns = {row[1] for row in await cursor.fetchall()}
+    if "board" in card_columns:
+        return
+
+    await db.execute("ALTER TABLE deck_cards ADD COLUMN board TEXT DEFAULT 'main'")
+
+    # Backfill from the category name -- the same guess the frontend has been
+    # making since the deck page existed, kept only until the next sync writes
+    # Archidekt's own answer over it.
+    await db.execute(
+        """UPDATE deck_cards SET board = 'side'
+           WHERE TRIM(CASE WHEN INSTR(category, ',') > 0
+                           THEN SUBSTR(category, 1, INSTR(category, ',') - 1)
+                           ELSE category END) = 'Sideboard'"""
+    )
+    await db.execute(
+        """UPDATE deck_cards SET board = 'maybe'
+           WHERE TRIM(CASE WHEN INSTR(category, ',') > 0
+                           THEN SUBSTR(category, 1, INSTR(category, ',') - 1)
+                           ELSE category END)
+                 IN ('Maybeboard', 'Considering', 'Slot In', 'Slot Out')"""
+    )
+
+    # --- the unique key --------------------------------------------------
+    # SQLite cannot alter a UNIQUE constraint in place, so the table is rebuilt
+    # -- the same approach migration 8 uses for `wishlist`.
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS deck_cards_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            quantity INTEGER DEFAULT 1,
+            category TEXT DEFAULT '',
+            board TEXT DEFAULT 'main',
+            is_commander BOOLEAN DEFAULT FALSE,
+            is_companion BOOLEAN DEFAULT FALSE,
+            modifier TEXT DEFAULT 'Normal',
+            UNIQUE(deck_id, card_id, modifier, board)
+        )
+    """)
+    await db.execute("""
+        INSERT OR IGNORE INTO deck_cards_new
+            (id, deck_id, card_id, quantity, category, board, is_commander,
+             is_companion, modifier)
+        SELECT id, deck_id, card_id, quantity, category, board, is_commander,
+               is_companion, modifier
+        FROM deck_cards
+    """)
+    await db.execute("DROP TABLE deck_cards")
+    await db.execute("ALTER TABLE deck_cards_new RENAME TO deck_cards")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_cards_deck ON deck_cards(deck_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_deck_cards_card_id ON deck_cards(card_id)")
+
+    cursor = await db.execute(
+        "SELECT board, COUNT(*) FROM deck_cards GROUP BY board"
+    )
+    logger.info(
+        "Migration 26: deck_cards rebuilt with a board column: %s",
+        {row[0]: row[1] for row in await cursor.fetchall()},
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -897,6 +1056,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     23: _migration_23,
     24: _migration_24,
     25: _migration_25,
+    26: _migration_26,
 }
 
 

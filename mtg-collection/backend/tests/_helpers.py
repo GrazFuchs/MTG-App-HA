@@ -113,8 +113,20 @@ async def add_wishlist(
     return cursor.lastrowid
 
 
-async def insert_deck(db: aiosqlite.Connection, name: str = "Test Deck") -> int:
-    cursor = await db.execute("INSERT INTO decks (name) VALUES (?)", (name,))
+async def insert_deck(
+    db: aiosqlite.Connection, name: str = "Test Deck", *, deck_format: str = "Commander"
+) -> int:
+    """Insert a deck row and return its id.
+
+    ⚠️ The format defaults to Commander, and that default carries weight. Since
+    0.47.0 the bracket and the power score apply only to formats that have
+    them, so a deck inserted without a format would be "Unknown" and every
+    bracket assertion in the suite would be comparing against `None`. Tests
+    about a 60-card format pass one explicitly.
+    """
+    cursor = await db.execute(
+        "INSERT INTO decks (name, format) VALUES (?, ?)", (name, deck_format)
+    )
     await db.commit()
     return cursor.lastrowid
 

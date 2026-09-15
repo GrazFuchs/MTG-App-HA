@@ -6,9 +6,10 @@ from ..database import get_db
 from ..models.schemas import (
     DeckSummary, DeckDetail, DeckCardEntry, CardResponse, DeckUserFieldsUpdate,
     DeckCombo, DeckCompareResponse, DeckCompletenessResponse, MissingCard,
-    CardSummary, PairwiseOverlap,
+    CardSummary, PairwiseOverlap, FormatRules,
     DeckGame, DeckGameCreate, DeckGameUpdate, DeckPerformanceStats,
 )
+from ..services import formats
 from ..services.queries import parse_color_identity, query_all_decks
 from ..services.deck_performance import compute_performance_stats
 from ..services.bracket import effective_bracket
@@ -29,6 +30,11 @@ def _json_col(row, name):
         return json.loads(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _row_board(row) -> str:
+    """The card's pile, defaulting to 'main' on a database that predates it."""
+    return (_col(row, "board") or "main")
 
 
 @router.get("/", response_model=list[DeckSummary])
@@ -174,7 +180,7 @@ async def get_deck(deck_id: int):
         raise HTTPException(status_code=404, detail="Deck not found")
 
     cursor = await db.execute(
-        """SELECT c.*, dc.quantity, dc.category, dc.is_commander,
+        """SELECT c.*, dc.quantity, dc.category, dc.board, dc.is_commander,
         dc.is_companion, dc.modifier
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
         WHERE dc.deck_id=? ORDER BY dc.category, c.name""",
@@ -202,22 +208,41 @@ async def get_deck(deck_id: int):
         )
         cards.append(DeckCardEntry(
             card=card, quantity=r["quantity"], category=r["category"] or "",
+            board=_row_board(r),
             is_commander=bool(r["is_commander"]),
             is_companion=bool(r["is_companion"]),
             modifier=r["modifier"] or "Normal",
         ))
 
+    main_cards = [c for c in cards if c.board == "main"]
+    mismatch = formats.check_shape(
+        deck["format"],
+        total_cards=sum(c.quantity for c in main_cards),
+        distinct_cards=len(main_cards),
+        has_commander_card=any(c.is_commander for c in cards),
+    )
+
     return DeckDetail(
         id=deck["id"], archidekt_id=deck["archidekt_id"], name=deck["name"],
-        format=deck["format"], description=deck["description"],
+        format=deck["format"],
+        archidekt_format_id=_col(deck, "archidekt_format_id"),
+        format_rules=FormatRules(**formats.rules_payload(deck["format"])),
+        format_mismatch=mismatch,
+        description=deck["description"],
         featured_image=deck["featured_image"] or "",
         commander_name=deck["commander_name"] or "",
         owner_username=deck["owner_username"] or "",
         bracket=deck["bracket"] or 0,
         user_bracket=deck["user_bracket"],
         computed_bracket=_col(deck, "computed_bracket"),
-        effective_bracket=effective_bracket(
-            deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"]
+        # The bracket is suppressed entirely for formats it does not describe.
+        # `user_bracket` is not an exception: a hand-set 3 on a Standard deck
+        # is a leftover from when the format was read wrong, not an opinion.
+        effective_bracket=(
+            effective_bracket(
+                deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"]
+            )
+            if formats.bracket_applies(deck["format"]) else None
         ),
         computed_bracket_detail=_json_col(deck, "computed_bracket_detail"),
         power_score=_col(deck, "power_score"),
