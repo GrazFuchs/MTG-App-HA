@@ -1274,6 +1274,53 @@ async def _migration_29(db: aiosqlite.Connection):
             )
 
 
+async def _migration_30(db: aiosqlite.Connection):
+    """Three games can be one match, and game two is a different game.
+
+    A Commander pod plays one game and goes home. Constructed plays best of
+    three, and the two games after the first are played against a deck whose
+    owner has just seen yours and swapped fifteen cards — which is why the
+    sideboard note and the match belong to the same migration. `sideboard_notes`
+    is "what came in, what went out"; without somewhere to write it the
+    decision is gone by the next morning.
+
+    **No match table.** A match is the group of its games, and its result is
+    computed from them rather than stored: whoever has two games has won. A
+    stored winner could disagree with the games it was derived from, and then
+    there would be two answers and no way to tell which is the real one.
+
+    `match_id` NULL is a single game — which is what every game logged so far
+    is, and what every Commander game will stay.
+    """
+    # ⚠️ `deck_games` arrives with migration 15, so a database old enough to
+    # predate it also skips that migration — its schema version is already
+    # past. Guarding rather than assuming is the same rule migrations 28 and 29
+    # use for `folder_name`; a database with no games has nothing to group.
+    cursor = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='deck_games'"
+    )
+    if await cursor.fetchone() is None:
+        return
+
+    cursor = await db.execute("PRAGMA table_info(deck_games)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("match_id", "ALTER TABLE deck_games ADD COLUMN match_id TEXT"),
+        ("game_in_match", "ALTER TABLE deck_games ADD COLUMN game_in_match INTEGER"),
+        ("sideboard_notes",
+         "ALTER TABLE deck_games ADD COLUMN sideboard_notes TEXT DEFAULT ''"),
+    ):
+        if column_name not in columns:
+            await db.execute(ddl)
+
+    # The grouping is read per deck ("show me this deck's matches"), never
+    # globally, so the deck comes first in the index.
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_deck_games_match "
+        "ON deck_games(deck_id, match_id)"
+    )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -1303,6 +1350,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     27: _migration_27,
     28: _migration_28,
     29: _migration_29,
+    30: _migration_30,
 }
 
 

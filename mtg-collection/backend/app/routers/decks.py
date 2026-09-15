@@ -605,20 +605,20 @@ async def list_deck_games(deck_id: int):
 
 @router.post("/{deck_id}/games", response_model=DeckGame)
 async def add_deck_game(deck_id: int, body: DeckGameCreate):
+    """Log a game from the web UI.
+
+    Writes through `game_log.insert_game` rather than its own INSERT, which is
+    what it used to do. That is where the pod-size default and the match
+    grouping live, and a second INSERT here would mean the web form quietly
+    behaved differently from Home Assistant — the drift that cost 0.45.0 two
+    booking paths and 0.47.0 three bracket readers.
+    """
+    from ..services.game_log import insert_game
+
     db = await get_db()
     await _ensure_deck(db, deck_id)
-    played_at = body.played_at.strip() or date.today().isoformat()
-    cursor = await db.execute(
-        """INSERT INTO deck_games
-        (deck_id, played_at, result, opponents, pod_size, on_play,
-         mulligans, missed_land_drops, turns, what_worked, what_didnt, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (deck_id, played_at, body.result, body.opponents, body.pod_size,
-         int(body.on_play), body.mulligans, body.missed_land_drops, body.turns,
-         body.what_worked, body.what_didnt, body.notes),
-    )
-    await db.commit()
-    cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (cursor.lastrowid,))
+    game_id = await insert_game(db, deck_id, body)
+    cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (game_id,))
     game = DeckGame(**_game_row_to_dict(await cursor.fetchone()))
     _refresh_deck_sensors()
     return game
@@ -632,9 +632,21 @@ async def update_deck_game(deck_id: int, game_id: int, body: DeckGameUpdate):
     )
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Game not found")
+    from ..services.game_log import renumber_match
+
     data = body.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(status_code=422, detail="No fields to update")
+
+    # Regrouping by hand is the answer to the 90-minute window being a
+    # judgement rather than a rule: two Bo1 games against the same person on
+    # the same evening get pulled together, and this is the one click that
+    # separates them again. An empty string detaches the game.
+    cursor = await db.execute("SELECT match_id FROM deck_games WHERE id = ?", (game_id,))
+    old_match = (await cursor.fetchone())["match_id"]
+    if "match_id" in data and not data["match_id"]:
+        data["match_id"] = None
+
     fields = []
     params: list = []
     for key, val in data.items():
@@ -644,7 +656,19 @@ async def update_deck_game(deck_id: int, game_id: int, body: DeckGameUpdate):
         params.append(val)
     params.append(game_id)
     await db.execute(f"UPDATE deck_games SET {', '.join(fields)} WHERE id = ?", params)
+
+    if "match_id" in data:
+        # Both sides: the match it left may now hold a single game, and the one
+        # it joined has to count again. `game_in_match` is derived, never
+        # remembered — a stale number would be a second answer.
+        await db.execute(
+            "UPDATE deck_games SET game_in_match = NULL WHERE id = ? AND match_id IS NULL",
+            (game_id,),
+        )
+        await renumber_match(db, old_match)
+        await renumber_match(db, data["match_id"])
     await db.commit()
+
     cursor = await db.execute("SELECT * FROM deck_games WHERE id = ?", (game_id,))
     game = DeckGame(**_game_row_to_dict(await cursor.fetchone()))
     _refresh_deck_sensors()

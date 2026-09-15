@@ -65,6 +65,13 @@ class DeckRules:
     #: the default for a logged game, because "4" is wrong for every 1v1 format
     #: and correcting it by hand every time is how a log stops being kept.
     default_pod_size: int = 2
+    #: Is a *match* the unit here — best-of-three with sideboarding between
+    #: games? True for constructed, false for the Commander family: a
+    #: Commander pod plays one game and goes home, and there is no sideboard
+    #: to change anything with. It decides whether the match statistics are
+    #: shown at all, because "1 match, 100 %" under a single Commander game is
+    #: a number pretending to be an insight.
+    matches: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,8 +99,12 @@ class FormatSpec:
     rules: DeckRules
 
 
-#: Standard constructed shape: 60+ main, 15 sideboard, 4 copies, 1v1.
-_CONSTRUCTED = DeckRules(main_min=60, main_max=None, side_max=15, max_copies=4)
+#: Standard constructed shape: 60+ main, 15 sideboard, 4 copies, 1v1, best of
+#: three. The sideboard and the match are the same fact seen twice: a format
+#: with 15 cards to swap in is a format where game two is a different game.
+_CONSTRUCTED = DeckRules(
+    main_min=60, main_max=None, side_max=15, max_copies=4, matches=True,
+)
 
 #: Commander shape: exactly 100 including the commander, singleton, 4 players.
 _COMMANDER = DeckRules(
@@ -418,4 +429,5 @@ def rules_payload(fmt: str | None) -> dict:
         "max_copies": r.max_copies,
         "singleton": r.singleton,
         "default_pod_size": r.default_pod_size,
+        "matches": r.matches,
     }

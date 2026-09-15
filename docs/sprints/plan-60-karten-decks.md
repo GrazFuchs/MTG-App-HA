@@ -1,6 +1,9 @@
 # Plan — Standard- und andere 60-Karten-Decks im MTG Collection Manager
 
-**Status: 📋 Plan vom 2026-09-12, Entscheidungen getroffen am 2026-09-14, nicht begonnen.** Vier
+**Status: ✅ vollständig umgesetzt.** Plan vom 2026-09-12, Entscheidungen getroffen am 2026-09-14,
+Sprints 12–15 umgesetzt bis 2026-09-15 (0.47.0 · 0.48.0 · 0.49.0 · 0.50.0, dazu der Nachtrag 0.49.1
+zur letzten offenen Entscheidung). Die Ist-Protokolle stehen in den vier Sprint-Dateien; diese Datei
+bleibt die Analyse und der Schnitt. Vier
 Sprints (12–15), einzeln deploybar,
 Bauform wie die Reihe 01–11 (**Ziel · Warum · Arbeitspakete · Akzeptanz · Verifikation**). Jeder
 Sprint bekommt beim Start seine eigene `sprint-NN-*.md` mit Ist-Protokoll; diese Datei bleibt die

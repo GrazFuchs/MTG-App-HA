@@ -44,12 +44,13 @@ templating in the dashboard:
 |--------|------|-------|
 | `select.mtg_log_deck` | select | Options come from the database and follow every sync |
 | `select.mtg_log_result` | select | `win` / `loss` / `draw` |
-| `number.mtg_log_pod_size` | number | 1–8 |
+| `number.mtg_log_pod_size` | number | 1–8. **Follows the deck**: picking a deck moves it to what that format seats — 4 for Commander, 2 for anything played 1v1. A value you set afterwards stands until the next deck is picked |
 | `switch.mtg_log_on_play` | switch | |
 | `number.mtg_log_mulligans` | number | 0–10 |
 | `number.mtg_log_missed_land_drops` | number | 0–50 |
 | `number.mtg_log_turns` | number | 0–100 |
-| `text.mtg_log_opponents` | text | max 255 characters |
+| `text.mtg_log_opponents` | text | max 255 characters. Also the key the match grouping reads — see below |
+| `text.mtg_log_sideboard` | text | What came in, what went out. Games two and three of a match; cleared when you pick a deck whose format has no sideboard |
 | `text.mtg_log_notes` | text | max 255 characters |
 | `button.mtg_log_submit` | button | Writes the game |
 | `sensor.mtg_log_status` | sensor | Outcome of the last submit |
@@ -57,7 +58,29 @@ templating in the dashboard:
 Pressing the button makes the add-on read the values it is already holding,
 write the game, clear the form and update the deck performance sensors.
 `sensor.mtg_log_status` then reads e.g. *"Logged win with Atraxa on 2026-07-22"*
-— or why it did not work.
+— or why it did not work. When the game joined a match it says so:
+*"… — game 2 of the match, now 1-1"*.
+
+### Best-of-three without a single extra tap
+
+A game booked **within 90 minutes** of the previous one, **with the same deck
+against the same opponent name**, continues that match. Three bookings in a row
+are a match; nothing asks, nothing has to be ticked.
+
+Two consequences worth knowing:
+
+* **The second game creates the match and adopts the first.** A lone game stays
+  a lone game, which is what every Commander game and everything logged before
+  0.50.0 remains.
+* **No opponent name, no grouping.** Guessing from the clock alone would merge
+  two unrelated games booked back to back.
+
+⚠️ **The window is a judgement, not a rule.** Two separate Bo1 games against the
+same person on the same evening *will* be pulled together. That is the chosen
+error: a wrong grouping is one click to undo on the deck page, while an extra
+mandatory field is a logging path that stops being used. (The measurement
+behind that choice is fetchlog's: 8 walks in 7 days through a one-tap NFC tag,
+against 1 training session and 0 meals through a web form in three months.)
 
 Field values are stored in the database, so a half-filled form survives an
 add-on restart. Numbers outside their range are clamped; a value HA cannot
@@ -81,6 +104,7 @@ entities:
   - entity: number.mtg_log_mulligans
   - entity: number.mtg_log_turns
   - entity: text.mtg_log_opponents
+  - entity: text.mtg_log_sideboard
   - entity: text.mtg_log_notes
   - entity: button.mtg_log_submit
   - entity: sensor.mtg_log_status
@@ -282,6 +306,7 @@ Every command publishes a response to `mtg-collection/service/{cmd}/response`.
   "missed_land_drops": 0,
   "turns": 9,
   "opponents": "Krenko, Edgar",
+  "sideboard_notes": "+2 Abrade, -2 Duress",
   "what_worked": "...",
   "what_didnt": "...",
   "notes": "..."
@@ -289,7 +314,16 @@ Every command publishes a response to `mtg-collection/service/{cmd}/response`.
 ```
 
 Only `deck` (or `deck_id`) and `result` matter; everything else has a default,
-and `played_at` defaults to today. The deck is matched by id or by name —
+and `played_at` defaults to today.
+
+**Leave `pod_size` out** unless the game really was unusual: omitted, the
+add-on takes it from the deck's format (Commander 4, everything played 1v1 2).
+Before 0.50.0 an omitted value meant 4, so every Standard game booked through a
+script or a voice line was recorded as a four-player game.
+
+`match_id` is also accepted and rarely needed: omit it and the 90-minute window
+decides, pass an existing id to join that match, or pass `null` explicitly to
+start fresh. The deck is matched by id or by name —
 case-insensitively, exact match first, then a unique substring:
 
 ```json

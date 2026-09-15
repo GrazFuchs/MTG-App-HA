@@ -1,3 +1,98 @@
+## 0.50.0 — Sprint 15: 1v1 defaults, and three games as one match
+
+`pod_size` defaulted to **4**, the label said "Opponents / commanders" and the
+hint offered "Atraxa, Krenko". For a 60-card deck all three are wrong, and an
+entry you have to correct every single time is one that eventually goes
+uncorrected — and then a Standard game sits in the log as a four-player game.
+
+### One insert path, not two
+
+The web UI wrote its own `INSERT INTO deck_games`; so did the Home Assistant
+path. That was survivable while both only passed fields through. The moment
+something is *decided* on the way in — the pod size from the format, which
+match a game belongs to — it is the shape this project has already paid for
+three times (two booking paths in 0.45.0, two surplus readings before 0.42.0,
+three bracket readers in 0.47.0).
+
+There is now `game_log.insert_game()` and nothing else, plus a test that scans
+the sources and fails on a second INSERT. Verified by putting one back.
+
+### The default follows the deck
+
+`pod_size` is optional in the schema now, and `insert_game` fills it from
+`formats.spec(...).rules.default_pod_size`. That is the difference between
+"nobody said" and "somebody wanted four" — the same distinction `binds_copies`
+needed two columns for.
+
+The path that mattered most is the invisible one: `script.mtg_log_game`, a
+voice line, an automation. None of them send a pod size, so all of them landed
+on 4. In the HA form the number follows the **deck selection** rather than
+every publish, because a value set by hand has to survive until the next deck
+is picked, or the field is unusable.
+
+### A match is the group of its games
+
+**No match table.** A stored match result could disagree with the games it came
+from, and then there are two answers and no way to tell which one is real.
+Whoever won more games won the match; equal is a draw, which is what an
+abandoned 1-1 actually was.
+
+**The way in is the timestamp, not a form.** A game booked within
+**90 minutes** with the same deck against the same opponent continues that
+match. Three bookings in a row are a match — **no extra input at all.** The
+second game creates the match and adopts the first; a lone game stays a lone
+game. Without an opponent name nothing is grouped, because guessing from the
+clock alone would merge two unrelated games booked back to back.
+
+⚠️ **The window is a judgement, not a rule.** Two separate Bo1 games against the
+same person on one evening get pulled together. That is the chosen error: a
+wrong grouping costs one click ("detach"), an extra mandatory field costs the
+logging. The measurement behind that choice is fetchlog's — 8 walks in 7 days
+through a one-tap tag, against 1 training session and 0 meals through a web
+form in three months.
+
+`game_in_match` is never counted up, it is derived from the group
+(`renumber_match`), and a match left holding one game dissolves back into a
+single game.
+
+### `game_2_3_win_rate`
+
+The win rate **after** sideboarding — the one number only best-of-three can
+produce, and the reason the sideboard note is worth writing at all: **a deck
+that wins game one and loses the match has a sideboard problem, not a deck
+problem.** An ungrouped game counts as a match of one, because in a Bo3 format
+a lone game *is* a Bo1 match. Commander does not see the block at all
+(`format_rules.matches`): a pod plays one game and goes home, and there is no
+sideboard to change anything with.
+
+### Home Assistant
+
+**One** new field, `text.mtg_log_sideboard` — the match itself arrives through
+the window and costs nothing. `sensor.mtg_log_status` now says *"… — game 2 of
+the match, now 1-1"*, so a grouping that should not have happened is visible
+while it can still be undone. The deck sensor gains `matches`,
+`match_win_rate` and `game_2_3_win_rate`, all `null` for Commander.
+
+### Measured against the live database (352 MB, 24 decks)
+
+Migration 30: **0.03 s**, idempotent (second run 0.02 s), `deck_demand`
+unchanged at 1490 rows / 1797 cards. The single game in the log stays a single
+game, as does every Commander game.
+
+Dry run against deck 61 "The Rock" (Premodern):
+
+| booking | `pod_size` | match | game | score |
+|---|---|---|---|---|
+| 1 win | **2** | — | — | — |
+| 2 loss | 2 | `d8511a4d` | 2 | 1-1 |
+| 3 win | 2 | `d8511a4d` | 3 | **2-1** |
+
+3 games, 1 match, match rate 100 %, **50 % after boarding** against a 67 %
+overall win rate — the two numbers say different things, which is the point.
+Commander control (deck 1): `pod_size` 4, no match.
+
+417 tests green (403 + 14).
+
 ## 0.49.1 — a deck being built is not illegal
 
 Sprint 14 left one open decision rather than deciding it unilaterally: should

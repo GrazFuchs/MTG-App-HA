@@ -75,6 +75,11 @@ FIELDS: list[FormField] = [
     ),
     FormField("turns", "Turns", "number", "0", icon="mdi:timer-outline", min=0, max=100),
     FormField("opponents", "Opponents", "text", "", icon="mdi:account-multiple"),
+    # The only field Sprint 15 adds. The match itself arrives through the time
+    # window and costs no input at all -- a second field ("is this game two?")
+    # would be exactly the extra step that makes a logging path go unused.
+    # Stays empty for Commander, where there is nothing to sideboard.
+    FormField("sideboard", "Sideboard", "text", "", icon="mdi:swap-horizontal"),
     FormField("notes", "Notes", "text", "", icon="mdi:note-text-outline"),
 ]
 
@@ -259,7 +264,42 @@ async def set_field(db: aiosqlite.Connection, key: str, raw: str) -> str:
 
     value = coerce(spec, raw, options)
     await _store(db, {key: value})
+
+    if spec.key == "deck":
+        await _follow_deck(db, value)
     return value
+
+
+async def _follow_deck(db: aiosqlite.Connection, label: str) -> None:
+    """Move the pod size to what the chosen deck's format usually seats.
+
+    Four players is right for Commander and wrong for everything played 1v1,
+    and a form that starts wrong every time is a form whose value gets
+    corrected by hand until one day it does not -- and then the log holds a
+    four-player Standard game.
+
+    Only on the deck change: a value set by hand afterwards stands until the
+    next deck is picked. Overwriting it on every publish would make the field
+    unusable, which is the mirror image of the same mistake.
+    """
+    from . import formats
+    from .game_log import default_pod_size
+
+    if not label or label == NO_DECK:
+        return
+    _labels, mapping = await deck_options(db)
+    deck_id = mapping.get(label)
+    if deck_id is None:
+        return
+    await _store(db, {"pod_size": str(await default_pod_size(db, deck_id))})
+
+    # A format with no sideboard has nothing to write there, and a leftover
+    # note from the last Standard match must not ride along into a Commander
+    # game.
+    cursor = await db.execute("SELECT format FROM decks WHERE id = ?", (deck_id,))
+    row = await cursor.fetchone()
+    if row is not None and not formats.spec(row["format"]).rules.matches:
+        await _store(db, {"sideboard": ""})
 
 
 async def reset(db: aiosqlite.Connection) -> dict[str, str]:
@@ -303,6 +343,7 @@ async def submit(db: aiosqlite.Connection) -> dict[str, Any]:
         "turns": int(values["turns"]),
         "opponents": values["opponents"],
         "notes": values["notes"],
+        "sideboard_notes": values.get("sideboard", ""),
     }
 
     try:
@@ -321,9 +362,18 @@ def status_text(result: dict[str, Any]) -> str:
     """One-line outcome for the status sensor (HA states cap at 255 chars)."""
     if "error" in result:
         return f"Error: {result['error']}"[:255]
-    return (
+    line = (
         f"Logged {result['result']} with {result['deck_name']} on {result['played_at']}"
-    )[:255]
+    )
+    # The grouping happens silently, by a clock nobody sees. Saying "Match 1-1"
+    # here is how you find out it took -- and, more importantly, how you find
+    # out it took when it should not have, while you can still undo it.
+    if result.get("match_id"):
+        line += (
+            f" - game {result.get('game_in_match')} of the match,"
+            f" now {result.get('match_score')}"
+        )
+    return line[:255]
 
 
 def validate_bounds() -> None:
@@ -335,6 +385,8 @@ def validate_bounds() -> None:
     model_fields = DeckGameCreate.model_fields
     for spec in FIELDS:
         if spec.component != "number":
+            continue
+        if spec.key not in model_fields:
             continue
         meta = model_fields[spec.key].metadata
         limits = {type(m).__name__: m for m in meta}

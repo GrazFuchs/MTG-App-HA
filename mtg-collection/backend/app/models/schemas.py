@@ -76,6 +76,8 @@ class FormatRules(BaseModel):
     max_copies: int = 4
     singleton: bool = False
     default_pod_size: int = 2
+    #: Is a match (best of three, with sideboarding) the unit in this format?
+    matches: bool = False
 
 
 class DeckSummary(BaseModel):
@@ -200,7 +202,13 @@ class DeckGameBase(BaseModel):
     played_at: str = ""  # ISO date (YYYY-MM-DD); defaults to today on create
     result: GAME_RESULT = "win"
     opponents: str = Field("", max_length=300)
-    pod_size: int = Field(4, ge=1, le=8)
+    #: `None` means "whatever this deck's format usually is" — four for a
+    #: Commander pod, two for everything played 1v1. A hard default of 4 is
+    #: what made every Standard game need correcting by hand, and a log that
+    #: needs correcting is a log that stops being kept. The value is resolved
+    #: once, in `game_log.insert_game`, so the web form, the MQTT command and
+    #: a voice booking all land on the same number.
+    pod_size: int | None = Field(None, ge=1, le=8)
     on_play: bool = False
     mulligans: int = Field(0, ge=0, le=10)
     missed_land_drops: int = Field(0, ge=0, le=50)
@@ -208,10 +216,17 @@ class DeckGameBase(BaseModel):
     what_worked: str = Field("", max_length=1000)
     what_didnt: str = Field("", max_length=1000)
     notes: str = Field("", max_length=1000)
+    #: What came in and what went out. Only ever filled for game two and three
+    #: of a match — before the first game nobody has seen anything yet.
+    sideboard_notes: str = Field("", max_length=500)
 
 
 class DeckGameCreate(DeckGameBase):
-    pass
+    #: Three states. Absent: group by the time window (the normal case, and
+    #: the reason a match costs no extra typing). A string: join that match
+    #: explicitly. An explicit `null`: start fresh, do not group — the way a
+    #: wrong grouping is corrected.
+    match_id: str | None = Field(None, max_length=64)
 
 
 class DeckGameUpdate(BaseModel):
@@ -227,11 +242,23 @@ class DeckGameUpdate(BaseModel):
     what_worked: str | None = Field(None, max_length=1000)
     what_didnt: str | None = Field(None, max_length=1000)
     notes: str | None = Field(None, max_length=1000)
+    sideboard_notes: str | None = Field(None, max_length=500)
+    #: Regrouping by hand: a match id joins this game to that match, an empty
+    #: string detaches it into a single game again. The games of every match
+    #: touched are renumbered afterwards, so `game_in_match` is never stale.
+    match_id: str | None = Field(None, max_length=64)
 
 
 class DeckGame(DeckGameBase):
     id: int
     deck_id: int
+    #: Always a number on a stored row — it was resolved on the way in.
+    pod_size: int = 4
+    #: NULL for a single game, which is what every Commander game is and what
+    #: every game logged before 0.50.0 stays.
+    match_id: str | None = None
+    #: 1, 2, 3 … within its match; NULL for a single game.
+    game_in_match: int | None = None
     created_at: str | None = None
 
 
@@ -249,6 +276,19 @@ class DeckPerformanceStats(BaseModel):
     avg_turns: float = 0.0
     last_played_at: str | None = None
     last_result: str | None = None
+    #: Matches, counting a single ungrouped game as a match of one — in a
+    #: best-of-three format a lone game *is* a Bo1 match, and anything else
+    #: would leave those games out of the table entirely.
+    matches: int = 0
+    match_wins: int = 0
+    match_losses: int = 0
+    match_win_rate: float = 0.0
+    #: Games played after sideboarding, and how they went. The one number only
+    #: best-of-three can produce, and the reason the sideboard notes are worth
+    #: writing: a deck that wins game one and loses the match has a sideboard
+    #: problem, not a deck problem.
+    sideboard_games: int = 0
+    game_2_3_win_rate: float = 0.0
 
 
 # --- Collection Models ---

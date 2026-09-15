@@ -363,7 +363,10 @@ export default function DeckView() {
 
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />
-      <DeckPerformanceSection deckId={deck.id} />
+      {/* The format rules travel with the deck, so the section does not keep
+          a second copy of the table: the pod size a game defaults to, and
+          whether a match is the unit here at all. */}
+      <DeckPerformanceSection deckId={deck.id} rules={deck.format_rules} />
 
       {/* Charts row */}
       <div className={styles.chartGrid}>

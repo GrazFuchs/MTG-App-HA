@@ -327,6 +327,30 @@ def _legality_attrs(raw: str | None) -> dict[str, Any]:
     }
 
 
+def _match_attrs(deck_format: str, games: list[dict[str, Any]], compute) -> dict[str, Any]:
+    """Match numbers for a best-of-three format, `None` for everything else.
+
+    `None` rather than 0: "this format has no matches" and "this deck has
+    played none" are different statements, and a template that cannot tell them
+    apart will show a zero where it should show nothing -- the same rule the
+    bracket and the power score follow since 0.47.0.
+    """
+    from . import formats
+
+    if not formats.spec(deck_format).rules.matches:
+        return {"matches": None, "match_wins": None, "match_win_rate": None,
+                "game_2_3_win_rate": None}
+    figures = compute(games)
+    return {
+        "matches": figures["matches"],
+        "match_wins": figures["match_wins"],
+        "match_win_rate": figures["match_win_rate"],
+        # The one number only best-of-three produces: how the games after
+        # sideboarding went.
+        "game_2_3_win_rate": figures["game_2_3_win_rate"],
+    }
+
+
 async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     """Per-deck play stats for every deck, with an `is_active` flag.
 
@@ -349,7 +373,24 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     )
 
     from . import formats
+    from .deck_performance import _match_stats
     from .queries import legality_push_effective
+
+    # One pass over the games for the match numbers, grouped in Python rather
+    # than in SQL: "who won the match" is a rule about a group (more games than
+    # the other side), and it is already written once in `_match_stats`. A
+    # second version of it in SQL is the drift this codebase keeps paying for.
+    games_cursor = await db.execute(
+        """SELECT deck_id, result, match_id, game_in_match
+           FROM deck_games ORDER BY deck_id, played_at DESC, id DESC"""
+    )
+    games_by_deck: dict[int, list[dict[str, Any]]] = {}
+    for g in await games_cursor.fetchall():
+        games_by_deck.setdefault(g["deck_id"], []).append({
+            "result": g["result"],
+            "match_id": g["match_id"],
+            "game_in_match": g["game_in_match"],
+        })
 
     stats = []
     for r in await cursor.fetchall():
@@ -393,6 +434,10 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
             "losses": int(r["losses"] or 0),
             "draws": int(r["draws"] or 0),
             "win_rate": round(wins / games * 100, 1) if games else 0.0,
+            # Matches only where a match is the unit. In Commander every game
+            # is its own, so "1 match, 100 %" would be the same number wearing
+            # a second name -- and a template could not tell the two apart.
+            **_match_attrs(deck_format, games_by_deck.get(r["id"], []), _match_stats),
             "last_played": last_played or "",
             "is_active": bool(games) and bool(r["is_active"]),
         })

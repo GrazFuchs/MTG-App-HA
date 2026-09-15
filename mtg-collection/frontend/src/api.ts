@@ -76,7 +76,10 @@ export interface FormatRules {
   side_max: number;
   max_copies: number;
   singleton: boolean;
+  /** Four for a Commander pod, two for anything played 1v1. */
   default_pod_size: number;
+  /** Is a match (best of three, with sideboarding) the unit in this format? */
+  matches: boolean;
 }
 
 export interface DeckSummary {
@@ -216,6 +219,13 @@ export interface DeckGame {
   what_worked: string;
   what_didnt: string;
   notes: string;
+  /** What came in and what went out. Only games two and three of a match. */
+  sideboard_notes: string;
+  /** null for a single game — every Commander game, and everything logged
+   *  before 0.50.0. A match exists once it has a second game. */
+  match_id: string | null;
+  /** 1, 2, 3 … inside its match; null for a single game. */
+  game_in_match: number | null;
   created_at?: string | null;
 }
 
@@ -235,6 +245,17 @@ export interface DeckPerformanceStats {
   avg_turns: number;
   last_played_at: string | null;
   last_result: GameResult | null;
+  /** A standalone game counts as a match of one: in a best-of-three format a
+   *  lone game is a Bo1 match, and leaving it out would drop most of the
+   *  table. Shown only where `format_rules.matches` is true. */
+  matches: number;
+  match_wins: number;
+  match_losses: number;
+  match_win_rate: number;
+  /** Games played after sideboarding, and how they went — the one number only
+   *  best-of-three can produce. */
+  sideboard_games: number;
+  game_2_3_win_rate: number;
 }
 
 export interface CollectionEntry {
