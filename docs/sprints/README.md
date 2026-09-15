@@ -27,6 +27,20 @@ stehen in der Tabelle. Konvention je Datei: **Ziel · Warum · Arbeitspakete · 
 07, 08, 09, 10 unabhängig · 11 nach 04/05
 ```
 
+## Geplant — 60-Karten-Decks (Plan vom 2026-09-12)
+
+Analyse, Komponenten-Inventar und Schnitt: [plan-60-karten-decks.md](plan-60-karten-decks.md).
+Jeder Sprint bekommt beim Start seine eigene Datei; bis dahin steht alles im Plan. Die vier
+Auftraggeber-Entscheidungen sind am **2026-09-14** getroffen (Tabelle im Plan); empfohlene
+Reihenfolge nach 12: **14 → 13 → 15**.
+
+| # | Sprint | Braucht | Status |
+|---|--------|---------|--------|
+| 12 | Format-Wahrheit — `formats.py`, `deck_cards.board`, Gates für Bracket/Power, Format in UI/MCP/HA; Testdecks Standard + eines aus Pioneer/Modern/Pauper/Premodern/Legacy | 0.46.2 committed | 📋 geplant (0.47.0) |
+| 13 | Bedarf & Bestand bei Playsets — ein `deck_usage`-Helper, bindende Decks (`Disassembled`/`Older Versions` binden nicht), `bound_elsewhere` | 12 | 📋 geplant (0.48.0) |
+| 14 | Legalität & Deck-Check — 60/15/4, Scryfall-Legalität je Format, Partial-Combos gefiltert, Störungskarte + Push bei Rotation/Ban | 12 | 📋 geplant (0.49.0) |
+| 15 | Spielprotokoll für 1v1 + Bo3 — `pod_size` folgt dem Deck, `match_id` per Zeitfenster, Sideboard-Notiz | 12 | 📋 geplant (0.50.0) |
+
 ## Entscheidungen des Auftraggebers (Feedback-Runde 2026-08-23)
 
 - **Brackets bleiben** — offizielles WotC-System; Umbau, sodass der Bracket in der App
