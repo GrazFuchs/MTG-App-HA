@@ -214,6 +214,7 @@ async def get_deck(deck_id: int):
             modifier=r["modifier"] or "Normal",
         ))
 
+    _power = formats.power_applies(deck["format"])
     main_cards = [c for c in cards if c.board == "main"]
     mismatch = formats.check_shape(
         deck["format"],
@@ -235,20 +236,25 @@ async def get_deck(deck_id: int):
         bracket=deck["bracket"] or 0,
         user_bracket=deck["user_bracket"],
         computed_bracket=_col(deck, "computed_bracket"),
-        # The bracket is suppressed entirely for formats it does not describe.
-        # `user_bracket` is not an exception: a hand-set 3 on a Standard deck
-        # is a leftover from when the format was read wrong, not an opinion.
-        effective_bracket=(
-            effective_bracket(
-                deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"]
-            )
+        # The format gate lives inside `effective_bracket` so that this caller
+        # and the deck list cannot disagree — they did, for one deploy.
+        effective_bracket=effective_bracket(
+            deck["user_bracket"], _col(deck, "computed_bracket"), deck["bracket"],
+            deck["format"],
+        ),
+        computed_bracket_detail=(
+            _json_col(deck, "computed_bracket_detail")
             if formats.bracket_applies(deck["format"]) else None
         ),
-        computed_bracket_detail=_json_col(deck, "computed_bracket_detail"),
-        power_score=_col(deck, "power_score"),
-        power_level=_col(deck, "power_level"),
-        power_detail=_json_col(deck, "power_detail"),
-        spellbook_bracket_tag=_col(deck, "spellbook_bracket_tag") or "",
+        # Same gate as the bracket: a stored score outlives a format change
+        # until the next recompute, and must not be shown in the meantime.
+        power_score=_col(deck, "power_score") if _power else None,
+        power_level=_col(deck, "power_level") if _power else None,
+        power_detail=_json_col(deck, "power_detail") if _power else None,
+        spellbook_bracket_tag=(
+            _col(deck, "spellbook_bracket_tag") or ""
+            if formats.bracket_applies(deck["format"]) else ""
+        ),
         gameplan=deck["gameplan"] or "",
         ai_assessment=deck["ai_assessment"] or "",
         ai_assessment_updated_at=deck["ai_assessment_updated_at"],

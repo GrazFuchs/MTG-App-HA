@@ -1,3 +1,32 @@
+## 0.47.1 — the gate was in one of three places, and the live system said so
+
+0.47.0 suppressed the bracket and the power score for formats that have neither.
+It did that in `get_deck` — the deck *page* — and nowhere else. Within minutes of
+the deploy the live API showed the two Premodern decks at **bracket 2 and score
+365.1 in the deck list**, and at nothing on their own page.
+
+Neither call site was wrong on its own. That is the whole shape of the bug, and
+it is the third time this codebase has produced it: two copies of the booking
+path in 0.45.0, two readings of the surplus query before 0.42.0, and now three
+readers of the same three columns. A stored bracket outlives a format change
+until the next recompute, so every reader has to gate, and "every reader has to
+remember" is not a design.
+
+The gate moved **into** `effective_bracket`, which all three already called. The
+HA sensor and the deck list now pass the format in rather than checking around
+it, and there is no third way to ask the question.
+
+`computed_bracket_detail`, `power_detail` and Spellbook's label are suppressed
+with it — a detail popup explaining a bracket that is not shown is worse than
+either half alone.
+
+The stored values are deliberately left in the database. They cost nothing, they
+are correct again the moment a deck returns to Commander, and deleting the
+evidence of a wrong format reading is how the reading becomes unfalsifiable.
+
+A test now asks all three readers about the same deck and fails if they
+disagree. Verified against the pre-fix code: it fails there.
+
 ## 0.47.0 — Sprint 12: the format table was wrong, and four analyses never asked
 
 Two Premodern decks appeared in the database on 2026-09-12. Nothing rejected

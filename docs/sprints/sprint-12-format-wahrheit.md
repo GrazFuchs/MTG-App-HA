@@ -1,7 +1,8 @@
 # Sprint 12 — Format-Wahrheit
 
-**Status: ✅ umgesetzt in 0.47.0 am 2026-09-15, gegen die echte DB verifiziert.**
-Deploy-Protokoll am Ende.
+**Status: ✅ umgesetzt in 0.47.0 + 0.47.1 am 2026-09-15, gegen die echte DB verifiziert.**
+Deploy-Protokoll am Ende — ⚠️ die Live-Prüfung hat einen Fehler gefunden, den die Testsuite nicht
+hatte (0.47.1).
 
 **Ziel:** Ein Deck, das kein Commander ist, wird korrekt beschrieben — kein Bracket, kein
 Power-Score, Boards getrennt, Format sichtbar — und die 22 Commander-Decks ändern sich nicht.
@@ -121,7 +122,9 @@ als das Format falsch gelesen wurde. Die Anzeige unterdrückt sie; der Wert blei
 - [x] **Migration 26 gegen die echte 352-MB-DB**: 0,1 s, 2005 Zeilen und 2347 Karten unverändert,
   idempotent (zweiter Lauf ändert nichts).
 - [x] Format-Wechsel nullt Bracket, Detail, Power und Spellbook-Label (Test).
-- [x] Backend **360 Tests grün** (334 + 26 neue), Frontend **46 grün**, `tsc -b` sauber.
+- [x] **Deck-Liste, Deck-Seite und HA-Sensor sagen dasselbe** — in 0.47.0 taten sie es nicht, siehe
+  den Nachschlag unten. Test vorhanden, gegengeprüft.
+- [x] Backend **361 Tests grün** (334 + 27 neue), Frontend **46 grün**, `tsc -b` sauber.
 - [ ] **MCP-Prompt am lebenden Assistenten** — der Prompt verzweigt jetzt über `format_rules`;
   ein Trockenlauf mit Claude gegen ein Premodern-Deck steht aus.
 
@@ -135,6 +138,31 @@ als das Format falsch gelesen wurde. Die Anzeige unterdrückt sie; der Wert blei
 | Kategorie-Flags gemessen | `Sideboard` = `includedInDeck: true` — die offene Frage des Plans, gegen die Vermutung entschieden |
 | Migration gegen die echte DB | 0,1 s · 2005/2005 Zeilen · 2347/2347 Karten · idempotent |
 | Gegenprobe Bracket + Power | 22 unverändert, 2 auf `null` |
+
+### 🐞 Was die Live-Prüfung gefunden hat — das Gate stand an einer von drei Stellen (0.47.1)
+
+Minuten nach dem Deploy meldete `GET /api/decks/` für die zwei Premodern-Decks **weiter Bracket 2
+und Score 365,1**, während `GET /api/decks/61` nichts zeigte. Ursache: das Gate war in `get_deck`
+eingebaut — der Deck-*Seite* — und sonst nirgends. Die Deck-*Liste* und der HA-Sensor lasen dieselben
+drei Spalten ungefiltert.
+
+**Beide Aufrufstellen waren für sich genommen nicht falsch.** Das ist die Form des Fehlers, und es
+ist das dritte Mal in diesem Code: zwei Kopien des Buchungspfads in 0.45.0, zwei Lesarten der
+Überschuss-Abfrage vor 0.42.0, jetzt drei Leser derselben drei Spalten. Ein gespeicherter Bracket
+überlebt einen Formatwechsel bis zum nächsten Recompute, also **muss** jeder Leser gaten — und
+„jeder Leser muss daran denken" ist kein Entwurf.
+
+Das Gate ist deshalb **in `effective_bracket` hineingewandert**, das alle drei ohnehin aufrufen. Der
+Format-Name wird übergeben statt außen herum geprüft; eine vierte Art, die Frage zu stellen, gibt es
+nicht mehr. `computed_bracket_detail`, `power_detail` und Spellbooks Label fallen mit — ein
+Detail-Popup, das einen nicht angezeigten Bracket erklärt, ist schlimmer als jede Hälfte für sich.
+
+Die **gespeicherten Werte bleiben in der DB**. Sie kosten nichts, sind wieder richtig, sobald ein
+Deck zu Commander zurückkehrt, und die Spuren einer falschen Formatlesung zu löschen ist der Weg,
+sie unwiderlegbar zu machen.
+
+Ein Test fragt jetzt alle drei Leser nach demselben Deck und fällt bei Uneinigkeit.
+**Gegengeprüft: er fällt auf der Fassung von 0.47.0.**
 
 ⚠️ **Die zwei Premodern-Decks sind für einen Voll-Re-Sync markiert** (`updated_at = NULL`). Bis der
 nächtliche Sync um 03:00 läuft, trägt Deck 61 weiter 57 statt 60 Hauptkarten — die verschmolzenen

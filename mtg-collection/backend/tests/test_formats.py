@@ -354,6 +354,57 @@ async def test_deck_api_reports_rules_counts_and_no_bracket(client):
 
 
 @pytest.mark.anyio
+async def test_list_detail_and_ha_agree_about_a_stale_bracket(client):
+    """The three readers must not disagree — and they did, for one deploy.
+
+    A stored bracket and score survive a format change until the next
+    recompute. 0.47.0 gated the deck *page* on the format but not the deck
+    *list* or the HA sensor, and the live system showed the two Premodern decks
+    at bracket 2 in the list and at nothing on their own page, within minutes of
+    the deploy. The gate now lives inside `effective_bracket`, and this test is
+    what keeps the three in step.
+
+    Same shape as the duplicated booking path in 0.45.0: two call sites doing
+    "the same thing", neither wrong on its own, drifting quietly.
+    """
+    from app.services.ha_metrics import deck_stats
+
+    db = await get_db()
+    deck_id = await insert_deck(db, "Stale numbers", deck_format="Premodern")
+    await db.execute(
+        """UPDATE decks SET computed_bracket = 2, power_score = 365.1,
+           power_level = 3.5, spellbook_bracket_tag = 'E' WHERE id = ?""",
+        (deck_id,),
+    )
+    await db.commit()
+
+    async with client as ac:
+        detail = (await ac.get(f"/api/decks/{deck_id}")).json()
+        listing = (await ac.get("/api/decks/")).json()
+    row = next(d for d in listing if d["id"] == deck_id)
+    sensor = next(d for d in await deck_stats(db) if d["deck_id"] == deck_id)
+
+    for label, bracket, score in (
+        ("deck page", detail["effective_bracket"], detail["power_score"]),
+        ("deck list", row["effective_bracket"], row["power_score"]),
+        ("HA sensor", sensor["bracket"], sensor["power_score"]),
+    ):
+        assert bracket is None, f"{label} still reports a bracket"
+        assert score is None, f"{label} still reports a power score"
+
+    assert detail["spellbook_bracket_tag"] == ""
+    assert detail["computed_bracket_detail"] is None
+    assert sensor["bracket_source"] == "not_applicable"
+    # The stored values are untouched, so they return if the deck does.
+    cursor = await db.execute(
+        "SELECT computed_bracket, power_score FROM decks WHERE id = ?", (deck_id,)
+    )
+    stored = await cursor.fetchone()
+    assert stored["computed_bracket"] == 2
+    assert stored["power_score"] == 365.1
+
+
+@pytest.mark.anyio
 async def test_a_hand_set_bracket_does_not_leak_into_a_constructed_deck(client):
     """`user_bracket` normally wins over everything. It must not win here: a 3
     left on a deck whose format was read wrong is a leftover, not an opinion."""

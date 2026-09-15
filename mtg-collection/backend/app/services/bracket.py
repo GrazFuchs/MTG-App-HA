@@ -86,14 +86,33 @@ _INFINITE_TURN_HINTS = ("infinite turn", "infinite extra turn", "extra turns")
 
 
 def effective_bracket(
-    user_bracket: int | None, computed_bracket: int | None, archidekt_bracket: int | None
+    user_bracket: int | None,
+    computed_bracket: int | None,
+    archidekt_bracket: int | None,
+    deck_format: str | None = None,
 ) -> int | None:
     """The bracket to show, in order of how much it is worth trusting.
 
     A hand-set value wins because somebody decided it; the computation is a
     reviewed suggestion; the Archidekt import is a mirror of a field that is
     empty on every deck we have ever synced.
+
+    ⚠️ `deck_format` gates the whole answer, and it belongs **here** rather than
+    at each call site. It was added at one of the three callers first, and the
+    result was live within minutes of the 0.47.0 deploy: the deck list showed
+    the two Premodern decks at bracket 2 while the deck page showed none. Same
+    shape as the duplicated booking path in 0.45.0 — two places doing "the same
+    thing", neither wrong on its own, drifting apart quietly.
+
+    The gate also beats `user_bracket`, which normally beats everything. A 3 set
+    by hand on a format that has no brackets is a leftover from when the format
+    was read wrong, not an opinion worth preserving. The stored value stays in
+    the database either way, so it comes back if the deck returns to Commander.
     """
+    if deck_format is not None:
+        from . import formats
+        if not formats.bracket_applies(deck_format):
+            return None
     if user_bracket:
         return user_bracket
     if computed_bracket:

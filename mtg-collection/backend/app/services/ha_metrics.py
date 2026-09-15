@@ -342,9 +342,11 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
             "deck_id": r["id"],
             "deck_name": r["name"] or f"Deck {r['id']}",
             "format": deck_format,
+            # The format goes into `effective_bracket` rather than being
+            # checked around it, so this cannot drift from the API's answer.
             "bracket": effective_bracket(
-                r["user_bracket"], r["computed_bracket"], r["bracket"]
-            ) if has_bracket else None,
+                r["user_bracket"], r["computed_bracket"], r["bracket"], deck_format
+            ),
             "bracket_source": (
                 "user" if r["user_bracket"]
                 else "computed" if r["computed_bracket"]

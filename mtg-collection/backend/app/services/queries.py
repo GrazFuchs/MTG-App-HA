@@ -593,8 +593,12 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         "sideboard_count": r[8], "maybeboard_count": r[9],
         "folder_name": r[10] or "", "bracket": r[11] or 0,
         "user_bracket": r[12], "computed_bracket": r[13],
-        "effective_bracket": effective_bracket(r[12], r[13], r[11]),
-        "power_score": r[14], "power_level": r[15],
+        # The format gates both of these. A stored number survives a format
+        # change until the next recompute, so suppressing it here is what keeps
+        # the list and the deck page saying the same thing.
+        "effective_bracket": effective_bracket(r[12], r[13], r[11], r[3]),
+        "power_score": r[14] if formats.power_applies(r[3]) else None,
+        "power_level": r[15] if formats.power_applies(r[3]) else None,
         # Sent with every deck so no consumer keeps its own copy of the format
         # table — the same arrangement the drying card has, where the numbers
         # are read off the button instead of held twice.
