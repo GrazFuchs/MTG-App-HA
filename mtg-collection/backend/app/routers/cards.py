@@ -159,8 +159,26 @@ async def trigger_scryfall_backfill(
     The sync-time pass is capped so it cannot stretch a nightly run; this one is
     not. A full collection of ~10,000 printings is ~137 requests, a few minutes
     at the rate limit Scryfall asks for on `/cards/collection`.
+
+    **This is the endpoint to use after a rotation or a ban announcement.** The
+    weekly refresh gets there on its own within seven days; `force=true` makes
+    it today. The deck check runs afterwards, because a legality that changed is
+    exactly the kind that moves underneath a deck nobody touched.
     """
-    return await backfill_scryfall_fields(max_cards=max_cards or None, force=force)
+    result = await backfill_scryfall_fields(max_cards=max_cards or None, force=force)
+
+    # Own try: the enrichment succeeded, and a failure re-checking decks must
+    # not turn that into an error for the caller.
+    try:
+        from ..services.legality import check_all_decks
+
+        check = await check_all_decks()
+        result["legality"] = {
+            "checked": check["checked"], "illegal": check["illegal"]
+        }
+    except Exception as exc:  # pragma: no cover - defensive
+        result["legality"] = {"error": str(exc)}
+    return result
 
 
 @router.get("/edhrec/recommendations/{commander_name}")

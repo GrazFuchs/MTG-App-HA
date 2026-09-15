@@ -37,8 +37,8 @@ Reihenfolge nach 12: **14 → 13 → 15**.
 | # | Sprint | Braucht | Status |
 |---|--------|---------|--------|
 | 12 | [Format-Wahrheit](sprint-12-format-wahrheit.md) — `formats.py`, `deck_cards.board`, Gates für Bracket/Power, Format in UI/MCP/HA | — | ✅ umgesetzt (0.47.0) — ⚠️ die Archidekt-Formattabelle war ab Nummer 7 um eins verschoben |
-| 13 | Bedarf & Bestand bei Playsets — ein `deck_usage`-Helper, bindende Decks (`Disassembled`/`Older Versions` binden nicht), `bound_elsewhere` | 12 | 📋 geplant (0.48.0) |
-| 14 | Legalität & Deck-Check — 60/15/4, Scryfall-Legalität je Format, Partial-Combos gefiltert, Störungskarte + Push bei Rotation/Ban | 12 | 📋 geplant (0.49.0) |
+| 13 | Bedarf & Bestand bei Playsets — ein `deck_usage`-Helper, bindende Decks (`Disassembled`/`Older Versions` binden nicht), `bound_elsewhere` | 12 | 📋 geplant (0.49.0) |
+| 14 | [Legalität & Deck-Check](sprint-14-legalitaet.md) — 60/15/4, Scryfall-Legalität je Format, Combo-Vorschläge annotiert, Störungskarte bei Rotation/Ban | 12 | ✅ umgesetzt (0.48.0) — ⚠️ Token waren keine Karten, und die Board-Daten waren noch geraten |
 | 15 | Spielprotokoll für 1v1 + Bo3 — `pod_size` folgt dem Deck, `match_id` per Zeitfenster, Sideboard-Notiz | 12 | 📋 geplant (0.50.0) |
 
 ## Entscheidungen des Auftraggebers (Feedback-Runde 2026-08-23)

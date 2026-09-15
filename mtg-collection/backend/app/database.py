@@ -151,7 +151,18 @@ CREATE TABLE IF NOT EXISTS decks (
     power_score REAL,
     power_level REAL,
     power_detail TEXT,
-    power_computed_at TIMESTAMP
+    power_computed_at TIMESTAMP,
+    -- The deck check (services/legality.py). Stored rather than recomputed on
+    -- read because it changes *without the deck changing*: a rotation or a ban
+    -- moves underneath a list nobody touched, and the timestamp is what tells
+    -- "newly illegal" from "illegal all along".
+    legality_json TEXT,
+    legality_checked_at TIMESTAMP,
+    legality_notified_at TIMESTAMP,
+    -- A signature of the violations last announced, NOT a timestamp: the check
+    -- runs nightly, so any timestamp comparison re-announces the same banned
+    -- card every night. See migration 27.
+    legality_notified_key TEXT
 );
 
 CREATE TABLE IF NOT EXISTS deck_cards (
@@ -1031,6 +1042,64 @@ async def _migration_26(db: aiosqlite.Connection):
     )
 
 
+async def _migration_27(db: aiosqlite.Connection):
+    """Keep the deck check on the deck, so nothing has to recompute to show it.
+
+    The inputs are already here — Scryfall's `legalities` on every card, the
+    format rules in `services/formats.py` — but the answer is worth storing for
+    one reason the other computed columns do not have: **it changes without the
+    deck changing.** A rotation or a ban moves underneath a deck nobody touched,
+    and `legality_checked_at` is what lets the notifier tell "newly illegal"
+    from "illegal since forever" without asking twice.
+
+    ⚠️ **The dedup key is the violations themselves, not a timestamp.** The
+    first attempt compared `legality_notified_at` against
+    `legality_checked_at`, which reads plausibly and is wrong: the check runs
+    every night, so `checked_at` is newer than `notified_at` every night, and
+    the notification would have fired every night about the same banned card —
+    precisely the behaviour it was written to avoid. `legality_notified_key`
+    holds a signature of what was announced, so the same problem stays quiet
+    and a *different* one gets through.
+    """
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("legality_json", "ALTER TABLE decks ADD COLUMN legality_json TEXT"),
+        ("legality_checked_at",
+         "ALTER TABLE decks ADD COLUMN legality_checked_at TIMESTAMP"),
+        ("legality_notified_at",
+         "ALTER TABLE decks ADD COLUMN legality_notified_at TIMESTAMP"),
+        ("legality_notified_key",
+         "ALTER TABLE decks ADD COLUMN legality_notified_key TEXT"),
+    ):
+        if column_name not in columns:
+            await db.execute(ddl)
+
+    # ⚠️ Every deck is marked for a full re-sync, and this is the second half of
+    # migration 26 rather than a new idea.
+    #
+    # 26 backfilled `board` from the category *name*, against a list of five
+    # names, because that is all a migration can do without the network. The
+    # list is incomplete by construction: "Backlog" is not on it, and deck 10
+    # keeps 29 cards there — so that deck reads as 132 main cards and the new
+    # check would call a correct deck illegal. Only Archidekt knows which
+    # categories its owner excluded.
+    #
+    # 26 marked the two decks whose *format* changed. This marks the rest,
+    # because the board data is just as stale and the deck check is about to
+    # depend on it. One full deck sync, once — the incremental sync would
+    # otherwise skip every deck nobody edits, forever.
+    cursor = await db.execute(
+        "UPDATE decks SET updated_at = NULL WHERE updated_at IS NOT NULL"
+    )
+    if cursor.rowcount:
+        logger.info(
+            "Migration 27: marked %d deck(s) for a full re-sync, so their board "
+            "assignment comes from Archidekt rather than from a name list",
+            cursor.rowcount,
+        )
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -1057,6 +1126,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     24: _migration_24,
     25: _migration_25,
     26: _migration_26,
+    27: _migration_27,
 }
 
 

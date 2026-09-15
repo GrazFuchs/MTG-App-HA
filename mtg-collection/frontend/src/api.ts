@@ -571,6 +571,44 @@ export interface DeckCombo {
   steps: string;
   is_partial: boolean;
   missing_cards: string[];
+  /**
+   * Missing cards this format has banned or never had. Spellbook does not know
+   * the deck's format, so a combo one banned card short looks exactly like a
+   * real upgrade until someone checks by hand.
+   */
+  missing_not_legal: string[];
+  /** False only when *every* missing card is illegal here. */
+  completable: boolean;
+}
+
+// --- Deck check (Sprint 14) ---
+
+export interface LegalityViolation {
+  kind: 'size' | 'sideboard' | 'copies' | 'legality';
+  detail: string;
+  card?: string;
+  status?: string;
+  board?: string;
+  have?: number;
+  want?: number;
+}
+
+export interface DeckLegality {
+  deck_id: number;
+  deck_name: string;
+  format: string;
+  legality_key: string | null;
+  /** False for a format we do not recognise — then `legal` is false too,
+   *  because "not checked" must not read as "fine". */
+  checked: boolean;
+  main_count: number;
+  side_count: number;
+  maybeboard_count: number;
+  rules: FormatRules;
+  violations: LegalityViolation[];
+  /** Cards with no Scryfall answer for this format: neither passed nor failed. */
+  unknown_legality: number;
+  legal: boolean;
 }
 
 // --- Deck Compare ---
@@ -915,6 +953,8 @@ export const api = {
     request<DeckCompareResponse>(`/api/decks/compare?ids=${ids.join(',')}`),
 
   // Deck completeness
+  getDeckLegality: (deckId: number, recheck = false) =>
+    request<DeckLegality>(`/api/decks/${deckId}/legality${recheck ? '?recheck=true' : ''}`),
   getDeckCompleteness: (deckId: number) =>
     request<DeckCompletenessResponse>(`/api/decks/${deckId}/completeness`),
 

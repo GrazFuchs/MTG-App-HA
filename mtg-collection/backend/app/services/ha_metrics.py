@@ -303,6 +303,30 @@ async def deck_performance_metrics(db: aiosqlite.Connection) -> Metrics:
 ACTIVE_DECK_WINDOW_DAYS = 90
 
 
+def _legality_attrs(raw: str | None) -> dict[str, Any]:
+    """The deck check as three flat attributes HA can template against.
+
+    Flat rather than a nested object: an HA template reads
+    `state_attr(..., 'violations')` in one step, and a nested dict would have to
+    be indexed through a filter that fails silently when the key is missing.
+    """
+    from .legality import stored
+
+    check = stored(raw)
+    if not check or not check.get("checked"):
+        # Never checked, or a format we do not recognise. `None` rather than
+        # `True` — "we did not look" must not read as "fine".
+        return {"legal": None, "violations": 0, "violation_detail": ""}
+    problems = check.get("violations") or []
+    return {
+        "legal": bool(check.get("legal")),
+        "violations": len(problems),
+        # The first two, because a notification has room for a sentence and a
+        # list of twelve is not one.
+        "violation_detail": " · ".join(v.get("detail", "") for v in problems[:2]),
+    }
+
+
 async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     """Per-deck play stats for every deck, with an `is_active` flag.
 
@@ -310,7 +334,7 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     """
     cursor = await db.execute(
         """SELECT d.id, d.name, d.format, d.bracket, d.user_bracket, d.computed_bracket,
-                  d.power_score, d.power_level,
+                  d.power_score, d.power_level, d.legality_json,
                   COUNT(g.id) AS games,
                   SUM(CASE WHEN g.result = 'win' THEN 1 ELSE 0 END) AS wins,
                   SUM(CASE WHEN g.result = 'loss' THEN 1 ELSE 0 END) AS losses,
@@ -354,6 +378,10 @@ async def deck_stats(db: aiosqlite.Connection) -> list[dict[str, Any]]:
             ) if has_bracket else "not_applicable",
             "power_score": r["power_score"] if has_power else None,
             "power_level": r["power_level"] if has_power else None,
+            # The deck check. `legal` is None when nothing was checked — a
+            # template must tell that from False, because "we did not look" and
+            # "we looked and it is wrong" call for different reactions.
+            **_legality_attrs(r["legality_json"] if "legality_json" in r.keys() else None),
             "games": games,
             "wins": wins,
             "losses": int(r["losses"] or 0),

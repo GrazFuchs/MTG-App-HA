@@ -468,7 +468,24 @@ class CardPrinting(BaseModel):
 
 # --- Deck Combo Models ---
 
-class DeckCombo(BaseModel):
+class DeckComboLegality(BaseModel):
+    """Whether a partial combo can be completed in this deck's format.
+
+    Spellbook does not know the format, so a combo one banned card short looks
+    exactly like a real upgrade. In Commander that almost never bites — nearly
+    everything is legal there — which is why it went unnoticed until 60-card
+    formats arrived.
+    """
+
+    #: Missing cards the format has banned or never had. Not "unknown" ones:
+    #: a card we never asked Scryfall about is not evidence of anything.
+    missing_not_legal: list[str] = []
+    #: False only when *every* missing card is illegal — the combo cannot be
+    #: finished here at all.
+    completable: bool = True
+
+
+class DeckCombo(DeckComboLegality):
     id: int
     combo_id: str
     name: str = ""

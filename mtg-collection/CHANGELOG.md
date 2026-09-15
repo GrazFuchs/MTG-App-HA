@@ -1,3 +1,78 @@
+## 0.48.0 — Sprint 14: the deck check, and what it found on the first run
+
+What a 60-card deck gets instead of a bracket and a power score: size, copies,
+and whether every card is legal in the format the deck claims. Facts rather than
+judgements, and the only one of the three that applies to every format —
+Commander included, where "100 singleton cards" is just as checkable.
+
+**The data has been complete for months and nobody read it.** All 8022 cards
+carry Scryfall's `legalities` object, refreshed weekly by the enrichment pass
+since Sprint 02, and not one consumer looked at it. Same shape as the dog
+sensor carrying `next_due_days` unread for two weeks: a fact in the database is
+not monitoring.
+
+### Three things the first run against the live data got wrong
+
+Every one of them would have made the check untrustworthy, which is worse than
+not having it — a checker that cries wolf gets switched off rather than fixed.
+
+**Tokens are not cards.** Archidekt lets a token sit in a decklist as a reminder
+of what the deck makes. Deck 7 therefore read as 104 cards in a 100-card format
+with three "cards" not legal in Commander; all four were token rows. They are
+now excluded everywhere the deck is counted, not only here, so the deck page and
+the check cannot disagree about how big a deck is.
+
+**A format without a sideboard has no sideboard pile.** Commander has none, and
+Archidekt offers the category anyway — deck 20 keeps three cards there as a
+scratch list, deck 21 one. Reporting that as a rules violation is noise about a
+habit. Those cards are now treated exactly like a maybeboard: outside the deck,
+not counted, not checked. Where the format does have a sideboard, the limit
+still applies.
+
+**The board data was still a guess.** Migration 26 backfilled `board` from the
+category *name* against a list of five, because that is all a migration can do
+without the network — and the list is incomplete by construction. "Backlog" is
+not on it, and deck 10 keeps 29 cards there, so it read as 132 main cards.
+Migration 27 marks every deck for a full re-sync, which is the only way to get
+Archidekt's own answer.
+
+### Two traps that were designed around rather than discovered
+
+**20x Rat Colony is legal.** Deck 3 holds twenty of them in a singleton format,
+because the card says "A deck can have any number of cards named Rat Colony" in
+its own rules text. The exemption is read from the oracle text rather than from
+a list of names — a list is the part that goes stale.
+
+**The dedup key is what was wrong, not when we looked.** The notifier compares a
+signature of the violations. The obvious version — compare "last notified"
+against "last checked" — reads plausibly and is wrong: the check runs every
+night, so the check stamp is newer every night, and the same banned card would be
+announced forever. Caught by a test rather than in production, which is the only
+reason it is written here as a lesson instead of an incident.
+
+### What it reports
+
+`GET /decks/{id}/legality`, a section on the deck page, the MCP tool
+`check_deck_legality`, and three attributes on the HA deck sensor. `legal` is
+**null** when nothing was checked — a format we do not recognise is not a clean
+bill of health, and a template must be able to tell that from false.
+
+Partial combos now carry `missing_not_legal` and `completable`: Spellbook does
+not know the deck's format, so a combo one banned card short looked exactly like
+a real upgrade. Annotated rather than hidden — "this needs a card your format
+banned" is information.
+
+A deck that becomes illegal without anyone touching it — a rotation, a ban —
+raises a `stoerung_mtg_deck_illegal_<id>` notification. It is the one change in
+this app that happens on its own, and therefore the only one nobody would notice.
+
+### Measured on the live database (24 decks, 0.03 s)
+
+Six decks report violations, and all six are real: two decks hold 99 cards
+rather than 100, one is an unfinished work in progress at 89, one is an 8-card
+fragment, and two still carry pre-re-sync board data. Both Premodern decks come
+out clean at 60 + 15.
+
 ## 0.47.1 — the gate was in one of three places, and the live system said so
 
 0.47.0 suppressed the bracket and the power score for formats that have neither.

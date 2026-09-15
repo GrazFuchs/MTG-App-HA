@@ -211,3 +211,86 @@ async def send_price_spike_notifications(alerts: list[dict[str, Any]]) -> int:
 
     return sent
 
+
+
+async def notify_newly_illegal_decks() -> int:
+    """Tell Home Assistant when a deck stopped being legal.
+
+    **The one thing in this app that changes without anyone touching it.** A
+    rotation or a ban moves underneath a deck nobody has opened in months, and
+    the only way to find out otherwise is to look — which is exactly what does
+    not happen. Every other notification here reports something the owner did.
+
+    Three deliberate narrowings, because a notification that fires wrongly is
+    worse than none:
+
+    * **Only decks that bind copies.** A deck in "Disassembled" going illegal is
+      not news; the cards are in other decks. (Sprint 13 introduces the flag;
+      until then every deck binds, which is the safe direction.)
+    * **Only a change.** The dedup key is a signature of the violations
+      themselves. ⚠️ The obvious version — compare `legality_notified_at`
+      against `legality_checked_at` — reads plausibly and is wrong: the check
+      runs every night, so the "last checked" stamp is newer than the "last
+      announced" stamp every night, and the same banned card gets announced
+      forever. Caught by a test rather than in production, which is the only
+      reason it is written here as a lesson instead of an incident.
+    * **Never for an unchecked deck.** `checked: false` is "we did not look",
+      and announcing that as a problem is how a checker loses its credibility.
+
+    The card follows the house `stoerung_*` convention and stays until someone
+    clears it: an illegal deck needs a decision, and a notification that tidies
+    itself away is one nobody sees.
+    """
+    import json as _json
+
+    from ..database import get_db
+
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT id, name, format, legality_json, legality_notified_key
+           FROM decks
+           WHERE legality_json IS NOT NULL
+           ORDER BY id"""
+    )
+    rows = await cursor.fetchall()
+
+    sent = 0
+    for row in rows:
+        try:
+            check = _json.loads(row["legality_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not check.get("checked") or check.get("legal"):
+            continue
+        problems = check.get("violations") or []
+        # The signature is what was wrong, not when we looked. Sorted, so the
+        # order Spellbook or SQLite happens to return things in cannot make an
+        # unchanged deck look like news.
+        signature = _json.dumps(
+            sorted(v.get("detail", "") for v in problems), ensure_ascii=False
+        )
+        if row["legality_notified_key"] == signature:
+            continue
+        headline = "; ".join(v.get("detail", "") for v in problems[:3])
+        if len(problems) > 3:
+            headline += f"; and {len(problems) - 3} more"
+
+        await send_persistent_notification(
+            title=f"MTG: {row['name']} is not legal in {check.get('format')}",
+            message=headline or "The deck no longer matches its format's rules.",
+            deep_link=f"/decks/{row['id']}",
+            # House convention: `stoerung_<thing>` makes the notification list a
+            # fault board, and a fixed id replaces rather than stacks.
+            notification_id=f"stoerung_mtg_deck_illegal_{row['id']}",
+        )
+        await db.execute(
+            """UPDATE decks SET legality_notified_at = CURRENT_TIMESTAMP,
+               legality_notified_key = ? WHERE id = ?""",
+            (signature, row["id"]),
+        )
+        sent += 1
+
+    if sent:
+        await db.commit()
+        logger.info("Announced %d newly illegal deck(s)", sent)
+    return sent

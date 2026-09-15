@@ -78,6 +78,21 @@ async def recompute_all_power_levels():
     return await compute_power_for_all_decks()
 
 
+@router.post("/legality/recheck-all")
+async def recheck_all_legality():
+    """Re-check every deck against its format's rules. Local SQL, no network.
+
+    Declared before the `/{deck_id}` routes, like the other sweep endpoints, so
+    "legality" can never be read as a deck id.
+    """
+    from ..services import legality
+
+    result = await legality.check_all_decks()
+    # The per-deck results are large and a caller asking for a sweep wants the
+    # summary; `GET /{id}/legality` has the detail.
+    return {k: v for k, v in result.items() if k != "results"}
+
+
 @router.get("/compare", response_model=DeckCompareResponse)
 async def compare_decks(ids: str = Query(..., description="Comma-separated deck IDs (max 4)")):
     """Compare 2-4 decks: common cards, unique cards, color identity overlap."""
@@ -179,11 +194,13 @@ async def get_deck(deck_id: int):
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
 
+    from ..services.queries import token_exclusion_sql
     cursor = await db.execute(
-        """SELECT c.*, dc.quantity, dc.category, dc.board, dc.is_commander,
+        f"""SELECT c.*, dc.quantity, dc.category, dc.board, dc.is_commander,
         dc.is_companion, dc.modifier
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id=? ORDER BY dc.category, c.name""",
+        WHERE dc.deck_id=? AND {token_exclusion_sql("c")}
+        ORDER BY dc.category, c.name""",
         (deck_id,),
     )
     card_rows = await cursor.fetchall()
@@ -293,10 +310,16 @@ async def update_deck_user_fields(deck_id: int, body: DeckUserFieldsUpdate):
 
 @router.get("/{deck_id}/combos", response_model=list[DeckCombo])
 async def get_deck_combos(deck_id: int, include_partial: bool = True):
-    """Get cached combos for a deck."""
+    """Get cached combos for a deck.
+
+    Partial combos carry `missing_not_legal` and `completable`: Spellbook does
+    not know the deck's format, so a combo one banned card short looks exactly
+    like a real upgrade until someone checks by hand.
+    """
     db = await get_db()
-    cursor = await db.execute("SELECT id FROM decks WHERE id=?", (deck_id,))
-    if not await cursor.fetchone():
+    cursor = await db.execute("SELECT id, format FROM decks WHERE id=?", (deck_id,))
+    deck_row = await cursor.fetchone()
+    if not deck_row:
         raise HTTPException(status_code=404, detail="Deck not found")
 
     where = "WHERE deck_id = ?" if include_partial else "WHERE deck_id = ? AND is_partial = 0"
@@ -305,21 +328,24 @@ async def get_deck_combos(deck_id: int, include_partial: bool = True):
         (deck_id,),
     )
     rows = await cursor.fetchall()
-    return [
-        DeckCombo(
-            id=r["id"],
-            combo_id=r["combo_id"],
-            name=r["name"] or "",
-            color_identity=r["color_identity"] or "",
-            cards=json.loads(r["cards_json"] or "[]"),
-            result=json.loads(r["result_json"] or "[]"),
-            prerequisites=r["prerequisites"] or "",
-            steps=r["steps"] or "",
-            is_partial=bool(r["is_partial"]),
-            missing_cards=json.loads(r["missing_cards_json"] or "[]"),
-        )
+    combos = [
+        {
+            "id": r["id"],
+            "combo_id": r["combo_id"],
+            "name": r["name"] or "",
+            "color_identity": r["color_identity"] or "",
+            "cards": json.loads(r["cards_json"] or "[]"),
+            "result": json.loads(r["result_json"] or "[]"),
+            "prerequisites": r["prerequisites"] or "",
+            "steps": r["steps"] or "",
+            "is_partial": bool(r["is_partial"]),
+            "missing_cards": json.loads(r["missing_cards_json"] or "[]"),
+        }
         for r in rows
     ]
+
+    from ..services.legality import annotate_combos
+    return [DeckCombo(**c) for c in await annotate_combos(deck_row["format"], combos)]
 
 
 @router.post("/{deck_id}/combos/sync")
@@ -380,6 +406,31 @@ async def deck_power_reference_url(deck_id: int):
 
     from ..services.power_level import reference_url
     return {"url": await reference_url(deck_id)}
+
+
+@router.get("/{deck_id}/legality")
+async def deck_legality(deck_id: int, recheck: bool = Query(False)):
+    """Is this deck legal in its own format — size, copies, banned cards.
+
+    Served from the stored answer by default. `recheck=true` recomputes it,
+    which is local SQL and cheap; the stored one exists because the answer can
+    change without the deck changing, not because computing it is expensive.
+    """
+    from ..services import legality
+
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT legality_json FROM decks WHERE id = ?", (deck_id,)
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    if not recheck:
+        cached = legality.stored(_col(row, "legality_json"))
+        if cached:
+            return cached
+    return await legality.check_and_store(deck_id)
 
 
 @router.get("/{deck_id}/completeness", response_model=DeckCompletenessResponse)

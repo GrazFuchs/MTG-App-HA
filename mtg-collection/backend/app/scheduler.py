@@ -77,6 +77,16 @@ async def _sync_job():
     except Exception as e:
         logger.error("Price spike notifications failed: %s", e)
 
+    # Decks that stopped being legal. After the sync, which is what refreshed
+    # the legalities. This is the one change in the whole app that happens
+    # without anyone touching anything — and therefore the only one nobody
+    # would ever notice on their own.
+    try:
+        from .services.notifications import notify_newly_illegal_decks
+        await notify_newly_illegal_decks()
+    except Exception as e:
+        logger.error("Illegal-deck notification failed: %s", e)
+
     # Publish stats to MQTT after all syncs
     try:
         from .services.ha_publisher import (

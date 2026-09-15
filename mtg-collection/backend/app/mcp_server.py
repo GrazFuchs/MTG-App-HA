@@ -1462,6 +1462,37 @@ async def explain_bracket(deck_id: int) -> str:
 
 
 @mcp.tool()
+async def check_deck_legality(deck_id: int) -> str:
+    """Is this deck legal in its own format — size, copies, banned cards.
+
+    Works for **every** format, unlike the bracket and the power score. For a
+    60-card deck this is the substantive check: 60+ main, at most 15 sideboard,
+    at most 4 copies of anything but basic lands, and no card the format has
+    banned or never had.
+
+    Read three fields together:
+
+    - `violations` — each one names the rule and the card. Empty means nothing
+      was found, *not* that nothing was checked.
+    - `checked` — false for a format we do not recognise. `legal` is then false
+      as well, because "not checked" must not read as "fine".
+    - `unknown_legality` — cards with no Scryfall answer for this format. They
+      are neither passed nor failed; say so rather than rounding it off.
+
+    Note that a card being *restricted* (Vintage) is not reported as a
+    violation on its own — it tightens the copy limit to one.
+
+    Args:
+        deck_id: internal deck id (from list_decks)
+    """
+    from .services.legality import check_deck
+    try:
+        return json.dumps(await check_deck(deck_id), indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
 async def suggest_bracket_safe_upgrades(
     deck_id: int,
     budget_eur: float | None = None,
@@ -1763,8 +1794,13 @@ def analyze_deck(deck_name: str) -> str:
         "plan, and how it beats the decks it expects to meet.\n"
         "   - `commander` false: skip `get_edhrec_recommendations` too, it "
         "needs a commander.\n"
-        "3. `get_deck_combos` for what the deck can already do — this works for "
-        "every format.\n\n"
+        "3. `check_deck_legality` — works for every format, and for a 60-card "
+        "deck it is the substantive check the bracket is not. Report what it "
+        "finds; `checked: false` means nothing was verified, which is not the "
+        "same as legal.\n"
+        "4. `get_deck_combos` for what the deck can already do — also every "
+        "format. A partial combo with `completable: false` cannot be finished "
+        "here, so do not suggest it as an upgrade.\n\n"
         "Then write, in this order:\n"
         "- `set_deck_gameplan` — one or two sentences on how the deck wins. "
         "Skip if a gameplan is already set and still accurate.\n"

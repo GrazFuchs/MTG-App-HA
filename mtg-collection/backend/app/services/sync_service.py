@@ -659,6 +659,22 @@ async def _do_full_sync(is_resync: bool = False) -> dict:
         except Exception as e:
             logger.warning("Bracket/power recompute after sync failed: %s", e)
 
+        # The deck check reads the same two things the enrichment just
+        # refreshed: the lists (which may have changed) and the legalities
+        # (which may have changed *without* the lists changing). Own try, so a
+        # failure here does not cost the sync that already succeeded.
+        try:
+            from .legality import check_all_decks
+
+            check = await check_all_decks()
+            if check["illegal"]:
+                logger.info(
+                    "Legality after sync: %d of %d checked decks have violations",
+                    check["illegal"], check["checked"],
+                )
+        except Exception as e:
+            logger.warning("Legality check after sync failed: %s", e)
+
         status = "completed" if not errors else "partial"
         await db.execute(
             """UPDATE sync_log SET status=?, finished_at=CURRENT_TIMESTAMP,

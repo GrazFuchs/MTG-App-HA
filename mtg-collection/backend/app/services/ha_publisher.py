@@ -493,6 +493,11 @@ async def publish_deck_sensors() -> None:
                         "bracket_source": deck["bracket_source"],
                         "power_score": deck["power_score"],
                         "power_level": deck["power_level"],
+                        # `legal` is null when nothing was checked, which a
+                        # template must tell from false.
+                        "legal": deck["legal"],
+                        "violations": deck["violations"],
+                        "violation_detail": deck["violation_detail"],
                     }),
                     retain=True,
                 )

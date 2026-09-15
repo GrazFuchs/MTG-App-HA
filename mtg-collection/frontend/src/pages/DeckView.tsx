@@ -12,6 +12,7 @@ import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 import { DeckCombosSection } from '../components/deck/DeckCombosSection';
 import { DeckPowerSection } from '../components/deck/DeckPowerSection';
 import { DeckCompletenessSection } from '../components/deck/DeckCompletenessSection';
+import { DeckLegalitySection } from '../components/deck/DeckLegalitySection';
 import { DeckPerformanceSection } from '../components/deck/DeckPerformanceSection';
 import { sothera } from '../theme/sothera';
 import { useAccent } from '../main';
@@ -337,6 +338,10 @@ export default function DeckView() {
 
       {/* Combos & Completeness */}
       {deck.format_rules?.power_applies && <DeckPowerSection deck={deck} onUpdate={setDeck} />}
+
+      {/* Below the bracket, not instead of it: one asks what the deck can do,
+          the other whether it is a deck at all. Shown for every format. */}
+      <DeckLegalitySection deckId={deck.id} />
 
       <DeckCombosSection deckId={deck.id} />
       <DeckCompletenessSection deckId={deck.id} />

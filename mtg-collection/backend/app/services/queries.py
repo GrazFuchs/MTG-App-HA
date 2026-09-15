@@ -31,6 +31,41 @@ def basic_land_exclusion_sql(alias: str = "c") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tokens
+#
+# Archidekt lets a token sit in a decklist as a reminder of what the deck makes
+# — "Frog Lizard", "Copy", "Myr". They are not cards: they cannot be played
+# from a deck, they have no format legality, and they must not be counted
+# towards its size.
+#
+# Nothing looked at this until the deck check arrived, and then it looked
+# wrong in two ways at once: deck 7 read as 104 cards in a 100-card format, and
+# three of its "cards" were reported as not legal in Commander. Both are the
+# same four token rows.
+#
+# `layout` is Scryfall's answer and is exact. The type-line test is the fallback
+# for a row that was never enriched — Archidekt's own type line starts with
+# "Token" too.
+# ---------------------------------------------------------------------------
+
+def token_exclusion_sql(alias: str = "c") -> str:
+    """Return a SQL boolean excluding token rows."""
+    layout = f"COALESCE({alias}.layout, '')" if alias else "COALESCE(layout, '')"
+    type_line = f"COALESCE({alias}.type_line, '')" if alias else "COALESCE(type_line, '')"
+    return (
+        f"({layout} NOT IN ('token', 'double_faced_token', 'emblem')"
+        f" AND {type_line} NOT LIKE 'Token%')"
+    )
+
+
+def is_token(layout: str | None, type_line: str | None) -> bool:
+    """The Python side of `token_exclusion_sql`, for rows already in hand."""
+    if (layout or "") in ("token", "double_faced_token", "emblem"):
+        return True
+    return (type_line or "").startswith("Token")
+
+
+# ---------------------------------------------------------------------------
 # Colour-identity storage and filtering
 #
 # The canonical storage form is a JSON array of WUBRG letters: ["W","U"].
@@ -572,16 +607,19 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     other two piles are reported beside it rather than folded in: "60 + 15" and
     "75" are different statements about the same deck.
     """
+    no_token = token_exclusion_sql("c")
     cursor = await db.execute(
         """SELECT d.id, d.archidekt_id, d.name, d.format, d.commander_name,
         d.featured_image, d.last_synced,
-        COALESCE(SUM(CASE WHEN dc.board = 'main' THEN dc.quantity END), 0) as card_count,
-        COALESCE(SUM(CASE WHEN dc.board = 'side' THEN dc.quantity END), 0) as sideboard_count,
-        COALESCE(SUM(CASE WHEN dc.board = 'maybe' THEN dc.quantity END), 0) as maybeboard_count,
+        COALESCE(SUM(CASE WHEN dc.board = 'main' AND {no_token} THEN dc.quantity END), 0) as card_count,
+        COALESCE(SUM(CASE WHEN dc.board = 'side' AND {no_token} THEN dc.quantity END), 0) as sideboard_count,
+        COALESCE(SUM(CASE WHEN dc.board = 'maybe' AND {no_token} THEN dc.quantity END), 0) as maybeboard_count,
         d.folder_name, d.bracket, d.user_bracket, d.computed_bracket,
         d.power_score, d.power_level
-        FROM decks d LEFT JOIN deck_cards dc ON dc.deck_id = d.id
-        GROUP BY d.id ORDER BY d.name"""
+        FROM decks d
+        LEFT JOIN deck_cards dc ON dc.deck_id = d.id
+        LEFT JOIN cards c ON c.id = dc.card_id
+        GROUP BY d.id ORDER BY d.name""".replace("{no_token}", no_token)
     )
     rows = await cursor.fetchall()
     from . import formats
@@ -613,11 +651,14 @@ async def query_deck_detail(db: aiosqlite.Connection, deck_id: int) -> dict[str,
     if not deck:
         return None
 
+    # Tokens are excluded here as everywhere else: Archidekt keeps them in a
+    # decklist as a reminder of what the deck makes, and they are not cards.
     cursor = await db.execute(
-        """SELECT c.name, c.mana_cost, c.type_line, c.cmc,
+        f"""SELECT c.name, c.mana_cost, c.type_line, c.cmc,
         dc.quantity, dc.category, dc.board, dc.is_commander, c.price_eur, c.price_usd
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id=? ORDER BY dc.board, dc.category, c.name""",
+        WHERE dc.deck_id=? AND {token_exclusion_sql("c")}
+        ORDER BY dc.board, dc.category, c.name""",
         (deck_id,),
     )
     cards = [{
