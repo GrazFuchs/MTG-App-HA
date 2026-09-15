@@ -140,9 +140,8 @@ async def _get_suggestion_impl(db, event_row) -> tuple[TriageSuggestion, list[Ex
 
     # 5. Deck usage check
     cursor = await db.execute(
-        """SELECT COALESCE(SUM(dc.quantity), 0) FROM deck_cards dc
-        JOIN cards c ON c.id = dc.card_id
-        WHERE LOWER(c.name) = LOWER(?)""",
+        """SELECT COALESCE(SUM(dc.quantity), 0) FROM deck_demand dc
+        WHERE LOWER(dc.card_name) = LOWER(?)""",
         (card_name,),
     )
     in_decks = (await cursor.fetchone())[0]

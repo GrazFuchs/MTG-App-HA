@@ -425,7 +425,10 @@ export default function Duplicates() {
         <SortHeader col="name" label={t('col.card')} />
         <SortHeader col="set" label={t('col.set')} />
         <div>{t('col.owned')}</div>
-        <div>{t('col.decks')}</div>
+        {/* Since 0.49.0 this counts the main and sideboard of *binding*
+            decks only — no maybeboard, no tokens, and nothing from a
+            disassembled deck. The number moved, so the column says why. */}
+        <div title={t('duplicates.decks_tooltip')}>{t('col.decks')}</div>
         <SortHeader col="extras" label={t('col.extra')} />
         <SortHeader col="extras_value" label={t('col.eur')} align="right" />
         <div style={{ textAlign: 'right' }}>{t('col.value')}</div>

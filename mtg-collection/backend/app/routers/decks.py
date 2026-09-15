@@ -10,7 +10,7 @@ from ..models.schemas import (
     DeckGame, DeckGameCreate, DeckGameUpdate, DeckPerformanceStats,
 )
 from ..services import formats
-from ..services.queries import parse_color_identity, query_all_decks
+from ..services.queries import binds_effective, parse_color_identity, query_all_decks
 from ..services.deck_performance import compute_performance_stats
 from ..services.bracket import effective_bracket
 
@@ -273,6 +273,14 @@ async def get_deck(deck_id: int):
             if formats.bracket_applies(deck["format"]) else ""
         ),
         gameplan=deck["gameplan"] or "",
+        # Derived and decided, side by side. `binds_effective` is the one
+        # rule; nobody outside it needs to know which folder means what.
+        binds_copies=binds_effective(deck),
+        binds_copies_override=(
+            None if _col(deck, "binds_copies_override") is None
+            else bool(_col(deck, "binds_copies_override"))
+        ),
+        folder_name=deck["folder_name"] or "",
         ai_assessment=deck["ai_assessment"] or "",
         ai_assessment_updated_at=deck["ai_assessment_updated_at"],
         view_count=deck["view_count"], created_at=deck["created_at"],
@@ -299,6 +307,15 @@ async def update_deck_user_fields(deck_id: int, body: DeckUserFieldsUpdate):
     if body.gameplan is not None:
         fields.append("gameplan = ?")
         params.append(body.gameplan)
+    # Only ever the override column. The derived `binds_copies` belongs to the
+    # sync, and a hand-made decision that the next sync silently undoes is
+    # worse than no decision at all.
+    if "binds_copies_override" in body.model_fields_set:
+        if body.binds_copies_override is None:
+            fields.append("binds_copies_override = NULL")
+        else:
+            fields.append("binds_copies_override = ?")
+            params.append(1 if body.binds_copies_override else 0)
 
     if fields:
         params.append(deck_id)
@@ -441,19 +458,28 @@ async def get_deck_completeness(deck_id: int):
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="Deck not found")
 
-    # Get unique cards in deck with quantities. Basic lands are excluded:
-    # they are effectively unlimited and never an acquisition — counting them
-    # skewed the percentage and put "Forest ×3" into most_expensive_missing.
-    from ..services.queries import basic_land_exclusion_sql
+    # Cards in this deck, what we own of each, and how many copies *other*
+    # binding decks are already using. Basic lands are excluded: they are
+    # effectively unlimited and never an acquisition — counting them skewed the
+    # percentage and put "Forest ×3" into most_expensive_missing.
+    #
+    # `bound_elsewhere` is the number this endpoint was missing. Owning four
+    # copies means nothing if all four are in another deck, and with playsets
+    # that is the normal case rather than an edge one. Counted over
+    # `deck_demand`, so a disassembled deck does not "hold" anything.
+    from ..services.queries import basic_land_exclusion_sql, token_exclusion_sql
     cursor = await db.execute(
         f"""SELECT c.name, dc.quantity, c.price_eur,
            COALESCE((SELECT SUM(col.quantity + col.foil_quantity)
-                     FROM collection col WHERE col.card_id = c.id), 0) as owned
+                     FROM collection col WHERE col.card_id = c.id), 0) as owned,
+           COALESCE((SELECT SUM(dd.quantity) FROM deck_demand dd
+                     WHERE dd.card_name = c.name AND dd.deck_id != ?), 0) as bound_elsewhere
         FROM deck_cards dc
         JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id = ? AND {basic_land_exclusion_sql('c')}
+        WHERE dc.deck_id = ? AND COALESCE(dc.board, 'main') IN ('main', 'side')
+          AND {basic_land_exclusion_sql('c')} AND {token_exclusion_sql('c')}
         ORDER BY c.name""",
-        (deck_id,),
+        (deck_id, deck_id),
     )
     rows = await cursor.fetchall()
 
@@ -461,12 +487,25 @@ async def get_deck_completeness(deck_id: int):
     owned_unique = 0
     missing_cards: list[MissingCard] = []
     total_cost = 0.0
+    blocked_unique = 0
 
     for r in rows:
         owned = r["owned"]
         needed = r["quantity"]
+        bound = r["bound_elsewhere"]
+
+        # Two different questions, and conflating them is how a shopping list
+        # sends you out for cards that are in the next deck box over:
+        #
+        #   "do I own enough"      -> missing_cards, the purchase list
+        #   "is enough of it free" -> blocked, a card to move rather than buy
+        #
+        # Owning four copies means nothing for building *this* deck if all four
+        # are in another one — and with playsets that is the normal case.
         if owned >= needed:
             owned_unique += 1
+            if owned - bound < needed:
+                blocked_unique += 1
         else:
             price = float(r["price_eur"]) if r["price_eur"] else 0.0
             missing_qty = needed - owned
@@ -476,6 +515,8 @@ async def get_deck_completeness(deck_id: int):
                 name=r["name"],
                 quantity_needed=missing_qty,
                 current_market_price_eur=price,
+                bound_elsewhere=bound,
+                owned=owned,
             ))
 
     completeness_pct = (owned_unique / total_unique * 100) if total_unique > 0 else 100.0
@@ -489,6 +530,7 @@ async def get_deck_completeness(deck_id: int):
         missing_cards=missing_cards,
         total_acquisition_cost_eur=round(total_cost, 2),
         most_expensive_missing=most_expensive,
+        blocked_by_other_decks=blocked_unique,
     )
 
 

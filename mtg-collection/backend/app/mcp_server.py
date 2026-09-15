@@ -441,9 +441,9 @@ async def get_duplicates(search: str = "", color: str = "", page: int = 1, page_
 
     cte = f"""
         WITH deck_usage AS (
-            SELECT c2.name, SUM(dc.quantity) as in_decks
-            FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
-            GROUP BY c2.name
+            SELECT dc.card_name AS name, SUM(dc.quantity) as in_decks
+            FROM deck_demand dc
+            GROUP BY dc.card_name
         ),
         global_owned AS (
             SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
@@ -1553,7 +1553,7 @@ async def suggest_bracket_safe_upgrades(
                        SUM(col.quantity + col.foil_quantity) AS total_copies,
                        (SELECT SUM(quantity + foil_quantity) FROM collection
                          WHERE card_id = col.card_id) AS total_global,
-                       COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc
+                       COALESCE((SELECT SUM(dc.quantity) FROM deck_demand dc
                                   WHERE dc.card_id = col.card_id), 0) AS in_decks
                 FROM collection col JOIN cards c ON c.id = col.card_id
                 GROUP BY col.card_id, col.is_foil

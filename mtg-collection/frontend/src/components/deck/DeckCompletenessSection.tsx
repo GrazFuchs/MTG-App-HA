@@ -104,6 +104,16 @@ export function DeckCompletenessSection({ deckId }: Props) {
           />
         </div>
 
+        {/* A card you own four of is not "missing" because all four sit in
+            another deck — but it is not available either. Kept as its own
+            line rather than folded into the percentage: one is a shopping
+            list, the other is a box to open. */}
+        {data.blocked_by_other_decks > 0 && (
+          <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, marginBottom: 10 }}>
+            {t('completeness.blocked', { count: data.blocked_by_other_decks })}
+          </div>
+        )}
+
         {data.missing_cards.length > 0 && (
           <>
             <div style={{ fontFamily: sothera.fontMono, fontSize: 11, color: sothera.fgMuted, marginBottom: 10 }}>
@@ -121,7 +131,16 @@ export function DeckCompletenessSection({ deckId }: Props) {
               <div style={{ marginTop: 8 }}>
                 {data.most_expensive_missing.map((card) => (
                   <div key={card.name} className={styles.missingRow}>
-                    <span style={{ color: sothera.fg }}>{card.name}</span>
+                    <span style={{ color: sothera.fg }}>
+                      {card.name}
+                      {/* Say where the copies went. Without it the list reads
+                          "buy this" for a card that is one deck box away. */}
+                      {card.bound_elsewhere > 0 && (
+                        <span style={{ color: sothera.fgMuted, fontSize: 11, marginLeft: 6 }}>
+                          {t('completeness.bound_elsewhere', { count: card.bound_elsewhere })}
+                        </span>
+                      )}
+                    </span>
                     <span style={{ color: accent.oklch }}>
                       {card.current_market_price_eur > 0 ? `€${card.current_market_price_eur.toFixed(2)}` : '—'}
                     </span>

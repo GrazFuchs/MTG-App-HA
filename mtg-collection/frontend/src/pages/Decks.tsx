@@ -286,6 +286,19 @@ export default function Decks() {
                   <div className={styles.cardName}>{d.name}</div>
                   <div className={styles.cardMeta}>
                     <span className={styles.formatBadge}>{d.format || 'Unknown'}</span>
+                    {/* A deck whose cards are back in the box looks exactly
+                        like an active one in this list — and its cards show up
+                        as surplus everywhere else, which is confusing until
+                        the tile says why. */}
+                    {!d.binds_copies && (
+                      <span
+                        className={styles.formatBadge}
+                        style={{ opacity: 0.7 }}
+                        title={t('binds.tile_title')}
+                      >
+                        {t('binds.not_binding')}
+                      </span>
+                    )}
                   </div>
                   <div className={styles.cardFooter}>
                     {/* "60 + 15" says more about a constructed deck than "75"

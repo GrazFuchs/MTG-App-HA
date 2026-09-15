@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     archidekt_password: str = ""
     archidekt_user_id: int = 0
     archidekt_deck_ids: list[int] = []
+    #: Archidekt folders whose decks do not tie up the cards they list — a
+    #: disassembled deck's cards are on the shelf, and an older version of a
+    #: deck holds the same cards as the one that replaced it. Counting both is
+    #: what made 268 cards read as "needed more often than owned".
+    #: A deck can be told otherwise individually; see `decks.binds_copies`.
+    non_binding_folders: list[str] = ["Disassembled", "Older Versions"]
     sync_enabled: bool = True
     sync_hour: int = 3
     mtgstocks_enabled: bool = False

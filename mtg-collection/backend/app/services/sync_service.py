@@ -4,6 +4,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import aiosqlite
+
 from ..database import get_db
 from ..config import get_settings
 from ..clients.archidekt import archidekt, parse_archidekt_deck, parse_archidekt_card
@@ -17,6 +19,26 @@ _sync_lock = asyncio.Lock()
 def is_sync_running() -> bool:
     """Check if a sync is currently in progress."""
     return _sync_lock.locked()
+
+
+async def apply_binding_from_folder(
+    db: aiosqlite.Connection, deck_id: int, folder_name: str | None
+) -> None:
+    """Derive "does this deck tie up its cards" from the Archidekt folder.
+
+    A deck in "Disassembled" has its cards back on the shelf, and moving a deck
+    between folders on Archidekt is how someone says so.
+
+    Writes the *derived* column only. `binds_copies_override` is a decision
+    somebody made on the deck page, and a sync must never undo a decision — the
+    same arrangement `user_bracket` has over the computed bracket. Split out of
+    the sync so the rule can be called, and tested, without running one.
+    """
+    settings = get_settings()
+    await db.execute(
+        "UPDATE decks SET binds_copies = ? WHERE id = ?",
+        (0 if (folder_name or "") in settings.non_binding_folders else 1, deck_id),
+    )
 
 
 async def upsert_card(db, card_data: dict) -> int:
@@ -185,6 +207,8 @@ async def sync_deck(deck_id: int, folder_cache: dict[int, str] | None = None) ->
     )
     deck_row = await cursor.fetchone()
     local_deck_id = deck_row[0]
+
+    await apply_binding_from_folder(db, local_deck_id, folder_name)
 
     # Clear old deck cards
     await db.execute("DELETE FROM deck_cards WHERE deck_id=?", (local_deck_id,))

@@ -7,6 +7,7 @@ import { api, DeckDetail, DeckCardEntry } from '../api';
 import { ManaCost, ManaSymbol } from '../components/ManaSymbol';
 import { CardHoverPreview } from '../components/CardHoverPreview';
 import { UserBracketBadge } from '../components/deck/UserBracketBadge';
+import { BindsCopiesBadge } from '../components/deck/BindsCopiesBadge';
 import { GameplanBox } from '../components/deck/GameplanBox';
 import { AIAssessmentBox } from '../components/deck/AIAssessmentBox';
 import { DeckCombosSection } from '../components/deck/DeckCombosSection';
@@ -324,6 +325,14 @@ export default function DeckView() {
           </div>
         </Panel>
       )}
+
+      {/* Whether the deck binds its copies is a question about every format —
+          a Premodern deck gets disassembled the same way a Commander deck
+          does. So it sits outside the bracket gate, and it renders nothing at
+          all for the normal case (a binding deck in a normal folder). */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <BindsCopiesBadge deck={deck} onUpdate={setDeck} />
+      </div>
 
       {/* Bracket & Gameplan. The bracket and the power score describe
           Commander; for any other format the sections are absent rather than

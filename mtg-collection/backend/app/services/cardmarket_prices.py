@@ -284,10 +284,10 @@ async def get_price_alerts() -> list[dict[str, Any]]:
             ), 0) AS total_owned,
             COALESCE((
                 SELECT SUM(dc.quantity)
-                FROM deck_cards dc JOIN cards dcc ON dcc.id = dc.card_id
+                FROM deck_demand dc
                 WHERE CASE
-                    WHEN COALESCE(c.oracle_id, '') != '' THEN dcc.oracle_id = c.oracle_id
-                    ELSE LOWER(dcc.name) = LOWER(c.name)
+                    WHEN COALESCE(c.oracle_id, '') != '' THEN dc.oracle_id = c.oracle_id
+                    ELSE LOWER(dc.card_name) = LOWER(c.name)
                 END
             ), 0) AS in_decks
         FROM cardmarket_products cp

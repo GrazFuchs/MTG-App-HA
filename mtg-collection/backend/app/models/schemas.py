@@ -102,6 +102,14 @@ class DeckSummary(BaseModel):
     #: what the deck can do (services/power_level.py). `None` outside Commander.
     power_score: float | None = None
     power_level: float | None = None
+    #: Whether this deck's cards count as spoken for. A disassembled deck
+    #: still has a decklist, but its cards are in the box — counting them as
+    #: demand is what made 432 owned cards read as unavailable.
+    binds_copies: bool = True
+    #: The hand-set decision, `None` while the folder still decides. Same two
+    #: columns as the bracket, for the same reason: a sync must never undo a
+    #: choice someone made by hand.
+    binds_copies_override: bool | None = None
     last_synced: datetime | None = None
 
 
@@ -148,6 +156,13 @@ class DeckDetail(BaseModel):
     power_level: float | None = None
     power_detail: dict | None = None
     gameplan: str = ""
+    #: Whether this deck's cards count as demand everywhere else in the app.
+    #: The effective answer; `binds_copies_override` says who decided it.
+    binds_copies: bool = True
+    binds_copies_override: bool | None = None
+    #: The folder the derived value came from, so the toggle can say *why* a
+    #: deck does not bind without the frontend knowing the folder list.
+    folder_name: str = ""
     ai_assessment: str = ""
     ai_assessment_updated_at: datetime | None = None
     view_count: int = 0
@@ -160,6 +175,9 @@ class DeckDetail(BaseModel):
 class DeckUserFieldsUpdate(BaseModel):
     user_bracket: int | None = Field(None, ge=1, le=5)
     gameplan: str | None = Field(None, max_length=500)
+    #: Three states, like `user_bracket`: absent leaves it alone, a bool sets
+    #: the override, an explicit `null` hands the deck back to its folder.
+    binds_copies_override: bool | None = None
 
 
 # --- Deck Performance Tracker ---
@@ -529,6 +547,13 @@ class MissingCard(BaseModel):
     name: str
     quantity_needed: int = 1
     current_market_price_eur: float = 0
+    #: Copies of this card that other binding decks are already using. The
+    #: reason a card can be "missing" while sitting in a box: you own four, and
+    #: four are in another deck. Reported rather than folded into the count,
+    #: because "buy one" and "take it out of the other deck" are different
+    #: decisions and only the owner can make them.
+    bound_elsewhere: int = 0
+    owned: int = 0
 
 
 class DeckCompletenessResponse(BaseModel):
@@ -539,6 +564,12 @@ class DeckCompletenessResponse(BaseModel):
     missing_cards: list[MissingCard]
     total_acquisition_cost_eur: float
     most_expensive_missing: list[MissingCard]
+    #: Cards you own enough of, but not enough *free* copies of, because
+    #: another binding deck is using them. Not missing — a card to move rather
+    #: than to buy. Kept apart from `missing_cards` because "buy one" and "take
+    #: it out of the other deck" are different decisions, and with playsets the
+    #: second is the common one.
+    blocked_by_other_decks: int = 0
 
 
 # --- Card Search Owned Indicator ---

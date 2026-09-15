@@ -31,6 +31,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ..database import get_db
+from .queries import token_exclusion_sql
 
 logger = logging.getLogger(__name__)
 
@@ -261,18 +262,24 @@ async def compute_power_level(deck_id: int) -> dict[str, Any]:
             "reason": "not_applicable", "format": deck_row["format"] or "Unknown",
         }
 
-    # ⚠️ Every card of the deck, maybeboard included — deliberately unchanged
-    # in 0.47.0. Since `board` exists the filter is one clause away, and it
-    # belongs there: deck 10 scores 824.7 with 32 Backlog cards that are not in
-    # the deck. But changing the gate and the arithmetic in the same release
-    # would make the before/after comparison meaningless, and that comparison
-    # is the only evidence that the 22 Commander decks were left alone. Sprint
-    # 13 moves it, with its own measurement.
+    # Main deck only, since 0.49.0. Before that every row counted, so deck 10
+    # scored 824.7 with 32 Backlog cards that are not in the deck — the score
+    # measured a pile nobody plays.
+    #
+    # The clause was deliberately held back in 0.47.0, when `board` arrived:
+    # changing the format gate and the arithmetic in one release would have
+    # made the before/after comparison meaningless, and that comparison was the
+    # only evidence the 22 Commander decks had been left alone. It moves here,
+    # with its own measurement.
+    #
+    # Tokens go with it. A Treasure token in the list is not a card the deck
+    # plays, and its price and EDHREC rank have no business in the score.
     cursor = await db.execute(
-        """SELECT c.name, c.cmc, c.type_line, c.layout, c.edhrec_rank, c.reserved,
+        f"""SELECT c.name, c.cmc, c.type_line, c.layout, c.edhrec_rank, c.reserved,
                   c.price_usd, c.price_usd_foil, dc.quantity, dc.is_commander
         FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
-        WHERE dc.deck_id = ?""",
+        WHERE dc.deck_id = ? AND COALESCE(dc.board, 'main') = 'main'
+          AND {token_exclusion_sql("c")}""",
         (deck_id,),
     )
     rows = await cursor.fetchall()

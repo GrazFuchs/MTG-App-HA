@@ -114,7 +114,11 @@ async def add_wishlist(
 
 
 async def insert_deck(
-    db: aiosqlite.Connection, name: str = "Test Deck", *, deck_format: str = "Commander"
+    db: aiosqlite.Connection,
+    name: str = "Test Deck",
+    *,
+    deck_format: str = "Commander",
+    folder: str = "",
 ) -> int:
     """Insert a deck row and return its id.
 
@@ -125,7 +129,8 @@ async def insert_deck(
     about a 60-card format pass one explicitly.
     """
     cursor = await db.execute(
-        "INSERT INTO decks (name, format) VALUES (?, ?)", (name, deck_format)
+        "INSERT INTO decks (name, format, folder_name) VALUES (?, ?, ?)",
+        (name, deck_format, folder),
     )
     await db.commit()
     return cursor.lastrowid

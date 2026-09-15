@@ -119,10 +119,9 @@ async def list_collection(
 
     query = f"""
         WITH deck_usage AS (
-            SELECT c2.name, SUM(dc.quantity) as total_in_decks
-            FROM deck_cards dc
-            JOIN cards c2 ON c2.id = dc.card_id
-            GROUP BY c2.name
+            SELECT dc.card_name AS name, SUM(dc.quantity) as total_in_decks
+            FROM deck_demand dc
+            GROUP BY dc.card_name
         )
         SELECT c.*, col.id as col_id, col.quantity, col.foil_quantity,
         col.condition, col.language, col.archidekt_tags, col.notes, col.added_at,
@@ -448,9 +447,9 @@ async def list_card_printings(
     cursor = await db.execute(
         """
         WITH deck_usage AS (
-            SELECT c2.name, SUM(dc.quantity) as in_decks
-            FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
-            GROUP BY c2.name
+            SELECT dc.card_name AS name, SUM(dc.quantity) as in_decks
+            FROM deck_demand dc
+            GROUP BY dc.card_name
         ),
         global_owned AS (
             SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global

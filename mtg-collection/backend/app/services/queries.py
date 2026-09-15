@@ -48,6 +48,24 @@ def basic_land_exclusion_sql(alias: str = "c") -> str:
 # "Token" too.
 # ---------------------------------------------------------------------------
 
+def binds_effective(row) -> bool:
+    """Does this deck's cards count as demand?
+
+    The same COALESCE the `deck_demand` view applies, so a deck cannot read as
+    binding on its own page while the view leaves it out of every total. The
+    view is the gate; this only answers the question *about* one deck, and it
+    must be the only other place the rule is written down.
+    """
+    try:
+        override = row["binds_copies_override"]
+        derived = row["binds_copies"]
+    except (KeyError, IndexError):
+        return True
+    if override is not None:
+        return bool(override)
+    return True if derived is None else bool(derived)
+
+
 def token_exclusion_sql(alias: str = "c") -> str:
     """Return a SQL boolean excluding token rows."""
     layout = f"COALESCE({alias}.layout, '')" if alias else "COALESCE(layout, '')"
@@ -439,9 +457,9 @@ def duplicates_extras_sql(name_col: str = "name") -> str:
 
 DUPLICATES_CTE = """
     WITH deck_usage AS (
-        SELECT c2.name, SUM(dc.quantity) as in_decks
-        FROM deck_cards dc JOIN cards c2 ON c2.id = dc.card_id
-        GROUP BY c2.name
+        SELECT dc.card_name AS name, SUM(dc.quantity) as in_decks
+        FROM deck_demand dc
+        GROUP BY dc.card_name
     ),
     global_owned AS (
         SELECT c3.name, SUM(col2.quantity + col2.foil_quantity) as total_global
@@ -615,7 +633,8 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         COALESCE(SUM(CASE WHEN dc.board = 'side' AND {no_token} THEN dc.quantity END), 0) as sideboard_count,
         COALESCE(SUM(CASE WHEN dc.board = 'maybe' AND {no_token} THEN dc.quantity END), 0) as maybeboard_count,
         d.folder_name, d.bracket, d.user_bracket, d.computed_bracket,
-        d.power_score, d.power_level
+        d.power_score, d.power_level,
+        d.binds_copies, d.binds_copies_override
         FROM decks d
         LEFT JOIN deck_cards dc ON dc.deck_id = d.id
         LEFT JOIN cards c ON c.id = dc.card_id
@@ -641,6 +660,14 @@ async def query_all_decks(db: aiosqlite.Connection) -> list[dict[str, Any]]:
         # table — the same arrangement the drying card has, where the numbers
         # are read off the button instead of held twice.
         "format_rules": formats.rules_payload(r[3]),
+        # Whether this deck's cards count as spoken for. Sent as the answer
+        # plus the decision behind it, never as the folder name: the caller
+        # should not have to know that "Disassembled" is special. Same helper
+        # as the deck page, so the list and the page cannot disagree — they
+        # did once, over the bracket, for a whole deploy.
+        "binds_copies": binds_effective(
+            {"binds_copies": r[16], "binds_copies_override": r[17]}),
+        "binds_copies_override": None if r[17] is None else bool(r[17]),
     } for r in rows]
 
 

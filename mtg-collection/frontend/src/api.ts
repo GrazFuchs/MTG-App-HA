@@ -102,6 +102,10 @@ export interface DeckSummary {
   effective_bracket: number | null;
   power_score: number | null;
   power_level: number | null;
+  /** Whether this deck's cards count as spoken for everywhere else. */
+  binds_copies: boolean;
+  /** The hand-set decision; null while the Archidekt folder still decides. */
+  binds_copies_override: boolean | null;
   last_synced: string;
 }
 
@@ -174,6 +178,10 @@ export interface DeckDetail {
   power_level: number | null;
   power_detail: PowerDetail | null;
   gameplan: string;
+  binds_copies: boolean;
+  binds_copies_override: boolean | null;
+  /** The folder the derived value came from — so the toggle can say why. */
+  folder_name: string;
   ai_assessment: string;
   ai_assessment_updated_at: string | null;
   /** Archidekt's own edit timestamp — what "the deck changed" means. Not
@@ -640,6 +648,10 @@ export interface MissingCard {
   name: string;
   quantity_needed: number;
   current_market_price_eur: number;
+  /** Copies other binding decks are already using — the reason a card can be
+   *  missing while sitting in a box. */
+  bound_elsewhere: number;
+  owned: number;
 }
 
 export interface DeckCompletenessResponse {
@@ -650,6 +662,12 @@ export interface DeckCompletenessResponse {
   missing_cards: MissingCard[];
   total_acquisition_cost_eur: number;
   most_expensive_missing: MissingCard[];
+  /**
+   * Cards you own enough of, but not enough *free* copies of. Not missing —
+   * a card to move rather than to buy. "Buy one" and "take it out of the
+   * other deck" are different decisions, so they are different numbers.
+   */
+  blocked_by_other_decks: number;
 }
 
 // --- Card Search with Owned Indicator ---
@@ -779,7 +797,17 @@ export const api = {
   // Decks
   getDecks: () => request<DeckSummary[]>('/api/decks/'),
   getDeck: (id: number) => request<DeckDetail>(`/api/decks/${id}`),
-  updateDeckUserFields: (deckId: number, fields: { user_bracket?: number | null; gameplan?: string }) =>
+  updateDeckUserFields: (
+    deckId: number,
+    // `binds_copies_override` has three states like `user_bracket`: leave it
+    // out to change nothing, a bool to decide by hand, an explicit null to
+    // hand the deck back to its Archidekt folder.
+    fields: {
+      user_bracket?: number | null;
+      gameplan?: string;
+      binds_copies_override?: boolean | null;
+    },
+  ) =>
     request<DeckDetail>(`/api/decks/${deckId}/user-fields`, {
       method: 'PUT',
       body: JSON.stringify(fields),

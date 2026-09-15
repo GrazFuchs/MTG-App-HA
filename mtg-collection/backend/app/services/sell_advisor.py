@@ -42,7 +42,7 @@ async def suggest_sells(
         JOIN cards c ON c.id = col.card_id
         LEFT JOIN (
             SELECT dc.card_id, SUM(dc.quantity) as in_decks
-            FROM deck_cards dc GROUP BY dc.card_id
+            FROM deck_demand dc GROUP BY dc.card_id
         ) deck_use ON deck_use.card_id = c.id
         GROUP BY c.id
         -- COALESCE spelled out: a bare `in_decks` in HAVING/ORDER BY binds to

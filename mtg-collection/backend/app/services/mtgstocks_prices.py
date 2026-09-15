@@ -389,7 +389,7 @@ async def get_buy_sell_signals() -> dict[str, list[dict[str, Any]]]:
         """SELECT mp.card_id, mp.card_name, mp.set_name, mp.market, mp.avg,
                   mp.all_time_high, mp.all_time_high_date,
                   COALESCE(SUM(col.quantity + col.foil_quantity), 0) AS owned,
-                  COALESCE((SELECT SUM(dc.quantity) FROM deck_cards dc WHERE dc.card_id = mp.card_id), 0) AS in_decks
+                  COALESCE((SELECT SUM(dc.quantity) FROM deck_demand dc WHERE dc.card_id = mp.card_id), 0) AS in_decks
         FROM mtgstocks_prints mp
         JOIN collection col ON col.card_id = mp.card_id
         JOIN cards c ON c.id = mp.card_id

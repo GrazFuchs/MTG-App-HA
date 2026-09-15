@@ -162,7 +162,19 @@ CREATE TABLE IF NOT EXISTS decks (
     -- A signature of the violations last announced, NOT a timestamp: the check
     -- runs nightly, so any timestamp comparison re-announces the same banned
     -- card every night. See migration 27.
-    legality_notified_key TEXT
+    legality_notified_key TEXT,
+    -- Does this deck tie up the copies it lists? A disassembled deck or an
+    -- older version of one does not: its cards are on the shelf, or in the deck
+    -- that replaced it.
+    --
+    -- Two columns for the same reason the bracket has two: `binds_copies` is
+    -- derived from the Archidekt folder on every sync, `binds_copies_override`
+    -- is a decision somebody made and a sync must never undo it. Reading order
+    -- is override, then derived, then 1 — and 1 is the safe direction, because
+    -- overstating demand costs a purchase suggestion while understating it
+    -- sells a card out of a deck.
+    binds_copies INTEGER DEFAULT 1,
+    binds_copies_override INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS deck_cards (
@@ -188,6 +200,42 @@ CREATE TABLE IF NOT EXISTS deck_cards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck ON deck_cards(deck_id);
+
+-- ---------------------------------------------------------------------------
+-- What a deck actually demands
+--
+-- "How many copies do my decks need" was asked in seven places, each with its
+-- own SQL, and every one of them counted every row in `deck_cards`: the
+-- maybeboard, the decks in "Disassembled", the tokens. With Commander that
+-- overstates the demand by a card here and there. With playsets it overstates
+-- it by four at a time, and the surplus, the sell advisor and the shopping list
+-- are all built on it.
+--
+-- A view rather than a shared SQL string, because a string is something a new
+-- caller can forget to use and a view is something they have to name. Callers
+-- replace `FROM deck_cards dc` with `FROM deck_demand dc` and change nothing
+-- else — the columns are the same, plus the card's name and oracle id, which
+-- is what the printing-spanning callers need anyway.
+--
+-- Three exclusions, each with its own reason:
+--   * maybeboard   - not in the deck (Sprint 12)
+--   * tokens       - not cards (Sprint 14)
+--   * decks that do not bind - a disassembled deck's cards are on the shelf
+-- ---------------------------------------------------------------------------
+CREATE VIEW IF NOT EXISTS deck_demand AS
+SELECT dc.deck_id      AS deck_id,
+       dc.card_id      AS card_id,
+       dc.quantity     AS quantity,
+       dc.board        AS board,
+       c.name          AS card_name,
+       c.oracle_id     AS oracle_id
+FROM deck_cards dc
+JOIN decks d ON d.id = dc.deck_id
+JOIN cards c ON c.id = dc.card_id
+WHERE COALESCE(dc.board, 'main') IN ('main', 'side')
+  AND COALESCE(d.binds_copies_override, d.binds_copies, 1) = 1
+  AND COALESCE(c.layout, '') NOT IN ('token', 'double_faced_token', 'emblem')
+  AND COALESCE(c.type_line, '') NOT LIKE 'Token%';
 
 CREATE TABLE IF NOT EXISTS collection (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1100,6 +1148,78 @@ async def _migration_27(db: aiosqlite.Connection):
         )
 
 
+#: Archidekt folders whose decks do not tie up their cards. A deck in one of
+#: these is a record of something taken apart, not a claim on the shelf.
+#: Overridable per deck; see `decks.binds_copies`.
+DEFAULT_NON_BINDING_FOLDERS = ("Disassembled", "Older Versions")
+
+
+async def _migration_28(db: aiosqlite.Connection):
+    """A deck that has been taken apart does not tie up its cards.
+
+    Deck demand was counted over every row in `deck_cards` — including the
+    maybeboard, including tokens, and including the four decks in
+    "Disassembled" and "Older Versions". Those four hold 432 cards between
+    them, and deck 10 is the *previous version* of deck 1: the same cards,
+    counted twice.
+
+    With Commander the error is a card at a time. With playsets it is four at a
+    time, and it is why **268 cards currently read as "needed more often than
+    owned"** — a shopping list for cards that are already in the box.
+
+    The filtering lives in the `deck_demand` view rather than in each of the
+    seven callers, so a future caller has to name it rather than remember it.
+    """
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    columns = {row[1] for row in await cursor.fetchall()}
+    for column_name, ddl in (
+        ("binds_copies", "ALTER TABLE decks ADD COLUMN binds_copies INTEGER DEFAULT 1"),
+        ("binds_copies_override",
+         "ALTER TABLE decks ADD COLUMN binds_copies_override INTEGER"),
+    ):
+        if column_name not in columns:
+            await db.execute(ddl)
+
+    # ⚠️ `folder_name` is added by migration 3, not by SCHEMA_SQL — so a
+    # database old enough to be missing it also skips migration 3, because its
+    # schema version is already past it. Guarding rather than assuming is the
+    # same rule migration 23 uses for `deck_combos`, and a database with no
+    # folders has nothing to mark anyway.
+    cursor = await db.execute("PRAGMA table_info(decks)")
+    deck_columns = {row[1] for row in await cursor.fetchall()}
+    if "folder_name" in deck_columns:
+        placeholders = ",".join("?" * len(DEFAULT_NON_BINDING_FOLDERS))
+        cursor = await db.execute(
+            f"UPDATE decks SET binds_copies = 0 WHERE folder_name IN ({placeholders})",
+            list(DEFAULT_NON_BINDING_FOLDERS),
+        )
+        if cursor.rowcount:
+            logger.info(
+                "Migration 28: %d deck(s) in %s no longer tie up their cards",
+                cursor.rowcount, ", ".join(DEFAULT_NON_BINDING_FOLDERS),
+            )
+
+    # The view is defined in SCHEMA_SQL, which runs before the migrations — so
+    # on an upgrade it was created against a `decks` table that had no
+    # `binds_copies` column yet. SQLite resolves a view's columns lazily, so it
+    # would not have failed at creation, but it would fail on first use.
+    # Recreating it here is the same pattern migration 19 uses for its index.
+    await db.execute("DROP VIEW IF EXISTS deck_demand")
+    await db.execute("""
+        CREATE VIEW deck_demand AS
+        SELECT dc.deck_id AS deck_id, dc.card_id AS card_id,
+               dc.quantity AS quantity, dc.board AS board,
+               c.name AS card_name, c.oracle_id AS oracle_id
+        FROM deck_cards dc
+        JOIN decks d ON d.id = dc.deck_id
+        JOIN cards c ON c.id = dc.card_id
+        WHERE COALESCE(dc.board, 'main') IN ('main', 'side')
+          AND COALESCE(d.binds_copies_override, d.binds_copies, 1) = 1
+          AND COALESCE(c.layout, '') NOT IN ('token', 'double_faced_token', 'emblem')
+          AND COALESCE(c.type_line, '') NOT LIKE 'Token%'
+    """)
+
+
 MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     2: _migration_2,
     3: _migration_3,
@@ -1127,6 +1247,7 @@ MIGRATIONS: dict[int, Callable[[aiosqlite.Connection], Awaitable[None]]] = {
     25: _migration_25,
     26: _migration_26,
     27: _migration_27,
+    28: _migration_28,
 }
 
 

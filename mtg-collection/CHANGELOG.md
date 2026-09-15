@@ -1,3 +1,83 @@
+## 0.49.0 — Sprint 13: what a deck actually demands
+
+"How many copies do my decks need" was asked in **seven** places, each with its
+own SQL, and every one counted every row in `deck_cards`. That meant the
+maybeboard, the tokens, and the four decks in "Disassembled" and "Older
+Versions" all counted as demand. With Commander that overstates by a card here
+and there. With playsets it overstates four at a time — and the surplus, the
+sell advisor and the shopping list are all built on it.
+
+There is now one `deck_demand` VIEW, and a test that fails if anyone writes an
+eighth query against `deck_cards` instead. A shared SQL string would have been
+the obvious fix; a view is the better one, because a caller has to *name* it
+rather than remember a rule.
+
+### Measured against the live database (352 MB, 24 decks, 8580 cards)
+
+| | before | after | |
+|---|---|---|---|
+| Deck demand | 2349 cards | 1797 | −552 |
+| "more in decks than owned" | 268 names | 95 | −173 |
+| Surplus | 8578 cards | 8943 | +365 |
+
+The −552 breaks down exactly: maybeboard 152 · tokens in main/side 0 ·
+non-binding decks 400. The 173 names that stopped reading as over-committed
+were never over-committed; they were an artefact of counting the maybeboard.
+
+**The three sales figures all went up, and that is the correction, not a
+regression** — the same lesson as the W5 fix in 0.42.0:
+
+| sensor | before | after |
+|---|---|---|
+| `sell_potential_eur` | 1953,21 € | 2075,50 € |
+| `duplicates_surplus_cards` | 2878 | 3049 |
+| `duplicates_surplus_value_eur` | 1161,67 € | 1293,37 € |
+| `unlisted_value_eur` | 1046,22 € | 1177,54 € |
+
+Cards in a maybeboard, in a disassembled deck, or a token were being held out
+of the surplus as though a deck needed them. `mtg_verkauf_wochenreport`
+thresholds on `unlisted_value_eur > 50` — above it before, above it after, so
+no behaviour changes, only the number gets honest.
+
+### The power score was inflated for every deck with a maybeboard
+
+The board filter finally reaches `power_level.py`, and **11 of 22 Commander
+decks move — all of them downward**. Deck 10 "Sharknado" drops 826,81 → 607,56
+and was, until today, the highest-scoring deck in the collection on the
+strength of 32 cards that are not in it. Deck 8 drops 561,78 → 212,20: it has
+43 cards in the main deck, so its old score was mostly backlog. The two
+Premodern decks correctly report no score at all.
+
+### Two columns, because a sync must never undo a decision
+
+`binds_copies` is derived from the Archidekt folder on every sync;
+`binds_copies_override` is what somebody set by hand on the deck page. Exactly
+the pair `user_bracket` and `computed_bracket` already are, for exactly the
+same reason. The first attempt used one column with `DEFAULT 1`, which made
+"nobody has decided yet" indistinguishable from "somebody decided yes" — and
+`binds_copies IS NULL` was therefore never true.
+
+### "Do I own enough" and "is enough of it free" are different questions
+
+The completeness check conflated them. A card you own four of is not missing
+because all four sit in another deck — but it is not available either.
+`missing_cards` keeps its meaning (the purchase list) and
+`blocked_by_other_decks` is new (the box to open). Each missing row now also
+says how many copies other decks hold, so the shopping list stops sending you
+out for a card that is one deck box away.
+
+### Also
+
+- `apply_binding_from_folder()` is a named function rather than eleven lines
+  inside a 600-line sync, so the rule can be called and tested without running
+  a sync.
+- The `DECKS` column in Duplicates counts something narrower now, and the
+  column header says what.
+- A deck that does not bind its copies is marked as such on its tile — it used
+  to look exactly like an active deck while its cards showed up as surplus.
+- `non_binding_folders` is an add-on option, default `["Disassembled",
+  "Older Versions"]`.
+
 ## 0.48.0 — Sprint 14: the deck check, and what it found on the first run
 
 What a 60-card deck gets instead of a bracket and a power score: size, copies,
