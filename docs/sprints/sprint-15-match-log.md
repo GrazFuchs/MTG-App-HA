@@ -172,6 +172,22 @@ gegen den wiederhergestellten Fehler verifiziert.
 **Die Lehre für diese Sprint-Reihe:** ein Abnahmetest gegen das laufende System ist kein Ritual. Er
 hat hier genau das gefunden, was die Testsuite strukturell nicht finden konnte.
 
+### Live-Abnahme nach 0.50.1
+
+| Schritt | Ergebnis |
+|---|---|
+| „The Rock" (Premodern) wählen | `number.mtg_log_pod_size` → **2** |
+| „Sharknado" (Commander) wählen | → **4** |
+| „Sligh" (Premodern) wählen | → **2** |
+| Danach von Hand auf 3 | bleibt **3** |
+| Dann Commander wählen | → 4, **Sideboard-Notiz geleert** |
+
+> ⚠️ **Zwei Fehlschläge davor waren keine.** Beide Male lief der Test in das Fenster zwischen
+> Add-on-Start und dem Ende seiner Publish-Kette (~2 Minuten): `publish_form_entities()` schreibt am
+> Ende **alle** gespeicherten Feldwerte erneut retained — und überschreibt damit, was man in der
+> Zwischenzeit geklickt hat. Der Zustand sieht aus wie „das Kommando kam nicht an". **Vor einem
+> Formulartest auf die Zeile „MQTT game-logger form published" im Add-on-Log warten.**
+
 ## Offen
 
 * **Der erste echte Bo3-Abend.** Alles oben ist gemessen, aber an einem Trockenlauf; ob 90 Minuten
