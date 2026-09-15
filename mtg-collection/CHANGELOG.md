@@ -1,3 +1,27 @@
+## 0.50.1 — the pod size moved and nobody was told
+
+The 0.50.0 acceptance test, run against the live add-on: pick a Premodern deck
+in the Home Assistant form, watch `number.mtg_log_pod_size` — and it stayed on
+4. The database said 2.
+
+`set_field` echoes **the field that was commanded** back to MQTT. Picking a deck
+also moves the pod size, and nothing published it. Home Assistant kept showing
+the old number, and the next submit would have taken the value nobody could
+see.
+
+`ha_form.apply_command()` now reports every field a command moved, and the MQTT
+handler publishes all of them. **A value the add-on changes but does not
+publish is a value HA does not have** — the same class as the `json_attributes`
+trap in the HA packages, where a reload fetches fresh data with the old
+attribute list and the new attribute silently never arrives.
+
+⚠️ **Worth recording how this was nearly missed twice.** The unit tests were
+green, because they read the database. The first guard written for it was green
+too, because it tested `apply_command` in isolation while the bug lived at the
+call site: reverting the publisher to a single-field echo did not fail it. The
+test that counts asserts on `_on_form_message` with a fake MQTT client, and was
+verified by putting the bug back.
+
 ## 0.50.0 — Sprint 15: 1v1 defaults, and three games as one match
 
 `pod_size` defaulted to **4**, the label said "Opponents / commanders" and the

@@ -303,3 +303,64 @@ async def test_nothing_writes_a_game_except_the_one_insert():
         f"a second way to write a game: {offenders}. "
         "Route it through game_log.insert_game instead."
     )
+
+
+@pytest.mark.anyio
+async def test_the_form_publishes_every_field_the_command_moved():
+    """Picking a deck also moves the pod size — and a value the add-on stores
+    without publishing is a value Home Assistant never learns about.
+
+    Found by clicking the real dropdown against the real add-on: the database
+    said 2, the dashboard kept showing 4, and the next submit would have taken
+    the number nobody could see. The earlier tests were green because they read
+    the database. Same class as the `json_attributes` trap in the HA packages:
+    the state changed, nothing announced it, everything looked fine.
+    """
+    from app.services import ha_form
+
+    db = await get_db()
+    await insert_deck(db, "Sligh", deck_format="Premodern")
+    labels, _ = await ha_form.deck_options(db)
+    label = next(lbl for lbl in labels if "Sligh" in lbl)
+
+    changed = await ha_form.apply_command(db, "deck", label)
+    assert changed.get("deck") == label
+    assert changed.get("pod_size") == "2", (
+        "the pod size moved in the database but was not reported for publishing"
+    )
+
+    # A command that moves nothing else reports only itself.
+    assert set(await ha_form.apply_command(db, "turns", "5")) == {"turns"}
+
+
+@pytest.mark.anyio
+async def test_the_mqtt_handler_echoes_the_pod_size_back_to_home_assistant(monkeypatch):
+    """The call site, not the helper.
+
+    ⚠️ The first version of this guard tested `apply_command` alone and stayed
+    green when the publisher was reverted to echoing a single field — which was
+    the actual bug. A test that covers the rule but not the place it is used
+    proves nothing about the thing that broke.
+    """
+    from app.services import ha_form, ha_mqtt, ha_publisher
+
+    db = await get_db()
+    await insert_deck(db, "Sligh", deck_format="Premodern")
+    labels, _ = await ha_form.deck_options(db)
+    label = next(lbl for lbl in labels if "Sligh" in lbl)
+
+    published: dict[str, str] = {}
+
+    async def fake_publish(topic, payload, retain=False, qos=0):
+        published[topic] = payload
+
+    monkeypatch.setattr(ha_mqtt, "publish", fake_publish)
+    monkeypatch.setattr(ha_mqtt, "topic_prefix", lambda: "mtg-collection")
+
+    await ha_publisher._on_form_message("mtg-collection/form/deck/set", label.encode())
+
+    assert published.get("mtg-collection/form/deck") == label
+    assert published.get("mtg-collection/form/pod_size") == "2", (
+        "the pod size changed in the database but was never published — "
+        "HA would keep showing the old number"
+    )

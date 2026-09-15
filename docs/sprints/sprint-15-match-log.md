@@ -150,6 +150,28 @@ angeschlagen und wurden zurückgenommen:
 * Ein zweites `INSERT INTO deck_games` in `ha_form.py` →
   `test_nothing_writes_a_game_except_the_one_insert` fällt und nennt die Datei.
 
+## Nachtrag 0.50.1 — der Abnahmetest hat etwas gefunden
+
+Die Abnahme aus dem Plan lautet: „Standard-Deck wählen → `number.mtg_log_pod_size` springt auf 2".
+Gegen das laufende Add-on ausgeführt sprang sie **nicht**. Die Datenbank sagte 2, die Karte zeigte 4.
+
+`set_field` meldet **das kommandierte Feld** an MQTT zurück. Die Deckauswahl bewegt zusätzlich die
+Podgröße, und die veröffentlichte niemand. HA behielt die alte Zahl, und der nächste Submit hätte den
+Wert genommen, den niemand sehen konnte.
+
+`apply_command()` meldet jetzt jedes Feld, das ein Kommando bewegt hat, und der MQTT-Handler
+veröffentlicht alle. **Ein Wert, den das Add-on ändert und nicht veröffentlicht, ist ein Wert, den HA
+nicht hat** — dieselbe Klasse wie die `json_attributes`-Falle in den HA-Packages.
+
+⚠️ **Zweimal fast durchgerutscht.** Die Unit-Tests waren grün, weil sie die Datenbank lesen. Der
+erste Wächter dafür war ebenfalls grün, weil er `apply_command` isoliert prüfte, während der Fehler
+an der **Aufrufstelle** saß: den Publisher auf ein einzelnes Feld zurückzudrehen ließ ihn nicht
+fallen. Der Test, der zählt, prüft `_on_form_message` gegen einen falschen MQTT-Client — und ist
+gegen den wiederhergestellten Fehler verifiziert.
+
+**Die Lehre für diese Sprint-Reihe:** ein Abnahmetest gegen das laufende System ist kein Ritual. Er
+hat hier genau das gefunden, was die Testsuite strukturell nicht finden konnte.
+
 ## Offen
 
 * **Der erste echte Bo3-Abend.** Alles oben ist gemessen, aber an einem Trockenlauf; ob 90 Minuten

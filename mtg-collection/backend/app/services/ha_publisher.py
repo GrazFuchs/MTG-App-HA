@@ -591,14 +591,20 @@ async def _on_form_message(topic: str, payload: bytes) -> None:
         return
 
     try:
-        value = await ha_form.set_field(db, key, raw)
+        # Every field the command moved, not only the one that was addressed:
+        # picking a deck also sets the pod size, and a value that is stored but
+        # never published is one HA never learns about.
+        changed = await ha_form.apply_command(db, key, raw)
     except ValueError as exc:
         # Leave HA showing the previous value and say why on the status sensor
         logger.warning("Rejected form command for %s: %s", key, exc)
         await _publish_form_status(f"Ignored {key}: {exc}"[:255])
         return
 
-    await ha_mqtt.publish(ha_form.state_topic(prefix, key), payload=value, retain=True)
+    for field, value in changed.items():
+        await ha_mqtt.publish(
+            ha_form.state_topic(prefix, field), payload=value, retain=True
+        )
 
 
 _inbox_publish_task: asyncio.Task | None = None

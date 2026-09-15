@@ -270,6 +270,25 @@ async def set_field(db: aiosqlite.Connection, key: str, raw: str) -> str:
     return value
 
 
+async def apply_command(db: aiosqlite.Connection, key: str, raw: str) -> dict[str, str]:
+    """Apply one command and return **every** field value that changed.
+
+    ⚠️ Not just the one that was commanded. Picking a deck also moves the pod
+    size, and a value the add-on changes but never publishes is a value Home
+    Assistant does not have: the database would say 2 while the dashboard kept
+    showing 4, and the next submit would quietly take the number nobody could
+    see. Found by clicking the real dropdown against the real add-on -- the
+    unit tests were all green, because they read the database.
+
+    Same class as the `json_attributes` trap in the HA packages: the state
+    changed, nothing announced it, and everything looked fine.
+    """
+    before = await load_state(db)
+    await set_field(db, key, raw)
+    after = await load_state(db)
+    return {k: v for k, v in after.items() if before.get(k) != v}
+
+
 async def _follow_deck(db: aiosqlite.Connection, label: str) -> None:
     """Move the pod size to what the chosen deck's format usually seats.
 
